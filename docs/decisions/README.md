@@ -21,6 +21,8 @@ Decisions are recorded as ADR files in this directory.
 | [015](ADR-015-three-tier-autonomy.md) | Three-Tier Autonomy Model | Accepted |
 | [016](ADR-016-user-profile.md) | User Profile as First-Class Concept | Accepted |
 | [017](ADR-017-devkit-reference.md) | Devkit as Reference Implementation | Accepted |
+| [018](ADR-018-release-versioning.md) | Release Versioning and V1 Scope | Accepted |
+| [019](ADR-019-self-hosted-first.md) | Self-Hosted-First Development | Accepted |
 
 ## Open Decisions
 
@@ -29,5 +31,4 @@ Decisions are recorded as ADR files in this directory.
 - Cost management -- token budget tracking and enforcement
 - Licensing -- BSL 1.1 / Apache 2.0 dual or different?
 - Domain selection -- samverk.io vs samverk.ai
-- V1 scope -- minimum viable framework
-- Hosting model -- self-hosted, hosted service, or both?
+- Server platform selection -- Unraid, Proxmox, or Windows for the project server
