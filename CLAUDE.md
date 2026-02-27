@@ -23,6 +23,7 @@ docs/
   competitive.md        # Market landscape and positioning
   concept.md            # Problem space, target user, value proposition
   cost-model.md         # Tiered cost model and comparisons
+  mcp-server.md         # MCP server requirements and tool definitions
   user-interface.md     # Check-in model and device flexibility spec
   open-questions.md     # Unresolved design and business questions
   naming.md             # Name research and background
@@ -88,6 +89,7 @@ docs/
 - [Concept](docs/concept.md)
 - [Competitive Landscape](docs/competitive.md)
 - [Cost Model](docs/cost-model.md)
+- [MCP Server](docs/mcp-server.md)
 - [User Interface](docs/user-interface.md)
 - [Open Questions](docs/open-questions.md)
 - [Naming](docs/naming.md)
