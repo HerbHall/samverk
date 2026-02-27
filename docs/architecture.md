@@ -170,6 +170,28 @@ Certain specialized tasks call for external APIs rather than in-house agents:
 
 Treated as "external contractors" -- called when needed, billed per use, not part of the permanent org chart.
 
+## Action Trust Tiers
+
+Agent autonomy is governed by a three-tier trust model. This determines which actions agents take immediately vs. which require user confirmation at the next check-in.
+
+| Tier | Behavior | Examples |
+|------|----------|----------|
+| **Tier 1** | Always autonomous, logged for audit | Read files, search, create branches, commit to feature branches |
+| **Tier 2** | Autonomous, surfaced in check-in digest | Edit files, close issues, push to non-main branches |
+| **Tier 3** | Queued as `needs-human`, unblocked work continues | Merge to main, delete files, force push, over-threshold API calls |
+
+A Tier 3 block never stops the whole system. The agent creates a `needs-human` issue, marks dependent work as blocked, and continues all independent work streams. The user addresses it at their next check-in.
+
+Tiers are configurable per project via `.samverk/autonomy.yaml`. See [Autonomy Model](autonomy-model.md) for full specification.
+
+## User Profile
+
+Agents consult a persistent user profile that captures preferences, conventions, and standing decisions across all projects. This prevents agents from re-asking resolved questions and ensures consistency without manual repetition.
+
+The profile covers project conventions (directory structure, git workflow), technical preferences (languages, frameworks, CI/CD), AI agent configuration (trust tiers, model routing, cost thresholds), and standing decisions (license, hosting, security).
+
+The profile can be bootstrapped from an existing Devkit-style repo, repo analysis, or an onboarding conversation. See [User Profile](user-profile.md) for full specification.
+
 ## Implementation Stack
 
 - **Language:** Go (consistent with Subnetree project)

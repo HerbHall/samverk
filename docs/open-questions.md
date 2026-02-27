@@ -64,6 +64,22 @@ Problems that must be resolved before or during development.
 - **Claude mobile MCP.** When Claude mobile gets MCP support, what will the configuration experience look like? Can we design for it now so zero migration is needed?
 - **Front-end model flexibility.** Should the front-end agent be Claude-only or also support other chat models?
 
+## Autonomy and Trust
+
+- **Tier 3 block communication.** How does the system communicate a Tier 3 block to the user without creating anxiety? (The project is not broken -- one action is waiting.)
+- **Trust tier override scoping.** How are trust tier overrides scoped -- per project, per agent type, per action?
+- **Temporary tier promotion.** Can trust tiers be promoted temporarily? ("Auto-approve merges for the next 2 hours")
+- **Unanticipated action classification.** How does the system detect when an agent is about to take an action that was not anticipated at design time -- and what tier does it default to?
+- **Audit log format.** What is the audit log format for Tier 1 and Tier 2 actions reviewed at check-in?
+
+## User Profile
+
+- **Devkit ingestion.** How does Samverk ingest an existing Devkit-style repo on first setup?
+- **Profile update flow.** Does the agent propose profile changes and the user approves, or can agents update the profile autonomously within certain bounds?
+- **Config conflict resolution.** How are conflicts handled between project-level config and profile-level config? (Project overrides profile? Or profile overrides project?)
+- **Profile versioning.** How is the profile versioned? If the user's preferences evolve, old projects should use the conventions they were started with.
+- **Profile storage location.** Should the user profile be stored in a dedicated repo, a Samverk-hosted service, or locally? Each has tradeoffs for the multi-device use case.
+
 ## Business and Product
 
 - **V1 scope.** What's the minimum that proves the concept?

@@ -28,7 +28,9 @@ docs/
   naming.md             # Name research and background
   decisions/            # Architecture Decision Records (ADR format)
     README.md           # Index of all ADRs + open decisions
-    ADR-NNN-title.md    # Individual decision records (14 so far)
+    ADR-NNN-title.md    # Individual decision records (17 so far)
+  autonomy-model.md     # Three-tier trust model for agent actions
+  user-profile.md       # Persistent user preferences across projects
 ```
 
 ## Tech Stack
@@ -73,6 +75,9 @@ docs/
 - Git issues as agent communication ([ADR-012](docs/decisions/ADR-012-git-issues-protocol.md))
 - Git forge abstracted behind interface ([ADR-013](docs/decisions/ADR-013-forge-abstraction.md))
 - Dedicated dispatcher agent for routing ([ADR-014](docs/decisions/ADR-014-dispatcher-agent.md))
+- Three-tier autonomy model ([ADR-015](docs/decisions/ADR-015-three-tier-autonomy.md))
+- User profile as first-class concept ([ADR-016](docs/decisions/ADR-016-user-profile.md))
+- Devkit as reference implementation ([ADR-017](docs/decisions/ADR-017-devkit-reference.md))
 
 ## References
 
@@ -84,4 +89,6 @@ docs/
 - [User Interface](docs/user-interface.md)
 - [Open Questions](docs/open-questions.md)
 - [Naming](docs/naming.md)
+- [Autonomy Model](docs/autonomy-model.md)
+- [User Profile](docs/user-profile.md)
 - [Decision Records](docs/decisions/)

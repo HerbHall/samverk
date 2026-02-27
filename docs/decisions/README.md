@@ -18,6 +18,9 @@ Decisions are recorded as ADR files in this directory.
 | [012](ADR-012-git-issues-protocol.md) | Git Issues as Agent Communication Protocol | Accepted |
 | [013](ADR-013-forge-abstraction.md) | Abstract Git Forge Behind Interface | Accepted |
 | [014](ADR-014-dispatcher-agent.md) | Dispatcher Agent as Always-Running Process | Accepted |
+| [015](ADR-015-three-tier-autonomy.md) | Three-Tier Autonomy Model | Accepted |
+| [016](ADR-016-user-profile.md) | User Profile as First-Class Concept | Accepted |
+| [017](ADR-017-devkit-reference.md) | Devkit as Reference Implementation | Accepted |
 
 ## Open Decisions
 
