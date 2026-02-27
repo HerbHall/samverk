@@ -82,7 +82,8 @@ Problems that must be resolved before or during development.
 
 ## Business and Product
 
-- **V1 scope.** What's the minimum that proves the concept?
-- **Hosting model.** Is Samverk a hosted service, self-hosted tool, or both?
+- ~~**V1 scope.**~~ Resolved in [ADR-018](decisions/ADR-018-release-versioning.md). Three-phase: v0.0.1 alpha, v0.1 beta, v1.0 public.
+- ~~**Hosting model.**~~ Resolved in [ADR-019](decisions/ADR-019-self-hosted-first.md). Self-hosted-first, cloud as fallback.
+- **Server platform.** Unraid vs Proxmox vs Windows for the dedicated project server. RTX 3090 Ti available. Needs research spike.
 - **Dogfooding.** How does Samverk itself get built -- can Subnetree serve as the dogfood project?
 - **Licensing model.** What fits the target user -- subscription, usage-based, open core?

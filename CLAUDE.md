@@ -28,7 +28,7 @@ docs/
   naming.md             # Name research and background
   decisions/            # Architecture Decision Records (ADR format)
     README.md           # Index of all ADRs + open decisions
-    ADR-NNN-title.md    # Individual decision records (17 so far)
+    ADR-NNN-title.md    # Individual decision records (19 so far)
   autonomy-model.md     # Three-tier trust model for agent actions
   user-profile.md       # Persistent user preferences across projects
 ```
@@ -78,6 +78,8 @@ docs/
 - Three-tier autonomy model ([ADR-015](docs/decisions/ADR-015-three-tier-autonomy.md))
 - User profile as first-class concept ([ADR-016](docs/decisions/ADR-016-user-profile.md))
 - Devkit as reference implementation ([ADR-017](docs/decisions/ADR-017-devkit-reference.md))
+- Three-phase release: alpha, beta, v1.0 ([ADR-018](docs/decisions/ADR-018-release-versioning.md))
+- Self-hosted-first development ([ADR-019](docs/decisions/ADR-019-self-hosted-first.md))
 
 ## References
 
