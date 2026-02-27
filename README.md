@@ -1,67 +1,82 @@
 # Samverk
 
-> *Samverk* — Old Norse/Icelandic: "cooperative work" (sam = together, verk = work/deed)
+> *Samverk* -- Old Norse/Icelandic: "cooperative work" (sam = together, verk = work/deed)
 
-Samverk is a multi-agent AI development framework designed to give solo developers and small teams the organizational capability of a full software company — powered by coordinated AI agents.
+**Your project keeps building while you're at work, with the kids, or asleep. You just need a few minutes a day to keep it moving.**
 
-## Vision
+Samverk is an async background development engine. It coordinates AI agents to keep your project moving forward while you live your life -- then surfaces a digest when you have a few minutes to check in.
 
-Most AI frameworks are built for AI engineers. Samverk is built for builders.
+## Why
 
-The goal is a system where you describe what you want to build, and a structured hierarchy of specialized AI agents — organized like a real company — researches, plans, produces, and validates the work across every domain: code, documentation, legal considerations, QA, and more.
+Every AI dev tool today is synchronous. You sit at your keyboard, prompt, wait, review, repeat. That works if coding is your full-time job. It doesn't work if you have 10-15 minutes between obligations.
 
-**Think less "prompt engineering" and more "I have a team now."**
+Solo dev projects typically take 5-10 years or never ship at all. Not because of lack of skill -- because of lack of time and momentum. Life interrupts, the project goes cold, restarting is psychologically hard, and there's no one to hand work off to.
 
-## Status
+**Samverk's metric isn't faster responses or cheaper API calls. It's: did the project ship.**
 
-🟡 Early concept / research phase
+A project that would take a solo dev 5-10 years (or never ship) ships in 12-18 months.
 
-This repository captures the initial design thinking, competitive research, and architectural decisions made during the concept development phase. Active development has not yet begun.
+## How It Works
 
-## Core Concept
+1. You describe what you want to build
+2. Samverk's agent hierarchy researches, plans, builds, and validates -- continuously
+3. When you have a few minutes, you check in from any device
+4. Samverk shows you what's done, what's in progress, and what needs your input
+5. You provide direction, answer questions, approve decisions
+6. You close the app. Samverk keeps working.
 
-Samverk organizes AI agents into a hierarchical structure mirroring how a real company operates:
+## Architecture
 
+Agents are organized in a hybrid local/cloud model:
+
+```text
+Cloud (Claude, GPT-4, etc.)     Complex reasoning, orchestration, QC arbitration
+Mid-tier (API or large local)   Task decomposition, planning
+Local (containerized, GPU)      Code generation, testing, formatting, docs
 ```
-User Input
-    └── Orchestration Layer (intake, clarification, planning)
-            └── Division Layer (Research | Production | Legal | QA)
-                    └── Department Layer (domain-specific breakdown)
-                            └── Agent Layer (narrow-scope execution)
 
-QC runs as a parallel mirror hierarchy validating output at every level.
-```
+Multi-model by default. Provider failover on credit exhaustion. Different models catch different bugs -- diversity improves quality.
 
 See [Architecture](docs/architecture.md) for full detail.
 
 ## Key Differentiators
 
-- **Business-owner mindset** — not AI-engineer mindset
-- **Parallel QC structure** — validation built into the hierarchy, not bolted on
-- **Cross-provider validation** — use Claude to validate GPT-4 output, or vice versa (planned V2)
-- **Solo-developer scale** — designed for one person to run a "company"
+- **Async-first** -- works while you're away, not while you're watching
+- **Check-in model** -- 5-15 minute sessions from any device
+- **Hybrid local/cloud** -- local handles volume, cloud handles complexity
+- **Multi-model failover** -- cost management and quality diversity in one feature
+- **Parallel QC** -- validation built into the hierarchy, not bolted on
+- **No lock-in** -- every hardware tier produces a working result
 
 ## Target Users
 
-- Solo developers / indie hackers
-- Small teams without organizational bandwidth
-- Builders who want AI to handle the parts they're least skilled at
+The hobbyist developer with a full life. Has a job, a family, genuine programming interest, and an idea that keeps dying from loss of momentum.
+
+Not targeting: enterprise teams, AI engineers, or full-time developers who can sit with tools all day.
 
 ## Documentation
 
-- [Concept & Problem Space](docs/concept.md)
+- [Concept and Problem Space](docs/concept.md)
 - [Architecture](docs/architecture.md)
 - [Competitive Landscape](docs/competitive.md)
-- [Naming & Background](docs/naming.md)
+- [Cost Model](docs/cost-model.md)
+- [User Interface](docs/user-interface.md)
+- [Open Questions](docs/open-questions.md)
+- [Naming and Background](docs/naming.md)
+- [Decision Records](docs/decisions/)
+
+## Status
+
+Early concept / research phase. Active development has not yet begun.
 
 ## Related Projects
 
-- [Subnetree](https://github.com/HerbHall/subnetree) — Network monitoring tool; intended proof-of-concept project to be built *using* Samverk once the framework exists
-- [Devkit](https://github.com/HerbHall) — Windows development environment setup; the infrastructure layer Samverk runs on top of
+- [Subnetree](https://github.com/HerbHall/subnetree) -- Network monitoring tool; intended dogfood project to be built *using* Samverk
+- [Devkit](https://github.com/HerbHall/devkit) -- Windows development environment setup; the infrastructure layer Samverk runs on top of
 
 ## License
 
-TBD — likely BSL 1.1 / Apache 2.0 dual license (consistent with Subnetree approach)
+TBD -- likely BSL 1.1 / Apache 2.0 dual license (consistent with Subnetree approach)
 
 ---
 
