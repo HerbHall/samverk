@@ -18,7 +18,8 @@ make run       # Start the system
 
 ```text
 docs/
-  architecture.md       # Hybrid local/cloud agent hierarchy
+  architecture.md       # Chat front-end / git back-end agent model
+  communication-protocol.md  # Issue schema, labels, dispatcher, QC flow
   competitive.md        # Market landscape and positioning
   concept.md            # Problem space, target user, value proposition
   cost-model.md         # Tiered cost model and comparisons
@@ -27,7 +28,7 @@ docs/
   naming.md             # Name research and background
   decisions/            # Architecture Decision Records (ADR format)
     README.md           # Index of all ADRs + open decisions
-    ADR-NNN-title.md    # Individual decision records (10 so far)
+    ADR-NNN-title.md    # Individual decision records (14 so far)
 ```
 
 ## Tech Stack
@@ -68,10 +69,15 @@ docs/
 - Multi-model from day one ([ADR-008](docs/decisions/ADR-008-multi-model-default.md))
 - Device flexibility non-negotiable ([ADR-009](docs/decisions/ADR-009-device-flexibility.md))
 - Ship rate is the success metric ([ADR-010](docs/decisions/ADR-010-success-metric.md))
+- Chat (Claude + MCP) is the interface ([ADR-011](docs/decisions/ADR-011-chat-as-interface.md))
+- Git issues as agent communication ([ADR-012](docs/decisions/ADR-012-git-issues-protocol.md))
+- Git forge abstracted behind interface ([ADR-013](docs/decisions/ADR-013-forge-abstraction.md))
+- Dedicated dispatcher agent for routing ([ADR-014](docs/decisions/ADR-014-dispatcher-agent.md))
 
 ## References
 
 - [Architecture](docs/architecture.md)
+- [Communication Protocol](docs/communication-protocol.md)
 - [Concept](docs/concept.md)
 - [Competitive Landscape](docs/competitive.md)
 - [Cost Model](docs/cost-model.md)

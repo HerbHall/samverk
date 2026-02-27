@@ -1,12 +1,56 @@
 # Architecture
 
-## Overview
+## The Simplest Form
 
-Samverk organizes AI agents into a hierarchical structure operating on two parallel tracks: **Production** (gets work done) and **Quality Control** (validates the work). The system runs asynchronously -- agents work continuously regardless of whether the user is present.
+> **Samverk is a conversational project manager backed by a working agent team.**
+
+The chat IS the interface. Not a dashboard, not a web portal, not a special app. A conversation. On any device that can run Claude.
+
+## Two Core Components
+
+### 1. The Front-End Agent (the conversation)
+
+- Lives in Claude (or any capable chat model)
+- Has access to the project repo and issue tracker via MCP
+- When the user asks "how's my project doing?" it:
+  - Pulls current issue state
+  - Summarizes what's in progress, blocked, and needs user input
+  - Presents it conversationally, prioritized
+- User discusses, decides, gives direction in natural language
+- Front-end agent translates decisions into issues and assignments
+- User closes chat and goes back to their life
+- Works from any device that can run Claude -- phone, tablet, laptop, desktop
+
+### 2. The Back-End Agent Team (the workers)
+
+- Watches the issue tracker continuously
+- Picks up assigned work
+- Runs locally (containerized) or via cloud API depending on task complexity
+- Reports results back as issue comments
+- Flags blocks by labeling issues `needs-human`
+- Works whether the user is in the chat or not
+
+### The Bridge
+
+The front-end chat agent speaks human on one side and speaks git issues on the other. That's it. That's the whole product.
+
+## What Samverk Actually Builds
+
+The scope is tighter than originally described because we're building on existing infrastructure:
+
+| What's needed | What provides it |
+|---------------|-----------------|
+| Chat interface | Claude (already exists) |
+| Project storage | Git (already exists) |
+| Task system | GitHub/Gitea issues (already exists) |
+| **MCP server -- repo + issue access** | **Samverk builds this** |
+| **Dispatcher agent** | **Samverk builds this** |
+| **Specialist execution agents** | **Samverk builds this** |
+| **Issue schema + conventions** | **Samverk defines this** |
 
 ## Hybrid Local/Cloud Model
 
-The original architecture assumed cloud-only. This has been updated to a tiered hybrid model where task complexity determines where work runs:
+Task complexity determines where work runs:
 
 ```text
 Cloud (paid API)              Orchestration layer, complex reasoning,
@@ -33,81 +77,56 @@ GPU-accelerated)              schema validation, boilerplate, docs
 
 Cold start latency (30-90 seconds to spin up a container and load a model) is NOT a user experience problem for this audience. The user is not watching it work. Do not optimize for cold start performance -- optimize for throughput and quality instead.
 
-## The Hierarchy
+## The Agent Hierarchy
 
 ```text
-                    USER INPUT
+                    USER (chat)
                         |
-              ORCHESTRATION LAYER
-              Intake, clarification, planning
-              (Cloud: complex reasoning)
+              FRONT-END AGENT (Claude + MCP)
+              Conversational interface
+              Translates human <-> git issues
                         |
-                  DIVISION LAYER
-          Research | Production | Legal | QC
-          (Mid-tier: task decomposition)
+                  DISPATCHER AGENT
+              Always-running, watches issue tracker
+              Routes work, checks dependencies
                         |
-                DEPARTMENT LAYER
-          Focused scope per domain
-          (Mid-tier or local)
-                        |
-                  AGENT LAYER
-          Narrow-scope execution
-          (Local: containerized agents)
-
-              PARALLEL QC TRACK
-          Each layer has a corresponding
-          QC mirror that validates output
-          before it moves upward.
+          +---------+---------+---------+
+          |         |         |         |
+      CODE-GEN   TEST      DOCS     RESEARCH
+      (local)    (local)   (local)   (cloud)
+          |         |         |         |
+          QC        QC        QC        QC
+      (validates each agent's output)
 ```
-
-## Layer Responsibilities
-
-### Orchestration Layer
-
-- Receives raw user input (from async check-in sessions)
-- Asks clarifying questions (queued for next check-in if user is absent)
-- Researches context (existing codebase, prior decisions, constraints)
-- Produces an approved plan before any production work begins
-- **Nothing goes to Production without an approved plan**
-- Runs on cloud models -- requires strong reasoning capability
-
-### Division Layer
-
-Divisions represent major domains of work:
-
-- **Research Division** -- information gathering, technical spikes, unknowns reduction
-- **Production Division** -- code, content, and artifact generation
-- **Legal/Compliance Division** -- license review, IP considerations, policy checks
-- **QC Division** -- testing, validation, review
-
-### Department Layer
-
-Each Division breaks its work into Departments -- smaller, more focused scopes. For example, Production Division might have:
-
-- Backend Department
-- Frontend Department
-- Documentation Department
-- Infrastructure Department
-
-### Agent Layer
-
-Individual agents execute specific, narrow tasks. An agent in the Backend Department might only handle database schema generation. Narrow scope = higher quality output + easier validation. Runs on local containerized models for cost efficiency and throughput.
 
 ## The QC Mirror
 
-Every Production layer has a parallel QC structure:
+Every specialist agent has a parallel QC check:
 
 ```text
-Production Agent  -->  QC Agent (validates output)
-Production Dept   -->  QC Dept (validates dept deliverables)
-Production Div    -->  QC Div (validates division output)
+Agent completes work
+    --> Comments result on issue
+    --> Adds status:needs-qc label
+
+QC Agent picks up
+    --> Validates against acceptance criteria
+    --> Pass: closes issue, parent notified
+    --> Fail: reopens, comments failures, re-queues
+    --> 3x failure: adds status:needs-human, user notified at next check-in
 ```
 
-When QC rejects output, the problem escalates upward through the production hierarchy for re-parameterization, then flows back down.
+## The Dispatcher
 
-### Arbitration
+The dispatcher is the always-running process that watches the issue tracker:
 
-When Production and QC disagree and cannot resolve at their level, the conflict escalates to the Orchestration Layer for resolution. This prevents deadlocks. If the Orchestration Layer cannot resolve it, the decision is queued for the user's next check-in.
+1. New issue appears with `status:queued` -- dispatcher wakes (webhook or poll)
+2. Evaluates: complexity, agent type needed, dependencies met?
+3. Dependencies not met -- add `status:blocked`, comment with blocking issue numbers
+4. Ready -- assign to appropriate agent pool, change to `status:claimed`
+5. Monitor for completion or timeout
+6. On timeout -- reassign or escalate
+
+The dispatcher does no execution work. Its only job is routing.
 
 ## Multi-Model Failover
 
@@ -120,27 +139,36 @@ Samverk is model-agnostic. Provider failover on credit exhaustion is a core feat
 
 This serves double duty: **cost management** (never blocked by a single provider's billing) and **quality diversity** (different models have different blind spots -- rotating providers improves overall output quality).
 
-## Escalation Path
+## Platform Abstraction
 
-```text
-Agent hits blocker
-    --> Escalates to Department
-        --> Department escalates to Division
-            --> Division escalates to Orchestration
-                --> Orchestration re-parameterizes or queues for user
-                    --> Flows back down with updated parameters
+All issue tracker operations go through a platform-agnostic interface:
+
+```go
+type IssueTracker interface {
+    CreateIssue(issue Issue) (int, error)
+    UpdateIssue(id int, update IssueUpdate) error
+    AddComment(id int, comment string) error
+    ListIssues(filter IssueFilter) ([]Issue, error)
+    SetLabels(id int, labels []string) error
+    Assign(id int, agent string) error
+    Watch(handler func(Event)) error
+}
 ```
+
+Implementations: GitHubTracker, GiteaTracker, GitLabTracker.
+
+Gitea on self-hosted server = no API rate limits, full control. GitHub = easiest to start with, most familiar.
 
 ## External Contractors
 
-Certain specialized tasks call for external APIs or providers rather than in-house agents:
+Certain specialized tasks call for external APIs rather than in-house agents:
 
 - Legal database lookups
 - Trademark searches
 - Specialized ML models
 - Domain-specific APIs
 
-These are treated as "external contractors" -- called when needed, billed per use, not part of the permanent org chart.
+Treated as "external contractors" -- called when needed, billed per use, not part of the permanent org chart.
 
 ## Implementation Stack
 
@@ -148,4 +176,6 @@ These are treated as "external contractors" -- called when needed, billed per us
 - **Primary platform:** Windows (developer's primary environment)
 - **AI Providers:** Anthropic Claude API (primary), multi-provider failover
 - **Local models:** Ollama in Docker containers
+- **Git forge:** GitHub (primary), Gitea (self-hosted option)
+- **Agent communication:** Git issues (see [Communication Protocol](communication-protocol.md))
 - **Orchestration:** Custom -- not built on LangChain/LangGraph/CrewAI

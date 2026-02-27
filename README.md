@@ -58,6 +58,7 @@ Not targeting: enterprise teams, AI engineers, or full-time developers who can s
 
 - [Concept and Problem Space](docs/concept.md)
 - [Architecture](docs/architecture.md)
+- [Communication Protocol](docs/communication-protocol.md)
 - [Competitive Landscape](docs/competitive.md)
 - [Cost Model](docs/cost-model.md)
 - [User Interface](docs/user-interface.md)

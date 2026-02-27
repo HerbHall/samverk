@@ -14,6 +14,10 @@ Decisions are recorded as ADR files in this directory.
 | [008](ADR-008-multi-model-default.md) | Multi-Model by Default | Accepted |
 | [009](ADR-009-device-flexibility.md) | Device Flexibility Is Non-Negotiable | Accepted |
 | [010](ADR-010-success-metric.md) | The Right Success Metric | Accepted |
+| [011](ADR-011-chat-as-interface.md) | Chat as Primary Interface | Accepted |
+| [012](ADR-012-git-issues-protocol.md) | Git Issues as Agent Communication Protocol | Accepted |
+| [013](ADR-013-forge-abstraction.md) | Abstract Git Forge Behind Interface | Accepted |
+| [014](ADR-014-dispatcher-agent.md) | Dispatcher Agent as Always-Running Process | Accepted |
 
 ## Open Decisions
 
@@ -23,5 +27,4 @@ Decisions are recorded as ADR files in this directory.
 - Licensing -- BSL 1.1 / Apache 2.0 dual or different?
 - Domain selection -- samverk.io vs samverk.ai
 - V1 scope -- minimum viable framework
-- Primary interface -- web app, desktop app, CLI, API?
 - Hosting model -- self-hosted, hosted service, or both?

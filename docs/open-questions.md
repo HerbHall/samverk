@@ -45,6 +45,25 @@ Problems that must be resolved before or during development.
 - **Decision capture.** How are user decisions and rationale captured so agents don't re-ask resolved questions?
 - **Existing project onboarding.** How does Samverk handle onboarding an existing project vs. greenfield?
 
+## Communication Protocol
+
+- **Maximum issue size.** What is the maximum useful issue size before context becomes unwieldy for agents?
+- **Code artifact handling.** How are file attachments / code artifacts handled in issues? Links to repo paths? Inline code blocks?
+- **Issue spike handling.** How does the dispatcher handle a sudden spike of 50 new issues? Priority queue design?
+- **Polling interval.** What's the right polling interval for agents watching the issue tracker? Too fast = API rate limit risk. Too slow = latency on task pickup.
+- **Webhook failure recovery.** How are webhook delivery failures handled? What's the polling fallback strategy?
+- **Forge outage handling.** How does the system handle a git forge being unreachable (self-hosted Gitea down)?
+- **Sub-task structure.** Should sub-tasks be child issues or checklist items within a parent issue? Child issues are trackable individually; checklists are simpler.
+- **Mobile MCP authentication.** How does the front-end chat agent authenticate to the issue tracker MCP server from a mobile device securely?
+
+## MCP and Front-End
+
+- **Existing GitHub MCP servers.** Which MCP server implementation to use for GitHub? Existing open source options?
+- **Gitea MCP server.** Does a Gitea MCP server exist or does one need to be built?
+- **MCP auth across devices.** How does MCP authentication work across devices -- token stored per-device or central config the chat agent accesses?
+- **Claude mobile MCP.** When Claude mobile gets MCP support, what will the configuration experience look like? Can we design for it now so zero migration is needed?
+- **Front-end model flexibility.** Should the front-end agent be Claude-only or also support other chat models?
+
 ## Business and Product
 
 - **V1 scope.** What's the minimum that proves the concept?
