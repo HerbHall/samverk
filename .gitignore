@@ -16,8 +16,7 @@ samverk
 
 # Environment
 .env
-.env.local
-*.env
+.env.*
 
 # OS
 .DS_Store
@@ -25,8 +24,20 @@ Thumbs.db
 
 # Claude Code
 .claude/
+CLAUDE.local.md
+*.local.md
+*.local.json
 
-# API keys / secrets (never commit these)
+# DevKit runtime state
+.devkit-config.json
+debug/
+file-history/
+projects/
+tasks/
+todos/
+
+# Secrets (never commit)
+.credentials.json
 secrets/
 config/local/
 
