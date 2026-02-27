@@ -43,3 +43,6 @@ config/local/
 
 # Archives
 *.zip
+
+# One-time setup scripts
+setup-github.ps1
