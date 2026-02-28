@@ -23,6 +23,7 @@ Decisions are recorded as ADR files in this directory.
 | [017](ADR-017-devkit-reference.md) | Devkit as Reference Implementation | Accepted |
 | [018](ADR-018-release-versioning.md) | Release Versioning and V1 Scope | Accepted |
 | [019](ADR-019-self-hosted-first.md) | Self-Hosted-First Development | Accepted |
+| [020](ADR-020-web-dashboard.md) | Web Dashboard for Operations | Accepted |
 
 ## Open Decisions
 

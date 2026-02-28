@@ -4,7 +4,7 @@
 
 > **Samverk is a conversational project manager backed by a working agent team.**
 
-The chat IS the interface. Not a dashboard, not a web portal, not a special app. A conversation. On any device that can run Claude.
+The chat IS the primary interface. A conversation on any device that can run Claude. A web dashboard complements it for operational concerns -- configuration, monitoring, logs, and troubleshooting ([ADR-020](decisions/ADR-020-web-dashboard.md)).
 
 ## Two Core Components
 
@@ -44,6 +44,7 @@ The scope is tighter than originally described because we're building on existin
 | Project storage | Git (already exists) |
 | Task system | GitHub/Gitea issues (already exists) |
 | **MCP server -- repo + issue access** | **Samverk builds this** |
+| **Web dashboard -- ops, config, monitoring** | **Samverk builds this** |
 | **Dispatcher agent** | **Samverk builds this** |
 | **Specialist execution agents** | **Samverk builds this** |
 | **Issue schema + conventions** | **Samverk defines this** |
@@ -98,6 +99,22 @@ Cold start latency (30-90 seconds to spin up a container and load a model) is NO
           QC        QC        QC        QC
       (validates each agent's output)
 ```
+
+## Web Dashboard
+
+The chat handles project progress and decisions. The web dashboard handles infrastructure and operations. See [ADR-020](decisions/ADR-020-web-dashboard.md) for the decision rationale.
+
+The Go server serves three HTTP surfaces on the same port:
+
+| Path | Purpose | Consumer |
+| ---- | ------- | -------- |
+| `/mcp` | MCP Streamable HTTP (JSON-RPC) | Claude (any device) |
+| `/api/v1/` | REST API | Dashboard SPA |
+| `/` | Embedded SPA static files | Browser |
+
+The React SPA is embedded in the Go binary via `embed.FS`. Single binary deployment is preserved -- no separate web server, no CORS, no reverse proxy.
+
+Dashboard scope: system health, agent monitoring, cost dashboards, structured log viewer, autonomy configuration, project settings, task timeline, and user profile management. See [Tech Stack](tech-stack.md) for full dashboard section details.
 
 ## The QC Mirror
 
@@ -194,10 +211,16 @@ The profile can be bootstrapped from an existing Devkit-style repo, repo analysi
 
 ## Implementation Stack
 
-- **Language:** Go (consistent with Subnetree project)
+- **Language:** Go ([ADR-005](decisions/ADR-005-go-language.md))
 - **Primary platform:** Windows (developer's primary environment)
-- **AI Providers:** Anthropic Claude API (primary), multi-provider failover
-- **Local models:** Ollama in Docker containers
-- **Git forge:** GitHub (primary), Gitea (self-hosted option)
+- **Deployment:** Single binary with subcommands (`samverk serve`, `samverk dispatch`, `samverk config`)
+- **AI Providers:** Anthropic Claude API (primary), OpenAI/GPT-4, Gemini, Ollama (local)
+- **Local models:** Ollama in Docker containers, per-agent-type profiles
+- **Web dashboard:** React + TypeScript SPA, embedded via `embed.FS` ([ADR-020](decisions/ADR-020-web-dashboard.md))
+- **Git forge:** GitHub (primary), Gitea (self-hosted option), abstracted behind `IssueTracker` interface
+- **State persistence:** Git issues (task state) + SQLite (sessions, cost, audit) + YAML (config)
 - **Agent communication:** Git issues (see [Communication Protocol](communication-protocol.md))
-- **Orchestration:** Custom -- not built on LangChain/LangGraph/CrewAI
+- **Orchestration:** Custom -- not built on LangChain/LangGraph/CrewAI ([ADR-004](decisions/ADR-004-custom-orchestration.md))
+- **CI/CD:** GitHub Actions + GoReleaser
+
+For the full technology stack including specific libraries and project structure, see [Tech Stack](tech-stack.md).

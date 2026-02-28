@@ -18,7 +18,7 @@ Problems that must be resolved before or during development.
 
 ## User Interface
 
-- **Primary interface.** Web app, desktop app, CLI, API? What ships first?
+- ~~**Primary interface.**~~ Resolved: Chat (Claude + MCP) is the primary interface ([ADR-011](decisions/ADR-011-chat-as-interface.md)). Web dashboard handles operations ([ADR-020](decisions/ADR-020-web-dashboard.md)). See [Tech Stack](tech-stack.md).
 - **Mobile experience.** Native app, PWA, or mobile web?
 - **Developer tool integration.** How does Samverk integrate with VS Code, GitHub, etc.?
 - **Check-in digest design.** What does the check-in digest look like? How is blocked work prioritized for display?

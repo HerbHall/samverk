@@ -17,30 +17,53 @@ make run       # Start the system
 ## Project Structure
 
 ```text
-docs/
-  architecture.md       # Chat front-end / git back-end agent model
-  communication-protocol.md  # Issue schema, labels, dispatcher, QC flow
-  competitive.md        # Market landscape and positioning
-  concept.md            # Problem space, target user, value proposition
-  cost-model.md         # Tiered cost model and comparisons
-  mcp-server.md         # MCP server requirements and tool definitions
-  user-interface.md     # Check-in model and device flexibility spec
-  open-questions.md     # Unresolved design and business questions
-  naming.md             # Name research and background
-  decisions/            # Architecture Decision Records (ADR format)
-    README.md           # Index of all ADRs + open decisions
-    ADR-NNN-title.md    # Individual decision records (19 so far)
-  autonomy-model.md     # Three-tier trust model for agent actions
-  user-profile.md       # Persistent user preferences across projects
+samverk/
+├── cmd/samverk/               # Single binary entrypoint (cobra subcommands)
+├── internal/
+│   ├── server/                # HTTP server (MCP + API + embedded SPA)
+│   ├── api/                   # REST API handlers for dashboard
+│   ├── mcp/                   # MCP protocol handler (Streamable HTTP)
+│   ├── dispatcher/            # Issue watcher, task router, dependency DAG
+│   ├── forge/                 # IssueTracker interface + GitHub/Gitea impls
+│   ├── agent/                 # Agent runtime, container management
+│   ├── provider/              # AI provider clients (Claude, OpenAI, Ollama)
+│   ├── autonomy/              # Trust tier evaluation engine
+│   ├── profile/               # User profile management
+│   ├── cost/                  # Token tracking, budget, attribution
+│   └── store/                 # SQLite persistence layer
+├── pkg/models/                # Shared types (Issue, Agent, Action, etc.)
+├── web/                       # React SPA dashboard (Vite + TypeScript)
+├── docs/                      # Design docs and ADRs
+│   ├── architecture.md        # System design and components
+│   ├── tech-stack.md          # Full technology choices and libraries
+│   ├── communication-protocol.md  # Issue schema, labels, dispatcher, QC flow
+│   ├── concept.md             # Problem space, target user, value proposition
+│   ├── cost-model.md          # Tiered cost model and comparisons
+│   ├── mcp-server.md          # MCP server requirements and tool definitions
+│   ├── user-interface.md      # Check-in model and device flexibility spec
+│   ├── autonomy-model.md      # Three-tier trust model for agent actions
+│   ├── user-profile.md        # Persistent user preferences across projects
+│   ├── open-questions.md      # Unresolved design and business questions
+│   └── decisions/             # Architecture Decision Records (20 so far)
+├── .samverk/                  # Runtime config (gitignored)
+├── .github/workflows/         # CI/CD pipelines
+└── Makefile                   # Build and development tasks
 ```
 
 ## Tech Stack
 
-- **Language**: Go (orchestrator), local models via Ollama in Docker
-- **AI Providers**: Multi-model -- Claude (primary), GPT-4, Gemini, local fallback
-- **Testing**: TBD
-- **Build**: Make
-- **CI/CD**: GitHub Actions
+- **Language:** Go -- single binary with subcommands (`samverk serve`, `samverk dispatch`, `samverk config`)
+- **AI Providers:** Anthropic Claude API (primary), OpenAI/GPT-4, Gemini, Ollama (local containers)
+- **Web Dashboard:** React + TypeScript + Vite, embedded in Go binary via `embed.FS`
+- **Frontend:** shadcn/ui, Tailwind CSS, TanStack Query, Zustand, Recharts
+- **State:** Git issues (tasks) + SQLite (sessions, cost, audit) + YAML (config)
+- **Git Forge:** GitHub (primary), Gitea (self-hosted), abstracted behind `IssueTracker` interface
+- **Testing:** Go stdlib + table-driven tests, Vitest + Testing Library (frontend)
+- **Build:** Make + GoReleaser
+- **CI/CD:** GitHub Actions
+- **Linting:** golangci-lint (Go), ESLint + TypeScript (frontend), markdownlint (docs)
+
+For full details including specific libraries, what NOT to use, and project structure rationale, see [docs/tech-stack.md](docs/tech-stack.md).
 
 ## Development Workflow
 
@@ -81,10 +104,12 @@ docs/
 - Devkit as reference implementation ([ADR-017](docs/decisions/ADR-017-devkit-reference.md))
 - Three-phase release: alpha, beta, v1.0 ([ADR-018](docs/decisions/ADR-018-release-versioning.md))
 - Self-hosted-first development ([ADR-019](docs/decisions/ADR-019-self-hosted-first.md))
+- Web dashboard for operations ([ADR-020](docs/decisions/ADR-020-web-dashboard.md))
 
 ## References
 
 - [Architecture](docs/architecture.md)
+- [Tech Stack](docs/tech-stack.md)
 - [Communication Protocol](docs/communication-protocol.md)
 - [Concept](docs/concept.md)
 - [Competitive Landscape](docs/competitive.md)
