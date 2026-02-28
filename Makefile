@@ -1,4 +1,4 @@
-.PHONY: build test test-race test-coverage lint lint-md run clean
+.PHONY: build test test-race test-coverage lint lint-md lint-all ci hooks run clean
 
 # Binary
 BIN=samverk
@@ -28,11 +28,22 @@ test-coverage:
 	go tool cover -func=coverage.out
 
 lint:
-	@which golangci-lint > /dev/null 2>&1 || (echo "golangci-lint not found. Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest" && exit 1)
-	golangci-lint run ./...
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1 run ./...
 
 lint-md:
 	npx markdownlint-cli2 "**/*.md" "#node_modules"
+
+# Run all lint checks (matches CI)
+lint-all: lint lint-md
+
+# Local CI simulation: build + test + lint (run before pushing)
+ci: build test lint-all
+
+# Install git hooks (pre-push runs CI checks automatically)
+hooks:
+	cp scripts/pre-push .git/hooks/pre-push
+	chmod +x .git/hooks/pre-push
+	@echo "pre-push hook installed"
 
 run: build
 	./bin/$(BIN) serve
