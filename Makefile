@@ -1,4 +1,4 @@
-.PHONY: build test test-race test-coverage lint lint-md lint-all ci run clean
+.PHONY: build test test-race test-coverage lint lint-md lint-all ci hooks run clean
 
 # Binary
 BIN=samverk
@@ -38,6 +38,12 @@ lint-all: lint lint-md
 
 # Local CI simulation: build + test + lint (run before pushing)
 ci: build test lint-all
+
+# Install git hooks (pre-push runs CI checks automatically)
+hooks:
+	cp scripts/pre-push .git/hooks/pre-push
+	chmod +x .git/hooks/pre-push
+	@echo "pre-push hook installed"
 
 run: build
 	./bin/$(BIN) serve
