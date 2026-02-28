@@ -403,7 +403,7 @@ func (c *Client) ensureLabelCache() error {
 
 // resolveLabels converts label names to Gitea integer IDs.
 func (c *Client) resolveLabels(names []string) (ids []int64, err error) {
-	if err = c.ensureLabelCache(); err != nil {
+	if err := c.ensureLabelCache(); err != nil {
 		return nil, err
 	}
 
