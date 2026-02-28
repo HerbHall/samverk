@@ -75,15 +75,17 @@ The GPU occupies IOMMU group containing both the GPU and its audio device.
 
 | Model | Size | Quantization | Use Case |
 |-------|------|-------------|----------|
-| llama3.2:3b | ~2 GB | Q4_K_M | Dispatch, classification, testing |
+| qwen2.5-coder:7b | ~4.7 GB | Q4_K_M | Code generation, tests |
+| deepseek-r1:7b | ~4.7 GB | Q4_K_M | QC, reasoning |
+| llama3.2:3b | ~2 GB | Q4_K_M | Dispatch, classification |
 
-### Planned Models (per system-requirements.md)
+Total: ~11.4 GB, leaving ~12 GB headroom on 24 GB VRAM.
+
+### Future Models
 
 | Model | Size | Use Case |
 |-------|------|----------|
-| qwen2.5-coder:7b | ~5 GB | Code generation, tests |
-| deepseek-r1:7b | ~5 GB | QC, reasoning |
-| qwen2.5-coder:14b | ~9 GB | Higher-quality code generation |
+| qwen2.5-coder:14b | ~9 GB | Higher-quality code generation (replaces 7b when solo) |
 
 ## Performance
 
@@ -97,17 +99,12 @@ Measured with `llama3.2:3b` on RTX 3090 Ti:
 
 ## Ollama Configuration
 
-Ollama runs as a systemd service with a drop-in override for LAN access:
+Ollama runs as a systemd service with a drop-in override for LAN access and tuning:
 
 ```text
 # /etc/systemd/system/ollama.service.d/override.conf
 [Service]
 Environment="OLLAMA_HOST=0.0.0.0"
-```
-
-Future tuning (per ollama-orchestration.md):
-
-```text
 Environment="OLLAMA_MAX_LOADED_MODELS=3"
 Environment="OLLAMA_NUM_PARALLEL=2"
 Environment="OLLAMA_KEEP_ALIVE=10m"
