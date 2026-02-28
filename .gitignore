@@ -3,11 +3,12 @@
 *.dll
 *.so
 *.dylib
-samverk
+/samverk
 
 # Go build
 /bin/
 /dist/
+coverage.out
 
 # IDE
 .vscode/
