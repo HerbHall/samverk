@@ -28,7 +28,7 @@ test-coverage:
 	go tool cover -func=coverage.out
 
 lint:
-	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6 run ./...
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1 run ./...
 
 lint-md:
 	npx markdownlint-cli2 "**/*.md" "#node_modules"
