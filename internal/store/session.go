@@ -118,7 +118,7 @@ func (s *SQLiteStore) ListSessions(ctx context.Context, status models.SessionSta
 	if err != nil {
 		return nil, fmt.Errorf("query sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make([]*models.Session, 0)
 	for rows.Next() {
