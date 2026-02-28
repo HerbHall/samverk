@@ -7,6 +7,7 @@
 **Language:** Icelandic / Old Norse
 
 **Meaning:** Cooperative work
+
 - *sam* = together, co-, shared
 - *verk* = work, deed, task
 
@@ -28,11 +29,13 @@ The Viking/Norse naming space is heavily claimed in tech (Sindri, Brokkr, Eitri 
 Over 30 candidates were researched across multiple categories before landing on Samverk:
 
 **Norse mythology / blacksmith names (all taken in US tech):**
+
 - Sindri — Sindri Labs (Denver, $7M funded, crypto/ZK infrastructure)
 - Brokkr — Multiple companies (DeFi, industrial coatings)
 - Eitri — Eitri Technology Solutions, Eitri Foundry, Eitri Apps
 
 **Latin/Greek forge concepts (all heavily saturated):**
+
 - Fabrica/Fabrik family — Dozens of conflicts including Fabrikam (Microsoft)
 - Fabrex — Manufacturing software Spain, GigaIO's FabreX
 - Fornax — Multiple Fornax Technologies companies
@@ -40,12 +43,14 @@ Over 30 candidates were researched across multiple categories before landing on 
 - Opifex — Swiss software agency, Opifex Technology (AI/CV)
 
 **Invented compounds (all taken):**
+
 - Volantix — Travel companies
 - Turmax — Automotive electronics
 - Perfix — Perfix Inc exists
 - Fundix — Investment/trading platforms
 
 **Why Samverk survived:**
+
 - Common Icelandic word (not a brand name in Iceland, just a word)
 - No US software/tech company conflicts found
 - The Faroese trade union using "Samverk" (samverk.fo) and Norwegian hotel co-op (samverk.com) are zero trademark risk — different country, different industry, different market entirely
