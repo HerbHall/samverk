@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,7 +21,7 @@ func TestNewStore(t *testing.T) {
 	s := newTestStore(t)
 
 	// Verify both tables exist by querying sqlite_master.
-	rows, err := s.db.Query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+	rows, err := s.db.QueryContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
 	if err != nil {
 		t.Fatalf("query tables: %v", err)
 	}

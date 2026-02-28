@@ -47,13 +47,13 @@ func New(dbPath string) (*SQLiteStore, error) {
 	}
 
 	// Enable WAL mode for concurrent read performance.
-	if _, err = db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	if _, err = db.ExecContext(context.Background(), "PRAGMA journal_mode=WAL"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("enable WAL: %w", err)
 	}
 
 	// Enable foreign key enforcement.
-	if _, err = db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+	if _, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys=ON"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS cost_records (
 CREATE INDEX IF NOT EXISTS idx_cost_session ON cost_records(session_id);
 CREATE INDEX IF NOT EXISTS idx_cost_created ON cost_records(created_at);
 `
-	_, err := s.db.Exec(ddl)
+	_, err := s.db.ExecContext(context.Background(), ddl)
 	return err
 }
 
