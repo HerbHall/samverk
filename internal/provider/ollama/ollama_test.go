@@ -343,8 +343,5 @@ func TestCompileTimeInterfaceCheck(t *testing.T) {
 	// This test verifies the compile-time check at the top of ollama.go.
 	// If the var _ provider.Provider = (*Client)(nil) line compiles,
 	// Client satisfies the Provider interface.
-	var p provider.Provider = (*Client)(nil)
-	if p == nil {
-		// Expected -- nil *Client satisfies the interface.
-	}
+	var _ provider.Provider = (*Client)(nil)
 }
