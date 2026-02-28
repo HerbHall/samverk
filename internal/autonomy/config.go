@@ -39,7 +39,7 @@ func DefaultConfig() Config {
 
 // LoadConfig reads and parses an autonomy config from the given path.
 func LoadConfig(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed internally, not from user input
 	if err != nil {
 		return Config{}, fmt.Errorf("read autonomy config: %w", err)
 	}
