@@ -16,9 +16,11 @@ You work on multiple projects (Samverk, DockPulse, PacketDeck, Subnetree, etc.) 
 ### Before Starting Any Session
 
 1. **Check git status first.** Before opening a project in any tool, run:
+
    ```powershell
    cd D:\devspace\<project>; git status
    ```
+
    If there are uncommitted changes, either commit them or stash them before starting new work. Uncommitted changes from a previous session are the #1 source of silent conflicts.
 
 2. **Check CLAUDE.md for handoff notes.** If a previous session left a "Pending Session Handoff" section, handle it before doing anything else.
@@ -27,21 +29,24 @@ You work on multiple projects (Samverk, DockPulse, PacketDeck, Subnetree, etc.) 
 
 ### During a Session
 
-4. **Commit early, commit often.** Don't let a session accumulate a large batch of uncommitted changes. If a logical unit of work is complete (a doc, a feature, a fix), commit it. This reduces the blast radius if something goes wrong.
+1. **Commit early, commit often.** Don't let a session accumulate a large batch of uncommitted changes. If a logical unit of work is complete (a doc, a feature, a fix), commit it. This reduces the blast radius if something goes wrong.
 
-5. **Branch for experiments.** If you're trying something that might not work, branch first:
+2. **Branch for experiments.** If you're trying something that might not work, branch first:
+
    ```powershell
    git checkout -b experiment/description
    ```
+
    This protects main from half-finished work.
 
 ### When Ending a Session
 
-6. **Commit or document.** Before ending any session that modified files:
+1. **Commit or document.** Before ending any session that modified files:
    - **Preferred**: Commit the changes with a descriptive message
    - **If not ready to commit**: Add a handoff section to CLAUDE.md describing what changed and why, so the next session can pick it up
 
-7. **Check for orphaned changes.** Quick scan across active projects:
+2. **Check for orphaned changes.** Quick scan across active projects:
+
    ```powershell
    foreach ($project in @("Samverk", "DockPulse", "PacketDeck", "Subnetree")) {
        Write-Host "=== $project ===" -ForegroundColor Cyan

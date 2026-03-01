@@ -28,6 +28,7 @@ Every agent performs a mandatory pre-execution verification step calibrated to t
 **Blocking**: Non-blocking. Work begins immediately after restatement.
 
 **Examples**:
+
 - "Adding MIT LICENSE to PacketDeck." → executes
 - "Renaming variable `foo` to `userCount` in router.go." → executes
 - "Running test suite for dispatcher package." → executes
@@ -43,6 +44,7 @@ Every agent performs a mandatory pre-execution verification step calibrated to t
 **Blocking**: Lightly blocking. Agent waits for a go-ahead but the exchange should be brief.
 
 **Examples**:
+
 - "Both project folders already exist with scaffolds. I'll audit each against the DevKit template pattern, identify missing files, and create only the gaps. Sound right?"
 - "I'll implement the registry checker using Docker Hub v2 API with anonymous auth first, then add token auth as a follow-up. The backend will cache digests for 6 hours. Confirm?"
 
@@ -61,6 +63,7 @@ Every agent performs a mandatory pre-execution verification step calibrated to t
 **Blocking**: Deliberately blocking. Agent does not begin work until all questions are answered and the approach is confirmed.
 
 **Examples**:
+
 - "Here's how I'm reading this — goal is network segmentation across IoT, lab, and trusted devices. Approach: audit current topology, propose VLAN scheme, then walk through switch config changes. Questions: Are we keeping the current TP-Link switches or is new hardware on the table? Does Tailscale access need to survive the change?"
 - "This looks like a refactor of the dispatcher routing logic. Goal: replace regex matching with label-based routing. Approach: define a new RoutingRule type, migrate existing routes, update tests, deprecate old path. Questions: Should the old regex path remain as a fallback during migration, or hard-cut? Is there a performance budget for the routing hot path?"
 

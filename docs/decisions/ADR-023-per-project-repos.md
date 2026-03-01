@@ -20,11 +20,13 @@ Three options were considered:
 All projects share one issue tracker (Samverk's Gitea instance). Issues tagged by project label.
 
 Pros:
+
 - Single view of everything
 - Simple setup (one repo to watch)
 - Easy cross-project queries
 
 Cons:
+
 - Noisy — unrelated projects pollute each other's issue lists
 - Issue numbers are meaningless across projects (RunNotes #14 vs DockPulse #14)
 - Cannot migrate a project to GitHub without disentangling its issues
@@ -37,11 +39,13 @@ Cons:
 Each project exists independently with no coordination layer. The user provides all cross-project intelligence manually.
 
 Pros:
+
 - Simplest setup
 - No framework overhead
 - Each project is completely portable
 
 Cons:
+
 - Cross-project coordination lives in the user's head (the exact failure mode Samverk exists to solve)
 - No unified check-in digest across projects
 - No resource allocation across projects
@@ -52,6 +56,7 @@ Cons:
 Each project has its own repo and issue tracker on whatever forge it needs. Samverk maintains a coordination layer — a registry of managed projects and cross-project state — in its own infrastructure (database + optionally its own issue tracker).
 
 Pros:
+
 - Projects are fully self-contained and portable
 - Each project can live on any forge (Gitea, GitHub, GitLab) independently
 - Issue numbers are project-scoped and meaningful
@@ -61,6 +66,7 @@ Pros:
 - Scales cleanly — adding a project means registering it, not restructuring
 
 Cons:
+
 - Dispatcher must poll/watch multiple repos across potentially different forges
 - Cross-project dependencies need a coordination mechanism outside any single project's issues
 - More moving parts than a single-repo approach

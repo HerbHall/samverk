@@ -109,6 +109,7 @@ Awaiting research phase or user direction.
 **Default: Auto-advance.** Every captured idea proceeds to at least a lightweight research pass unless the user explicitly says otherwise. The research phase has its own tiering to control depth.
 
 The user can also:
+
 - Explicitly kill an idea at intake ("never mind, scratch that")
 - Prioritize an idea ("this one first")
 - Merge ideas ("combine this with that other idea I had")
@@ -127,12 +128,14 @@ Transform the Idea Brief into an evidence-based Feasibility Assessment. This is 
 Not every idea warrants a full feasibility study. Research depth is tiered:
 
 **Quick Scan** (1-2 hours agent time, Tier 1 auto-advance)
+
 - Does this already exist? (GitHub, Docker Hub, npm, app stores)
 - Is there an obvious fatal flaw?
 - Quick competitive landscape (top 3-5 existing solutions)
 - Output: 1-page summary with go/no-go recommendation
 
 **Standard Feasibility** (4-8 hours agent time, Tier 2 confirmation to start)
+
 - Full competitive analysis (existing tools, their strengths/weaknesses, market gaps)
 - Technical feasibility assessment (APIs, dependencies, platform constraints)
 - Effort estimation (MVP timeline, full product timeline)
@@ -140,6 +143,7 @@ Not every idea warrants a full feasibility study. Research depth is tiered:
 - Output: Full feasibility document (comparable to DockPulse/PacketDeck research)
 
 **Deep Research** (1-3 days agent time, Tier 3 approval to start)
+
 - Everything in Standard, plus:
 - Legal and licensing analysis (target market regulations, open source license compatibility)
 - Cost-benefit model (development cost vs. revenue/value potential)
@@ -432,6 +436,7 @@ The check-in digest shows all active projects with their current phase, blocking
 ### Intent Verification (ADR-021)
 
 Phase gates are IVP tier decisions:
+
 - Auto-advance gates = IVP Tier 1 (restate and proceed)
 - Standard gates = IVP Tier 2 (present plan, wait for confirmation)
 - High-stakes gates = IVP Tier 3 (full scope assessment with questions)
