@@ -21,8 +21,8 @@ Every task, question, result, and handoff is an issue. The issue body uses YAML 
 | Field | Type | Required | Valid Values | Description |
 | ----- | ---- | -------- | ------------ | ----------- |
 | `schema_version` | string | Yes | `1.0.0` | Schema version for forward compatibility |
-| `type` | enum | Yes | `task`, `question`, `result`, `block` | Communication type |
-| `agent_type` | enum | Yes | See [Agent Type Labels](#agent-type-who-should-pick-this-up) | Who should work on this |
+| `type` | enum | Yes | `task`, `question`, `result`, `block`, `idea`, `research`, `feasibility`, `gate`, `requirement`, `architecture`, `scaffold` | Communication type |
+| `agent_type` | enum | Yes | See [Agent Type Labels](#agent-type-who-should-pick-this-up). Includes `ideation`, `feasibility`, `legal` for pre-project phases. | Who should work on this |
 | `priority` | enum | Yes | `critical`, `high`, `normal`, `low` | Scheduling priority |
 | `parent_issue` | int | No | Issue number | Parent issue in decomposition tree |
 | `depends_on` | int[] | No | Issue numbers | Issues that must close before this starts |
@@ -237,6 +237,9 @@ Only the Watch() method is blocked.
 | `agent:docs` | `#c5def5` | Documentation generation |
 | `agent:research` | `#d4c5f9` | Research and analysis tasks |
 | `agent:qc` | `#e99695` | Quality control validation |
+| `agent:ideation` | `#ff9f1c` | Idea intake, synthesis, intent alignment |
+| `agent:feasibility` | `#2ec4b6` | Technical assessment, effort estimation, risk analysis |
+| `agent:legal` | `#e71d36` | Trademark, licensing, regulatory concerns (external contractor) |
 | `agent:human` | `#b60205` | Requires user input or decision |
 
 ### Status (lifecycle state)
@@ -267,6 +270,20 @@ Only the Watch() method is blocked.
 | `complexity:local` | `#c2e0c6` | Safe to run on local model (narrow, well-defined) |
 | `complexity:cloud` | `#d4c5f9` | Requires cloud model (complex reasoning, ambiguity) |
 | `complexity:ambiguous` | `#fbca04` | Dispatcher needs to evaluate before routing |
+
+### Phase (lifecycle position)
+
+| Label | Color | Description |
+| ----- | ----- | ----------- |
+| `phase:intake` | `#D4C5F9` | Idea capture and initial structuring |
+| `phase:research` | `#C5DEF5` | Research and feasibility investigation |
+| `phase:gate` | `#B60205` | Awaiting go/no-go or approval decision |
+| `phase:requirements` | `#0075CA` | Requirements and architecture definition |
+| `phase:scaffold` | `#C2E0C6` | Project setup and infrastructure |
+| `phase:execution` | `#0E8A16` | Active development |
+| `phase:delivery` | `#FBCA04` | Publishing and deployment |
+| `phase:parked` | `#EDEDED` | Deferred for later |
+| `phase:killed` | `#000000` | Abandoned with documented rationale |
 
 ### Routing Rules
 
@@ -348,3 +365,10 @@ type IssueTracker interface {
 Implementations: GitHubTracker, GiteaTracker, GitLabTracker.
 
 Gitea on self-hosted server = no API rate limits, full control. GitHub = easiest to start with, most familiar.
+
+## Related Documents
+
+- [Intent Verification Protocol](intent-verification.md) — pre-execution understanding verification (uses issue comments for tier exchanges and concern flags)
+- [Autonomy Model](autonomy-model.md) — permission tiers governing what actions agents may take
+- [ADR-012: Git Issues as Communication Protocol](decisions/ADR-012-git-issues-protocol.md)
+- [ADR-021: Intent Verification Protocol](decisions/ADR-021-intent-verification.md)

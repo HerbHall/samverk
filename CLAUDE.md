@@ -82,7 +82,7 @@ For full details including specific libraries, what NOT to use, and project stru
 
 ## Known Constraints
 
-- Early concept phase -- no runnable code yet
+- Phase 1 implementation complete -- dispatcher, forge, store, autonomy, profile, provider all functional
 - Async-first architecture (not synchronous tooling)
 - Hybrid local/cloud agent model
 - Target audience: hobbyist devs with limited time, not enterprise teams
@@ -105,6 +105,9 @@ For full details including specific libraries, what NOT to use, and project stru
 - Three-phase release: alpha, beta, v1.0 ([ADR-018](docs/decisions/ADR-018-release-versioning.md))
 - Self-hosted-first development ([ADR-019](docs/decisions/ADR-019-self-hosted-first.md))
 - Web dashboard for operations ([ADR-020](docs/decisions/ADR-020-web-dashboard.md))
+- Intent verification protocol ([ADR-021](docs/decisions/ADR-021-intent-verification.md))
+- Full project lifecycle -- idea to delivery ([ADR-022](docs/decisions/ADR-022-full-project-lifecycle.md))
+- Per-project repos with coordination layer ([ADR-023](docs/decisions/ADR-023-per-project-repos.md))
 
 ## References
 
@@ -120,4 +123,7 @@ For full details including specific libraries, what NOT to use, and project stru
 - [Naming](docs/naming.md)
 - [Autonomy Model](docs/autonomy-model.md)
 - [User Profile](docs/user-profile.md)
+- [Intent Verification Protocol](docs/intent-verification.md)
+- [Project Lifecycle](docs/project-lifecycle.md)
+- [Multi-Session Safety](docs/multi-session-safety.md)
 - [Decision Records](docs/decisions/)

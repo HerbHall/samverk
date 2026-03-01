@@ -68,6 +68,20 @@ A $50/month Samverk bill that ships a product in 12 months instead of never is t
 
 The name Samverk comes from Icelandic/Old Norse -- "cooperative work." The founder lived in Iceland, and the name carries personal meaning while being a perfect description of what the framework does: many agents working together toward a shared goal.
 
+## Full Lifecycle, Not Just Execution
+
+Samverk doesn't just build projects -- it helps decide which projects to build in the first place. The lifecycle starts at the moment an idea enters the user's head and ends when the product ships:
+
+1. **Idea Intake** -- capture a half-baked thought from any device, any format
+2. **Research & Feasibility** -- competitive analysis, technical assessment, market gap identification
+3. **Go/No-Go** -- evidence-based decision to proceed, pivot, or kill
+4. **Requirements & Architecture** -- translate approved concepts into buildable specs
+5. **Scaffolding** -- create the repo, issues, and project infrastructure
+6. **Execution** -- the agent team builds it (dispatcher, QC, specialist agents)
+7. **Delivery** -- publish, deploy, announce
+
+The user provides ideas, creative direction, and approval at gates. Samverk provides the discipline, research, and legwork that a solo developer doesn't have time to manage. See [Project Lifecycle](project-lifecycle.md) for the full specification.
+
 ## What This Is Not
 
 - Not a synchronous AI coding assistant

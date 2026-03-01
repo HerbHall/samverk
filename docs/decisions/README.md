@@ -24,6 +24,9 @@ Decisions are recorded as ADR files in this directory.
 | [018](ADR-018-release-versioning.md) | Release Versioning and V1 Scope | Accepted |
 | [019](ADR-019-self-hosted-first.md) | Self-Hosted-First Development | Accepted |
 | [020](ADR-020-web-dashboard.md) | Web Dashboard for Operations | Accepted |
+| [021](ADR-021-intent-verification.md) | Intent Verification Protocol | Accepted |
+| [022](ADR-022-full-project-lifecycle.md) | Full Project Lifecycle — Idea to Delivery | Accepted |
+| [023](ADR-023-per-project-repos.md) | Per-Project Repos with Coordination Layer | Accepted |
 
 ## Open Decisions
 

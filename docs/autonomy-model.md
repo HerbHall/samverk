@@ -256,7 +256,9 @@ The immediate Claude Code fix for this project uses broad permissions:
 
 This is essentially Tier 1 for everything -- appropriate for a sandboxed dev project where the developer has reviewed the instructions. Samverk's production autonomy model is more nuanced but follows the same principle: match autonomy level to trust level and reversibility of the action.
 
-## Related Decisions
+## Related Documents
 
+- [Intent Verification Protocol](intent-verification.md) — pre-execution understanding verification (complements this permission model)
 - [ADR-015: Three-Tier Autonomy Model](decisions/ADR-015-three-tier-autonomy.md)
+- [ADR-021: Intent Verification Protocol](decisions/ADR-021-intent-verification.md)
 - [ADR-006: Async-First Architecture](decisions/ADR-006-async-first.md)
