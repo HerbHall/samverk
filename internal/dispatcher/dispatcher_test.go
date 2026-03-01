@@ -1,0 +1,692 @@
+package dispatcher
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/herbhall/samverk/internal/autonomy"
+	"github.com/herbhall/samverk/internal/forge"
+)
+
+// mockTracker implements forge.IssueTracker for testing.
+type mockTracker struct {
+	mu       sync.Mutex
+	issues   map[int]*forge.Issue
+	comments map[int][]*forge.Comment
+	calls    []string
+}
+
+func newMockTracker() *mockTracker {
+	return &mockTracker{
+		issues:   make(map[int]*forge.Issue),
+		comments: make(map[int][]*forge.Comment),
+	}
+}
+
+func (m *mockTracker) record(method string) {
+	m.mu.Lock()
+	m.calls = append(m.calls, method)
+	m.mu.Unlock()
+}
+
+func (m *mockTracker) CreateIssue(_ context.Context, req *forge.CreateIssueRequest) (*forge.Issue, error) {
+	m.record("CreateIssue")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	num := len(m.issues) + 1
+	issue := &forge.Issue{
+		Number:    num,
+		Title:     req.Title,
+		Body:      req.Body,
+		State:     forge.StateOpen,
+		Labels:    req.Labels,
+		Assignees: req.Assignees,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	m.issues[num] = issue
+	return issue, nil
+}
+
+func (m *mockTracker) GetIssue(_ context.Context, number int) (*forge.Issue, error) {
+	m.record("GetIssue")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	issue, ok := m.issues[number]
+	if !ok {
+		return nil, fmt.Errorf("issue #%d not found", number)
+	}
+	return issue, nil
+}
+
+func (m *mockTracker) UpdateIssue(_ context.Context, number int, req *forge.UpdateIssueRequest) (*forge.Issue, error) {
+	m.record("UpdateIssue")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	issue, ok := m.issues[number]
+	if !ok {
+		return nil, fmt.Errorf("issue #%d not found", number)
+	}
+	if req.Title != nil {
+		issue.Title = *req.Title
+	}
+	if req.Body != nil {
+		issue.Body = *req.Body
+	}
+	if req.State != nil {
+		issue.State = *req.State
+	}
+	issue.UpdatedAt = time.Now()
+	return issue, nil
+}
+
+func (m *mockTracker) ListIssues(_ context.Context, opts *forge.ListOptions) ([]*forge.Issue, error) {
+	m.record("ListIssues")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]*forge.Issue, 0)
+	for _, issue := range m.issues {
+		if opts != nil {
+			if opts.State != "" && issue.State != opts.State {
+				continue
+			}
+			if len(opts.Labels) > 0 && !hasAllLabels(issue.Labels, opts.Labels) {
+				continue
+			}
+		}
+		result = append(result, issue)
+	}
+	return result, nil
+}
+
+func hasAllLabels(issueLabels, required []string) bool {
+	set := make(map[string]bool, len(issueLabels))
+	for _, l := range issueLabels {
+		set[l] = true
+	}
+	for _, r := range required {
+		if !set[r] {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *mockTracker) AddComment(_ context.Context, number int, body string) (*forge.Comment, error) {
+	m.record("AddComment")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c := &forge.Comment{
+		ID:        int64(len(m.comments[number]) + 1),
+		Body:      body,
+		Author:    "dispatcher",
+		CreatedAt: time.Now(),
+	}
+	m.comments[number] = append(m.comments[number], c)
+	return c, nil
+}
+
+func (m *mockTracker) ListComments(_ context.Context, number int) ([]*forge.Comment, error) {
+	m.record("ListComments")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.comments[number], nil
+}
+
+func (m *mockTracker) SetLabels(_ context.Context, number int, labels []string) error {
+	m.record("SetLabels")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if issue, ok := m.issues[number]; ok {
+		issue.Labels = labels
+	}
+	return nil
+}
+
+func (m *mockTracker) AddLabel(_ context.Context, number int, label string) error {
+	m.record("AddLabel")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if issue, ok := m.issues[number]; ok {
+		for _, l := range issue.Labels {
+			if l == label {
+				return nil
+			}
+		}
+		issue.Labels = append(issue.Labels, label)
+	}
+	return nil
+}
+
+func (m *mockTracker) RemoveLabel(_ context.Context, number int, label string) error {
+	m.record("RemoveLabel")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if issue, ok := m.issues[number]; ok {
+		filtered := make([]string, 0, len(issue.Labels))
+		for _, l := range issue.Labels {
+			if l != label {
+				filtered = append(filtered, l)
+			}
+		}
+		issue.Labels = filtered
+	}
+	return nil
+}
+
+func (m *mockTracker) Assign(_ context.Context, number int, assignee string) error {
+	m.record("Assign")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if issue, ok := m.issues[number]; ok {
+		issue.Assignees = append(issue.Assignees, assignee)
+	}
+	return nil
+}
+
+func (m *mockTracker) Unassign(_ context.Context, number int, assignee string) error {
+	m.record("Unassign")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if issue, ok := m.issues[number]; ok {
+		filtered := make([]string, 0, len(issue.Assignees))
+		for _, a := range issue.Assignees {
+			if a != assignee {
+				filtered = append(filtered, a)
+			}
+		}
+		issue.Assignees = filtered
+	}
+	return nil
+}
+
+func (m *mockTracker) Watch(ctx context.Context, handler func(forge.Event)) error {
+	// The Watch method does nothing by default; tests send events directly.
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// --- Mock autonomy policy ---
+
+type mockPolicy struct {
+	costThreshold float64
+}
+
+func (p *mockPolicy) TierFor(_ autonomy.ActionType) autonomy.Tier {
+	return autonomy.Tier1
+}
+
+func (p *mockPolicy) RequiresConfirmation(_ autonomy.ActionType) bool {
+	return false
+}
+
+func (p *mockPolicy) CostThreshold() float64 {
+	return p.costThreshold
+}
+
+// --- Helper to build issue body with frontmatter ---
+
+func issueBody(agentType string, dependsOn []int) string {
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString("schema_version: \"1.0.0\"\n")
+	b.WriteString("type: task\n")
+	if agentType != "" {
+		fmt.Fprintf(&b, "agent_type: %s\n", agentType)
+	}
+	b.WriteString("priority: normal\n")
+	if len(dependsOn) > 0 {
+		b.WriteString("depends_on:\n")
+		for _, dep := range dependsOn {
+			fmt.Fprintf(&b, "  - %d\n", dep)
+		}
+	}
+	b.WriteString("---\n\n## Summary\n\nTest issue.\n")
+	return b.String()
+}
+
+func newTestDispatcher(tracker *mockTracker) *Dispatcher {
+	cfg := DefaultConfig()
+	// Use short intervals for tests.
+	cfg.HeartbeatInterval = 100 * time.Millisecond
+	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
+	return New(tracker, &mockPolicy{costThreshold: 5.0}, nil, cfg)
+}
+
+// --- Tests ---
+
+func TestNewDispatcher(t *testing.T) {
+	tracker := newMockTracker()
+	d := New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil)
+	if d == nil {
+		t.Fatal("expected non-nil dispatcher")
+	}
+	if d.config == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if d.config.MaxConsecutiveFailures != 3 {
+		t.Errorf("MaxConsecutiveFailures: got %d, want 3", d.config.MaxConsecutiveFailures)
+	}
+	if d.claimed == nil {
+		t.Fatal("expected non-nil claimed map")
+	}
+}
+
+func TestHandleOpened_ValidFrontmatter(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "Add widget",
+		Body:   issueBody("code-gen", nil),
+		State:  forge.StateOpen,
+		Labels: []string{"status:queued"},
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Issue should be claimed and assigned.
+	if !hasLabel(issue.Labels, "status:claimed") {
+		t.Error("expected status:claimed label")
+	}
+	if hasLabel(issue.Labels, "status:queued") {
+		t.Error("did not expect status:queued label after routing")
+	}
+	if len(issue.Assignees) == 0 || issue.Assignees[0] != "code-gen" {
+		t.Errorf("expected assignee code-gen, got %v", issue.Assignees)
+	}
+}
+
+func TestHandleOpened_InvalidAgentType(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "Bad type",
+		Body:   issueBody("nonexistent-type", nil),
+		State:  forge.StateOpen,
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("expected status:needs-human label for invalid agent type")
+	}
+}
+
+func TestHandleOpened_NoFrontmatter(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "Plain issue",
+		Body:   "No frontmatter here, just a plain issue body.",
+		State:  forge.StateOpen,
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("expected status:needs-human label for missing frontmatter")
+	}
+}
+
+func TestHandleOpened_WithDependencies_AllDone(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Create a closed dependency with status:done.
+	closedAt := time.Now()
+	tracker.issues[10] = &forge.Issue{
+		Number:   10,
+		State:    forge.StateClosed,
+		Labels:   []string{"status:done"},
+		ClosedAt: &closedAt,
+	}
+
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "Depends on #10",
+		Body:   issueBody("code-gen", []int{10}),
+		State:  forge.StateOpen,
+		Labels: []string{"status:queued"},
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should be routed, not blocked.
+	if hasLabel(issue.Labels, "status:blocked") {
+		t.Error("did not expect status:blocked -- dependency is done")
+	}
+	if !hasLabel(issue.Labels, "status:claimed") {
+		t.Error("expected status:claimed after routing")
+	}
+}
+
+func TestHandleOpened_WithDependencies_Blocked(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Dependency is open (not done).
+	tracker.issues[10] = &forge.Issue{
+		Number: 10,
+		State:  forge.StateOpen,
+		Labels: []string{"status:in-progress"},
+		Body:   issueBody("code-gen", nil),
+	}
+
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "Depends on #10",
+		Body:   issueBody("code-gen", []int{10}),
+		State:  forge.StateOpen,
+		Labels: []string{"status:queued"},
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !hasLabel(issue.Labels, "status:blocked") {
+		t.Error("expected status:blocked for unsatisfied dependency")
+	}
+}
+
+func TestHandleClosed_UnblocksDependents(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Dependency issue that will be closed.
+	closedAt := time.Now()
+	tracker.issues[10] = &forge.Issue{
+		Number:   10,
+		State:    forge.StateClosed,
+		Labels:   []string{"status:done"},
+		ClosedAt: &closedAt,
+	}
+
+	// Blocked issue waiting on #10.
+	tracker.issues[1] = &forge.Issue{
+		Number: 1,
+		Title:  "Blocked on #10",
+		Body:   issueBody("code-gen", []int{10}),
+		State:  forge.StateOpen,
+		Labels: []string{"status:blocked"},
+	}
+
+	err := d.handleClosed(context.Background(), forge.Event{
+		Type:        forge.EventIssueClosed,
+		IssueNumber: 10,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Issue #1 should be unblocked.
+	issue := tracker.issues[1]
+	if hasLabel(issue.Labels, "status:blocked") {
+		t.Error("expected status:blocked to be removed")
+	}
+	if !hasLabel(issue.Labels, "status:queued") {
+		t.Error("expected status:queued after unblock")
+	}
+}
+
+func TestDetectCycle_NoCycle(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Linear chain: 1 -> 2 -> 3 (no cycle).
+	tracker.issues[1] = &forge.Issue{Number: 1, State: forge.StateOpen, Body: issueBody("code-gen", []int{2})}
+	tracker.issues[2] = &forge.Issue{Number: 2, State: forge.StateOpen, Body: issueBody("code-gen", []int{3})}
+	tracker.issues[3] = &forge.Issue{Number: 3, State: forge.StateOpen, Body: issueBody("code-gen", nil)}
+
+	cycle, err := d.detectCycle(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cycle != nil {
+		t.Errorf("expected no cycle, got %v", cycle)
+	}
+}
+
+func TestDetectCycle_WithCycle(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Cycle: 1 -> 2 -> 3 -> 1.
+	tracker.issues[1] = &forge.Issue{Number: 1, State: forge.StateOpen, Body: issueBody("code-gen", []int{2})}
+	tracker.issues[2] = &forge.Issue{Number: 2, State: forge.StateOpen, Body: issueBody("code-gen", []int{3})}
+	tracker.issues[3] = &forge.Issue{Number: 3, State: forge.StateOpen, Body: issueBody("code-gen", []int{1})}
+
+	cycle, err := d.detectCycle(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cycle == nil {
+		t.Fatal("expected cycle, got nil")
+	}
+	// Cycle should contain all three nodes.
+	if len(cycle) < 3 {
+		t.Errorf("expected cycle of length >= 3, got %v", cycle)
+	}
+}
+
+func TestParseHeartbeat_Valid(t *testing.T) {
+	body := "HEARTBEAT [agent-codegen-1] [2026-02-28T10:30:00Z]\nprogress: 45%\nstatus: Running test suite"
+	hb := parseHeartbeat(body)
+	if hb == nil {
+		t.Fatal("expected non-nil heartbeat")
+	}
+	if hb.AgentID != "agent-codegen-1" {
+		t.Errorf("AgentID: got %q, want %q", hb.AgentID, "agent-codegen-1")
+	}
+	if hb.Progress != 45 {
+		t.Errorf("Progress: got %d, want 45", hb.Progress)
+	}
+	if hb.Status != "Running test suite" {
+		t.Errorf("Status: got %q, want %q", hb.Status, "Running test suite")
+	}
+	expectedTS, _ := time.Parse(time.RFC3339, "2026-02-28T10:30:00Z")
+	if !hb.Timestamp.Equal(expectedTS) {
+		t.Errorf("Timestamp: got %v, want %v", hb.Timestamp, expectedTS)
+	}
+}
+
+func TestParseHeartbeat_Invalid(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "plain comment", body: "This is just a regular comment."},
+		{name: "partial match", body: "HEARTBEAT without brackets"},
+		{name: "bad timestamp", body: "HEARTBEAT [agent-1] [not-a-timestamp]\nprogress: 50%\nstatus: working"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hb := parseHeartbeat(tt.body)
+			if hb != nil {
+				t.Errorf("expected nil heartbeat for %q, got %+v", tt.body, hb)
+			}
+		})
+	}
+}
+
+func TestCheckTimeouts_NoTimeout(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Claim an issue with a recent heartbeat.
+	d.mu.Lock()
+	d.claimed[1] = &claimedIssue{
+		AgentID:       "code-gen",
+		ClaimedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+	}
+	d.mu.Unlock()
+
+	tracker.issues[1] = &forge.Issue{
+		Number: 1,
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed"},
+	}
+
+	err := d.checkTimeouts(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Issue should still be claimed.
+	d.mu.Lock()
+	_, stillClaimed := d.claimed[1]
+	d.mu.Unlock()
+	if !stillClaimed {
+		t.Error("expected issue to remain claimed (no timeout)")
+	}
+}
+
+func TestCheckTimeouts_TimedOut(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Claim an issue with an old heartbeat.
+	d.mu.Lock()
+	d.claimed[1] = &claimedIssue{
+		AgentID:       "code-gen",
+		ClaimedAt:     time.Now().Add(-time.Hour),
+		LastHeartbeat: time.Now().Add(-time.Hour),
+	}
+	d.mu.Unlock()
+
+	tracker.issues[1] = &forge.Issue{
+		Number:    1,
+		State:     forge.StateOpen,
+		Labels:    []string{"status:claimed"},
+		Assignees: []string{"code-gen"},
+	}
+
+	err := d.checkTimeouts(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Issue should be released.
+	d.mu.Lock()
+	_, stillClaimed := d.claimed[1]
+	d.mu.Unlock()
+	if stillClaimed {
+		t.Error("expected issue to be released after timeout")
+	}
+
+	issue := tracker.issues[1]
+	if !hasLabel(issue.Labels, "status:queued") {
+		t.Error("expected status:queued after timeout release")
+	}
+}
+
+func TestCheckTimeouts_ThreeFailures(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Issue with 2 prior failures -- next timeout will be the 3rd.
+	d.mu.Lock()
+	d.claimed[1] = &claimedIssue{
+		AgentID:       "code-gen",
+		ClaimedAt:     time.Now().Add(-time.Hour),
+		LastHeartbeat: time.Now().Add(-time.Hour),
+		FailureCount:  2,
+	}
+	d.mu.Unlock()
+
+	tracker.issues[1] = &forge.Issue{
+		Number:    1,
+		State:     forge.StateOpen,
+		Labels:    []string{"status:claimed"},
+		Assignees: []string{"code-gen"},
+	}
+
+	err := d.checkTimeouts(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	issue := tracker.issues[1]
+	if !hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("expected status:needs-human after 3 consecutive failures")
+	}
+}
+
+func TestLoadConfig_Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.HeartbeatInterval != 10*time.Minute {
+		t.Errorf("HeartbeatInterval: got %v, want 10m", cfg.HeartbeatInterval)
+	}
+	if cfg.HeartbeatTimeoutMultiplier != 1.5 {
+		t.Errorf("HeartbeatTimeoutMultiplier: got %v, want 1.5", cfg.HeartbeatTimeoutMultiplier)
+	}
+	if cfg.MaxConsecutiveFailures != 3 {
+		t.Errorf("MaxConsecutiveFailures: got %d, want 3", cfg.MaxConsecutiveFailures)
+	}
+	if cfg.DependencyRecheckInterval != 2*time.Minute {
+		t.Errorf("DependencyRecheckInterval: got %v, want 2m", cfg.DependencyRecheckInterval)
+	}
+	if cfg.HeartbeatCheckInterval != 60*time.Second {
+		t.Errorf("HeartbeatCheckInterval: got %v, want 60s", cfg.HeartbeatCheckInterval)
+	}
+}
+
+// --- Helpers ---
+
+func hasLabel(labels []string, target string) bool {
+	for _, l := range labels {
+		if l == target {
+			return true
+		}
+	}
+	return false
+}
