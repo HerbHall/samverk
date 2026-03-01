@@ -2,6 +2,8 @@
 
 The MCP server is the bridge between the front-end agent (Claude on any device) and the Samverk back-end (Gitea + dispatcher + agents). It exposes project state and issue operations as MCP tools that Claude can call during check-in conversations.
 
+> **Implementation status:** Phase 2. This document serves as the specification. The `internal/mcp/` package currently contains only a placeholder. Implementation begins after the dispatcher is stable and the manual check-in prototype (Issue #11) validates the workflow.
+
 ## Architecture Position
 
 ```text
