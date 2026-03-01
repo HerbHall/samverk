@@ -7,21 +7,21 @@ Problems that must be resolved before or during development.
 - **Hierarchy depth calibration.** How does the orchestration layer determine appropriate depth for a given task? A bug fix doesn't need all layers. A new feature might. What's the decision logic?
 - **State persistence across sessions.** If the system is down for 8 hours, how does it resume without losing context? How is agent state serialized and restored?
 - **Production/QC deadlock arbitration.** When Production and QC agents disagree and neither will yield, what's the arbitration mechanism before escalating to the user?
-- **Task dependency management.** Agent B may depend on Agent A's output. How does the system manage the DAG of dependencies? What happens when a dependency fails?
+- ~~**Task dependency management.**~~ Resolved: Dispatcher implements full DAG with cycle detection, blocking, and automatic unblocking when dependencies complete. See [Dispatcher Design](dispatcher-design.md) and `internal/dispatcher/`.
 
 ## Cost and Resources
 
 - **Token budget granularity.** How are token budgets expressed? Per task? Per session? Per day? User-defined? Some combination?
 - **Model tier selection.** How does the system decide which model tier to use for a given task? What signals determine "this needs cloud" vs. "local is fine"?
 - **Cost reporting UX.** How is cost reported to the user in a way that's meaningful without being anxiety-inducing?
-- **Minimum hardware spec.** What's the minimum viable hardware spec for a useful local agent setup?
+- ~~**Minimum hardware spec.**~~ Resolved: Three tiers defined (minimum, recommended, optimal) with VRAM budgets. See [System Requirements](system-requirements.md).
 
 ## User Interface
 
 - ~~**Primary interface.**~~ Resolved: Chat (Claude + MCP) is the primary interface ([ADR-011](decisions/ADR-011-chat-as-interface.md)). Web dashboard handles operations ([ADR-020](decisions/ADR-020-web-dashboard.md)). See [Tech Stack](tech-stack.md).
 - **Mobile experience.** Native app, PWA, or mobile web?
 - **Developer tool integration.** How does Samverk integrate with VS Code, GitHub, etc.?
-- **Check-in digest design.** What does the check-in digest look like? How is blocked work prioritized for display?
+- ~~**Check-in digest design.**~~ Resolved: Digest format, data schema, and Go types defined. See [Check-in Digest Design](check-in-digest-design.md) and [Digest Data Schema](digest-data-schema.md).
 - **Direction input method.** How does the user provide direction asynchronously -- chat, structured forms, voice?
 
 ## Multi-Model and Providers
@@ -50,7 +50,7 @@ Problems that must be resolved before or during development.
 - **Maximum issue size.** What is the maximum useful issue size before context becomes unwieldy for agents?
 - **Code artifact handling.** How are file attachments / code artifacts handled in issues? Links to repo paths? Inline code blocks?
 - **Issue spike handling.** How does the dispatcher handle a sudden spike of 50 new issues? Priority queue design?
-- **Polling interval.** What's the right polling interval for agents watching the issue tracker? Too fast = API rate limit risk. Too slow = latency on task pickup.
+- ~~**Polling interval.**~~ Resolved: 1-minute default, configurable per forge adapter. See [Dispatcher Design](dispatcher-design.md).
 - **Webhook failure recovery.** How are webhook delivery failures handled? What's the polling fallback strategy?
 - **Forge outage handling.** How does the system handle a git forge being unreachable (self-hosted Gitea down)?
 - **Sub-task structure.** Should sub-tasks be child issues or checklist items within a parent issue? Child issues are trackable individually; checklists are simpler.
@@ -67,7 +67,7 @@ Problems that must be resolved before or during development.
 ## Autonomy and Trust
 
 - **Tier 3 block communication.** How does the system communicate a Tier 3 block to the user without creating anxiety? (The project is not broken -- one action is waiting.)
-- **Trust tier override scoping.** How are trust tier overrides scoped -- per project, per agent type, per action?
+- ~~**Trust tier override scoping.**~~ Resolved: Per-agent and per-branch overrides with full precedence chain (branch > agent > global > system default). See `internal/autonomy/` and [Autonomy Model](autonomy-model.md).
 - **Temporary tier promotion.** Can trust tiers be promoted temporarily? ("Auto-approve merges for the next 2 hours")
 - ~~**Unanticipated action classification.**~~ Partially resolved: Intent Verification Protocol (ADR-021) defines concern flagging for discovered conflicts during execution, and tier classification heuristics default to rounding UP when signals are ambiguous. Remaining question: should unclassifiable actions hard-block or default to Tier 3? See [Intent Verification Protocol](intent-verification.md).
 - **Audit log format.** What is the audit log format for Tier 1 and Tier 2 actions reviewed at check-in?
@@ -123,6 +123,6 @@ Problems that must be resolved before or during development.
 
 - ~~**V1 scope.**~~ Resolved in [ADR-018](decisions/ADR-018-release-versioning.md). Three-phase: v0.0.1 alpha, v0.1 beta, v1.0 public.
 - ~~**Hosting model.**~~ Resolved in [ADR-019](decisions/ADR-019-self-hosted-first.md). Self-hosted-first, cloud as fallback.
-- **Server platform.** Unraid vs Proxmox vs Windows for the dedicated project server. RTX 3090 Ti available. Needs research spike.
+- ~~**Server platform.**~~ Resolved: Proxmox VE selected, running at 192.168.1.203 with GPU passthrough (RTX 3090 Ti). See [Ollama VM Setup](ollama-vm-setup.md) and [Gitea Setup](gitea-setup.md).
 - **Dogfooding.** How does Samverk itself get built -- can Subnetree serve as the dogfood project?
 - **Licensing model.** What fits the target user -- subscription, usage-based, open core?

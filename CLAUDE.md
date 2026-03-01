@@ -5,13 +5,13 @@ Async background development engine -- keeps your project building while you liv
 ## Quick Start
 
 ```bash
-# No build steps yet -- concept phase
-# Future:
-make install   # Install dependencies
-make build     # Build the project
-make test      # Run tests
-make lint      # Run linters
-make run       # Start the system
+make build     # Build binary to bin/samverk
+make test      # Run all tests
+make lint      # Run golangci-lint
+make lint-md   # Run markdownlint
+make ci        # Run build + test + lint (full CI locally)
+make hooks     # Install pre-push git hook
+make run       # Build and start samverk serve
 ```
 
 ## Project Structure

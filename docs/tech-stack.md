@@ -29,13 +29,13 @@ Can be split into separate binaries later if deployment topology demands it. Sin
 | CLI framework | `spf13/cobra` | Standard Go CLI framework, subcommand pattern |
 | GitHub API | `google/go-github/v68` | Mature, well-maintained, covers full Issues/PRs API |
 | Gitea API | `code.gitea.io/sdk/gitea` | Official SDK, mirrors GitHub API patterns |
-| Claude API | `anthropics/anthropic-sdk-go` | Official Go SDK |
-| OpenAI/GPT-4 | `sashabaranov/go-openai` | Most popular Go client, supports all endpoints |
-| Ollama (local) | Raw `net/http` | Ollama's REST API is trivial (3 endpoints). No SDK needed. |
-| Docker mgmt | `docker/docker/client` | Manage local agent containers programmatically |
-| Config (YAML) | `gopkg.in/yaml.v3` | Direct YAML parsing for `.samverk/*.yaml`. Viper is overkill -- no env var layering needed since config is file-based. |
-| Logging | `uber-go/zap` | Structured logging, fast, consistent with SubNetree |
-| SQLite | `modernc.org/sqlite` | Pure Go (no CGO required), for local state persistence |
+| Claude API | `anthropics/anthropic-sdk-go` | Official Go SDK *(Phase 2 -- not yet in go.mod)* |
+| OpenAI/GPT-4 | `sashabaranov/go-openai` | Most popular Go client, supports all endpoints *(Phase 2 -- not yet in go.mod)* |
+| Ollama (local) | Raw `net/http` | Ollama's REST API is trivial (3 endpoints). No SDK needed. **Implemented.** |
+| Docker mgmt | `docker/docker/client` | Manage local agent containers programmatically *(Phase 2 -- not yet in go.mod)* |
+| Config (YAML) | `gopkg.in/yaml.v3` | Direct YAML parsing for `.samverk/*.yaml`. Viper is overkill -- no env var layering needed since config is file-based. **Implemented.** |
+| Logging | `uber-go/zap` | Structured logging, fast, consistent with SubNetree *(Phase 2 -- not yet in go.mod)* |
+| SQLite | `modernc.org/sqlite` | Pure Go (no CGO required), for local state persistence. **Implemented.** |
 
 ### What NOT to Use
 
@@ -69,6 +69,8 @@ The chat (Claude + MCP) is the primary interface for project progress and decisi
 The React SPA is embedded in the Go binary via `embed.FS`. Single binary deployment stays intact -- no separate web server process, no CORS, no reverse proxy.
 
 ### Dashboard Scope
+
+> **Note:** Dashboard implementation is Phase 2. The sections below describe the target design; implementation starts after dispatcher and MCP server are stable.
 
 | Section | Purpose |
 |---------|---------|

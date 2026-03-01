@@ -58,7 +58,12 @@ Not targeting: enterprise teams, AI engineers, or full-time developers who can s
 
 - [Concept and Problem Space](docs/concept.md)
 - [Architecture](docs/architecture.md)
+- [Tech Stack](docs/tech-stack.md)
 - [Communication Protocol](docs/communication-protocol.md)
+- [Dispatcher Design](docs/dispatcher-design.md)
+- [Autonomy Model](docs/autonomy-model.md)
+- [User Profile](docs/user-profile.md)
+- [System Requirements](docs/system-requirements.md)
 - [Competitive Landscape](docs/competitive.md)
 - [Cost Model](docs/cost-model.md)
 - [User Interface](docs/user-interface.md)
@@ -68,7 +73,9 @@ Not targeting: enterprise teams, AI engineers, or full-time developers who can s
 
 ## Status
 
-Early concept / research phase. Active development has not yet begun.
+**Phase 1 complete.** Core components implemented: dispatcher routing, frontmatter parser, profile store, SQLite persistence, GitHub and Gitea forge adapters, Ollama provider, autonomy policy engine. 72 tests passing across 8 packages.
+
+Next: Issue #11 (manual check-in prototype), then Phase 2 (MCP server, web dashboard, cloud providers).
 
 ## Related Projects
 
