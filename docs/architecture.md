@@ -91,14 +91,18 @@ Cold start latency (30-90 seconds to spin up a container and load a model) is NO
               Always-running, watches issue tracker
               Routes work, checks dependencies
                         |
-          +---------+---------+---------+
-          |         |         |         |
-      CODE-GEN   TEST      DOCS     RESEARCH
-      (local)    (local)   (local)   (cloud)
-          |         |         |         |
-          QC        QC        QC        QC
-      (validates each agent's output)
+    ┌─────────┬─────────┼─────────┬─────────┐
+    |         |         |         |         |
+IDEATION  FEASIBILITY  CODE-GEN  TEST     DOCS
+(cloud)   (cloud)      (local)   (local)  (local)
+    |         |         |         |         |
+ RESEARCH   LEGAL    RESEARCH    QC        QC
+ (cloud)   (cloud)   (cloud)
+    |                   |
+    QC                  QC
 ```
+
+Pre-project agents (ideation, feasibility, legal) operate in Phases 1-5. Execution agents (code-gen, test, docs) operate in Phase 6. Research spans both — it supports feasibility analysis before a project exists and technical investigation during execution. See [Project Lifecycle](project-lifecycle.md) for the full seven-phase model.
 
 ## Web Dashboard
 

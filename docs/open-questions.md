@@ -69,8 +69,47 @@ Problems that must be resolved before or during development.
 - **Tier 3 block communication.** How does the system communicate a Tier 3 block to the user without creating anxiety? (The project is not broken -- one action is waiting.)
 - **Trust tier override scoping.** How are trust tier overrides scoped -- per project, per agent type, per action?
 - **Temporary tier promotion.** Can trust tiers be promoted temporarily? ("Auto-approve merges for the next 2 hours")
-- **Unanticipated action classification.** How does the system detect when an agent is about to take an action that was not anticipated at design time -- and what tier does it default to?
+- ~~**Unanticipated action classification.**~~ Partially resolved: Intent Verification Protocol (ADR-021) defines concern flagging for discovered conflicts during execution, and tier classification heuristics default to rounding UP when signals are ambiguous. Remaining question: should unclassifiable actions hard-block or default to Tier 3? See [Intent Verification Protocol](intent-verification.md).
 - **Audit log format.** What is the audit log format for Tier 1 and Tier 2 actions reviewed at check-in?
+
+## Multi-Session Coordination
+
+*Discovered 2026-03-01: Two sessions (claude.ai + Claude Code) worked on the same repo simultaneously. No file conflicts occurred by luck (docs vs code), but there was no mechanism to detect, prevent, or coordinate this. The uncommitted docs from claude.ai could have been overwritten or missed entirely if the CC session had also edited docs.*
+
+- **Parallel session awareness.** When multiple AI sessions (or human + AI) work on the same project concurrently, how does Samverk detect and coordinate this? Git branch isolation helps for code, but docs and config files are shared surfaces.
+- **Uncommitted work handoff.** When one session ends with uncommitted changes, how is the next session informed? CLAUDE.md handoff sections work but are fragile — the receiving session has to read CLAUDE.md before touching anything, and nothing enforces that.
+- **Session state persistence.** A chat session (claude.ai, mobile) has no persistent state beyond memory. Design decisions, context, and rationale from that session evaporate unless explicitly written to files. How does Samverk ensure that session-generated knowledge is captured before the session ends?
+- **"I'll forget" safeguard.** The user explicitly said "I will forget" about uncommitted work. This is a predictable failure mode for the target user (solo dev with limited time, context-switching between devices). Samverk should detect and surface uncommitted work, pending decisions, and stale handoff notes at check-in.
+- **Cross-session conflict prevention.** Should Samverk use advisory locks, branch conventions, or a "session registry" to prevent two agents (or an agent and user) from editing the same files concurrently?
+- **User as participant, not superuser.** Long-term, the user should work through the same issue checkout / branch / PR / QC pipeline as agents. This eliminates the "most dangerous actor" problem where the user has the most access and the least structure. Design questions: When should this be enforced vs. optional? How does the user "break glass" for emergencies? Does the user's QC gate differ from an agent's?
+- **Uncommitted work detection at check-in.** The check-in digest should scan active project repos for uncommitted changes, stale branches, and pending handoff notes. This catches the "I'll forget" failure mode automatically.
+
+## Multi-Project Architecture
+
+*Decided in ADR-023: per-project repos with coordination layer. These implementation questions remain.*
+
+- **Project registry format.** Config file (YAML/TOML) or database table? The registry maps project names to forge URLs, lifecycle phases, and autonomy overrides. It must survive a Samverk reinstall.
+- **Dispatcher multi-repo polling.** The dispatcher must watch issue trackers across multiple forges simultaneously. What's the polling strategy? Per-project poll intervals? Webhook registration where supported?
+- **Gitea-to-GitHub issue migration.** When a project moves from Gitea (development) to GitHub (release), how are issues migrated? Samverk's forge abstraction can read from one and write to the other, but what about issue cross-references, comment history, and label recreation?
+- **Pre-repo idea storage.** Ideas (Phase 1) and research (Phase 2) exist before a project repo does. They currently live in `D:\Project Ideas\` as local files. When should they move into the coordination layer, and what does that storage look like?
+- **Samverk bootstrap dependency.** Samverk managing its own development creates a circular dependency: the framework must be functional enough to manage its own backlog. At what point does Samverk "eat its own dog food" vs. using manual processes?
+
+## Project Lifecycle
+
+- **Idea intake from multiple devices.** How does a text message or voice note from a phone get into the Samverk idea pipeline? MCP from mobile? Dedicated intake endpoint? Email-to-issue gateway?
+- **Research agent web access.** Research and feasibility agents need web search, GitHub/npm/Docker Hub queries, and possibly API exploration. What tools and permissions do they need? How are search costs tracked?
+- **Feasibility document standards.** What's the minimum viable feasibility deliverable? How do we prevent research from becoming unbounded scope creep? What signals tell the research agent "you have enough — produce the assessment"?
+- **Multi-project resource allocation.** When multiple ideas are in the pipeline at different phases, how does the dispatcher prioritize research tokens and agent time across them?
+- **Parked idea revival.** How does a parked idea get back into the pipeline? User request only, or can the system suggest reviving a parked idea when new information makes it more viable?
+- **Kill rationale preservation.** When an idea is killed, how is the rationale preserved so the user (or a future agent) doesn't re-research the same dead end?
+- **Research-to-execution handoff.** The feasibility and requirements phases produce documents (HANDOFF.md, ARCHITECTURE.md, etc.). How do execution agents consume these — full context injection, or structured references?
+
+## Intent Verification
+
+- **Tier classification accuracy.** How do we measure whether agents are classifying tasks into the correct IVP tier? What's the feedback mechanism when a Tier 1 classification leads to rework?
+- **Verification latency budget.** What's the acceptable time cost for Tier 2 and Tier 3 verification exchanges in an async system? How long should a director wait for a worker's Tier 2 confirmation before timing out?
+- **Concern flag noise.** How do we prevent workers from over-flagging routine complexity as concerns? What's the threshold between "expected difficulty" and "genuine assumption conflict"?
+- **Calibration data collection.** What telemetry is needed to track IVP tier classifications vs. outcomes (rework events, successful completions) for heuristic refinement?
 
 ## User Profile
 
