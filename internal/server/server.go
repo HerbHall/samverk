@@ -14,7 +14,7 @@ import (
 // Config holds server configuration.
 type Config struct {
 	Addr       string       // listen address, e.g. ":8080"
-	AuthToken  string       // Bearer token for MCP auth; empty disables auth
+	AuthToken  string       //nolint:gosec // G117: config field, not a hardcoded secret
 	MCPHandler http.Handler // optional MCP protocol handler; nil keeps the 501 placeholder
 }
 
