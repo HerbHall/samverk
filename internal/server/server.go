@@ -14,6 +14,7 @@ import (
 // Config holds server configuration.
 type Config struct {
 	Addr       string       // listen address, e.g. ":8080"
+	AuthToken  string       //nolint:gosec // G117: config field, not a hardcoded secret
 	MCPHandler http.Handler // optional MCP protocol handler; nil keeps the 501 placeholder
 }
 
@@ -109,7 +110,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
 	if s.cfg.MCPHandler != nil {
-		s.mux.Handle("POST /mcp", s.cfg.MCPHandler)
+		handler := s.cfg.MCPHandler
+		if s.cfg.AuthToken != "" {
+			handler = BearerAuth(s.cfg.AuthToken)(handler)
+		}
+		s.mux.Handle("POST /mcp", handler)
 	} else {
 		s.mux.HandleFunc("POST /mcp", s.handleNotImplemented)
 	}
