@@ -19,10 +19,30 @@ import (
 // mockTracker implements forge.IssueTracker for testing.
 type mockTracker struct {
 	issues []*forge.Issue
+
+	// Capture calls for verification.
+	addLabelCalls    []labelCall
+	removeLabelCalls []labelCall
+	addCommentCalls  []commentCall
+	createIssueCalls []*forge.CreateIssueRequest
 }
 
-func (m *mockTracker) CreateIssue(_ context.Context, _ *forge.CreateIssueRequest) (*forge.Issue, error) {
-	return nil, nil
+type labelCall struct {
+	Number int
+	Label  string
+}
+
+type commentCall struct {
+	Number int
+	Body   string
+}
+
+func (m *mockTracker) CreateIssue(_ context.Context, req *forge.CreateIssueRequest) (*forge.Issue, error) {
+	m.createIssueCalls = append(m.createIssueCalls, req)
+	return &forge.Issue{
+		Number: 99,
+		Title:  req.Title,
+	}, nil
 }
 
 func (m *mockTracker) GetIssue(_ context.Context, number int) (*forge.Issue, error) {
@@ -67,8 +87,13 @@ func hasAllLabels(issueLabels, required []string) bool {
 	return true
 }
 
-func (m *mockTracker) AddComment(_ context.Context, _ int, _ string) (*forge.Comment, error) {
-	return nil, nil
+func (m *mockTracker) AddComment(_ context.Context, number int, body string) (*forge.Comment, error) {
+	m.addCommentCalls = append(m.addCommentCalls, commentCall{Number: number, Body: body})
+	return &forge.Comment{
+		ID:     42,
+		Body:   body,
+		Author: "test",
+	}, nil
 }
 
 func (m *mockTracker) ListComments(_ context.Context, _ int) ([]*forge.Comment, error) {
@@ -76,11 +101,20 @@ func (m *mockTracker) ListComments(_ context.Context, _ int) ([]*forge.Comment, 
 }
 
 func (m *mockTracker) SetLabels(_ context.Context, _ int, _ []string) error { return nil }
-func (m *mockTracker) AddLabel(_ context.Context, _ int, _ string) error    { return nil }
-func (m *mockTracker) RemoveLabel(_ context.Context, _ int, _ string) error { return nil }
-func (m *mockTracker) Assign(_ context.Context, _ int, _ string) error      { return nil }
-func (m *mockTracker) Unassign(_ context.Context, _ int, _ string) error    { return nil }
-func (m *mockTracker) Watch(_ context.Context, _ func(forge.Event)) error   { return nil }
+
+func (m *mockTracker) AddLabel(_ context.Context, number int, label string) error {
+	m.addLabelCalls = append(m.addLabelCalls, labelCall{Number: number, Label: label})
+	return nil
+}
+
+func (m *mockTracker) RemoveLabel(_ context.Context, number int, label string) error {
+	m.removeLabelCalls = append(m.removeLabelCalls, labelCall{Number: number, Label: label})
+	return nil
+}
+
+func (m *mockTracker) Assign(_ context.Context, _ int, _ string) error    { return nil }
+func (m *mockTracker) Unassign(_ context.Context, _ int, _ string) error  { return nil }
+func (m *mockTracker) Watch(_ context.Context, _ func(forge.Event)) error { return nil }
 
 // mockCostSource implements digest.CostSource for testing.
 type mockCostSource struct {
@@ -189,20 +223,23 @@ func TestToolsListDiscovery(t *testing.T) {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 
-	// Verify both tools are registered.
+	// Verify all tools are registered.
 	toolNames := make(map[string]bool)
 	for _, tool := range result.Tools {
 		toolNames[tool.Name] = true
 	}
 
-	if !toolNames["get_digest"] {
-		t.Error("get_digest tool not found in tools/list")
+	expectedTools := []string{
+		"get_digest", "get_cost_summary",
+		"add_label", "remove_label", "add_comment", "create_issue",
 	}
-	if !toolNames["get_cost_summary"] {
-		t.Error("get_cost_summary tool not found in tools/list")
+	for _, name := range expectedTools {
+		if !toolNames[name] {
+			t.Errorf("%s tool not found in tools/list", name)
+		}
 	}
-	if len(result.Tools) != 2 {
-		t.Errorf("expected 2 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 6 {
+		t.Errorf("expected 6 tools, got %d", len(result.Tools))
 	}
 }
 
@@ -429,5 +466,446 @@ func TestMCPServerInfo(t *testing.T) {
 
 	if initResult.ServerInfo.Name != "samverk" {
 		t.Errorf("server name = %q, want %q", initResult.ServerInfo.Name, "samverk")
+	}
+}
+
+func TestAddLabelTool(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      10,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "add_label",
+			"arguments": map[string]any{
+				"issue_number": 42,
+				"label":        "bug",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+
+	text := result.Content[0].Text
+	if !strings.Contains(text, "bug") {
+		t.Errorf("response missing label name, got %q", text)
+	}
+	if !strings.Contains(text, "#42") {
+		t.Errorf("response missing issue number, got %q", text)
+	}
+
+	if len(tracker.addLabelCalls) != 1 {
+		t.Fatalf("expected 1 AddLabel call, got %d", len(tracker.addLabelCalls))
+	}
+	if tracker.addLabelCalls[0].Number != 42 || tracker.addLabelCalls[0].Label != "bug" {
+		t.Errorf("AddLabel called with %+v, want {42, bug}", tracker.addLabelCalls[0])
+	}
+}
+
+func TestAddLabelToolValidation(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	tests := []struct {
+		name string
+		args map[string]any
+	}{
+		{"zero issue number", map[string]any{"issue_number": 0, "label": "bug"}},
+		{"negative issue number", map[string]any{"issue_number": -1, "label": "bug"}},
+		{"empty label", map[string]any{"issue_number": 1, "label": ""}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			respBody := postJSON(t, ts.URL, jsonRPCRequest{
+				JSONRPC: "2.0",
+				ID:      11,
+				Method:  "tools/call",
+				Params: map[string]any{
+					"name":      "add_label",
+					"arguments": tt.args,
+				},
+			})
+
+			var resp jsonRPCResponse
+			if err := json.Unmarshal(respBody, &resp); err != nil {
+				t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+			}
+
+			// Either protocol-level error or isError=true in result.
+			if resp.Error != nil {
+				return
+			}
+
+			var result callToolResult
+			if err := json.Unmarshal(resp.Result, &result); err != nil {
+				t.Fatalf("unmarshal result: %v", err)
+			}
+			if !result.IsError {
+				t.Error("expected isError=true for invalid input")
+			}
+		})
+	}
+}
+
+func TestRemoveLabelTool(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      12,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "remove_label",
+			"arguments": map[string]any{
+				"issue_number": 7,
+				"label":        "wontfix",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+
+	text := result.Content[0].Text
+	if !strings.Contains(text, "wontfix") {
+		t.Errorf("response missing label name, got %q", text)
+	}
+	if !strings.Contains(text, "#7") {
+		t.Errorf("response missing issue number, got %q", text)
+	}
+
+	if len(tracker.removeLabelCalls) != 1 {
+		t.Fatalf("expected 1 RemoveLabel call, got %d", len(tracker.removeLabelCalls))
+	}
+	if tracker.removeLabelCalls[0].Number != 7 || tracker.removeLabelCalls[0].Label != "wontfix" {
+		t.Errorf("RemoveLabel called with %+v, want {7, wontfix}", tracker.removeLabelCalls[0])
+	}
+}
+
+func TestRemoveLabelToolValidation(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	tests := []struct {
+		name string
+		args map[string]any
+	}{
+		{"zero issue number", map[string]any{"issue_number": 0, "label": "bug"}},
+		{"empty label", map[string]any{"issue_number": 1, "label": ""}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			respBody := postJSON(t, ts.URL, jsonRPCRequest{
+				JSONRPC: "2.0",
+				ID:      13,
+				Method:  "tools/call",
+				Params: map[string]any{
+					"name":      "remove_label",
+					"arguments": tt.args,
+				},
+			})
+
+			var resp jsonRPCResponse
+			if err := json.Unmarshal(respBody, &resp); err != nil {
+				t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+			}
+
+			if resp.Error != nil {
+				return
+			}
+
+			var result callToolResult
+			if err := json.Unmarshal(resp.Result, &result); err != nil {
+				t.Fatalf("unmarshal result: %v", err)
+			}
+			if !result.IsError {
+				t.Error("expected isError=true for invalid input")
+			}
+		})
+	}
+}
+
+func TestAddCommentTool(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      14,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "add_comment",
+			"arguments": map[string]any{
+				"issue_number": 5,
+				"body":         "This looks good to merge.",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+
+	// Response should be JSON with comment_id and issue_number.
+	var commentResult map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &commentResult); err != nil {
+		t.Fatalf("expected JSON response, got %q: %v", result.Content[0].Text, err)
+	}
+
+	if commentResult["comment_id"] != float64(42) {
+		t.Errorf("comment_id = %v, want 42", commentResult["comment_id"])
+	}
+	if commentResult["issue_number"] != float64(5) {
+		t.Errorf("issue_number = %v, want 5", commentResult["issue_number"])
+	}
+
+	if len(tracker.addCommentCalls) != 1 {
+		t.Fatalf("expected 1 AddComment call, got %d", len(tracker.addCommentCalls))
+	}
+	if tracker.addCommentCalls[0].Number != 5 {
+		t.Errorf("AddComment issue number = %d, want 5", tracker.addCommentCalls[0].Number)
+	}
+	if tracker.addCommentCalls[0].Body != "This looks good to merge." {
+		t.Errorf("AddComment body = %q, want %q", tracker.addCommentCalls[0].Body, "This looks good to merge.")
+	}
+}
+
+func TestAddCommentToolValidation(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	tests := []struct {
+		name string
+		args map[string]any
+	}{
+		{"zero issue number", map[string]any{"issue_number": 0, "body": "hello"}},
+		{"empty body", map[string]any{"issue_number": 1, "body": ""}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			respBody := postJSON(t, ts.URL, jsonRPCRequest{
+				JSONRPC: "2.0",
+				ID:      15,
+				Method:  "tools/call",
+				Params: map[string]any{
+					"name":      "add_comment",
+					"arguments": tt.args,
+				},
+			})
+
+			var resp jsonRPCResponse
+			if err := json.Unmarshal(respBody, &resp); err != nil {
+				t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+			}
+
+			if resp.Error != nil {
+				return
+			}
+
+			var result callToolResult
+			if err := json.Unmarshal(resp.Result, &result); err != nil {
+				t.Fatalf("unmarshal result: %v", err)
+			}
+			if !result.IsError {
+				t.Error("expected isError=true for invalid input")
+			}
+		})
+	}
+}
+
+func TestCreateIssueTool(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      16,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "create_issue",
+			"arguments": map[string]any{
+				"title":     "Fix login bug",
+				"body":      "Users cannot log in when...",
+				"labels":    []string{"bug", "priority:high"},
+				"assignees": []string{"alice"},
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+
+	// Response should be JSON with issue_number and title.
+	var issueResult map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &issueResult); err != nil {
+		t.Fatalf("expected JSON response, got %q: %v", result.Content[0].Text, err)
+	}
+
+	if issueResult["issue_number"] != float64(99) {
+		t.Errorf("issue_number = %v, want 99", issueResult["issue_number"])
+	}
+	if issueResult["title"] != "Fix login bug" {
+		t.Errorf("title = %v, want %q", issueResult["title"], "Fix login bug")
+	}
+
+	if len(tracker.createIssueCalls) != 1 {
+		t.Fatalf("expected 1 CreateIssue call, got %d", len(tracker.createIssueCalls))
+	}
+	req := tracker.createIssueCalls[0]
+	if req.Title != "Fix login bug" {
+		t.Errorf("CreateIssue title = %q, want %q", req.Title, "Fix login bug")
+	}
+	if req.Body != "Users cannot log in when..." {
+		t.Errorf("CreateIssue body = %q, want %q", req.Body, "Users cannot log in when...")
+	}
+	if len(req.Labels) != 2 {
+		t.Errorf("CreateIssue labels count = %d, want 2", len(req.Labels))
+	}
+	if len(req.Assignees) != 1 || req.Assignees[0] != "alice" {
+		t.Errorf("CreateIssue assignees = %v, want [alice]", req.Assignees)
+	}
+}
+
+func TestCreateIssueToolMinimal(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      17,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "create_issue",
+			"arguments": map[string]any{
+				"title": "Simple issue",
+				"body":  "Just a body.",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+
+	// Verify mock was called without labels/assignees.
+	if len(tracker.createIssueCalls) != 1 {
+		t.Fatalf("expected 1 CreateIssue call, got %d", len(tracker.createIssueCalls))
+	}
+	req := tracker.createIssueCalls[0]
+	if len(req.Labels) != 0 {
+		t.Errorf("CreateIssue labels = %v, want empty", req.Labels)
+	}
+	if len(req.Assignees) != 0 {
+		t.Errorf("CreateIssue assignees = %v, want empty", req.Assignees)
+	}
+}
+
+func TestCreateIssueToolValidation(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServer(t, tracker, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      18,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "create_issue",
+			"arguments": map[string]any{
+				"title": "",
+				"body":  "Some body",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+
+	if resp.Error != nil {
+		return
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected isError=true for empty title")
 	}
 }
