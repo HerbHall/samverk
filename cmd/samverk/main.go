@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge/github"
+	"github.com/herbhall/samverk/internal/server"
 	"github.com/herbhall/samverk/internal/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
@@ -31,13 +35,27 @@ func main() {
 }
 
 func serveCmd() *cobra.Command {
-	return &cobra.Command{
+	var addr string
+
+	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the HTTP server (MCP + API + dashboard)",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("samverk serve: not yet implemented")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer cancel()
+
+			s := server.New(server.Config{Addr: addr})
+			slog.Info("starting samverk server", "addr", addr)
+
+			if err := s.Start(ctx); err != nil {
+				return fmt.Errorf("server error: %w", err)
+			}
+			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address")
+	return cmd
 }
 
 func dispatchCmd() *cobra.Command {
