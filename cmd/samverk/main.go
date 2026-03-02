@@ -48,6 +48,12 @@ func serveCmd() *cobra.Command {
 
 			cfg := server.Config{Addr: addr}
 
+			// Wire Bearer token auth for MCP endpoint.
+			cfg.AuthToken = os.Getenv("SAMVERK_AUTH_TOKEN")
+			if cfg.AuthToken != "" {
+				slog.Info("MCP authentication enabled")
+			}
+
 			// Wire MCP handler if GitHub credentials are available.
 			token := os.Getenv("GITHUB_TOKEN")
 			if owner == "" {
