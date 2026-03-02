@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -20,13 +21,17 @@ type Server struct {
 	cfg    Config
 	mux    *http.ServeMux
 	server *http.Server
+
+	mu         sync.Mutex
+	listenAddr string
 }
 
 // New creates a new Server with routes registered.
 func New(cfg Config) *Server {
 	s := &Server{
-		cfg: cfg,
-		mux: http.NewServeMux(),
+		cfg:        cfg,
+		mux:        http.NewServeMux(),
+		listenAddr: cfg.Addr,
 	}
 
 	s.server = &http.Server{
@@ -41,8 +46,11 @@ func New(cfg Config) *Server {
 
 // Addr returns the address the server is listening on.
 // This is useful in tests when Addr is ":0" (random port).
+// Safe for concurrent use.
 func (s *Server) Addr() string {
-	return s.server.Addr
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.listenAddr
 }
 
 // Handler returns the underlying http.Handler for use in httptest.NewServer.
@@ -59,10 +67,13 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("listen %s: %w", s.cfg.Addr, err)
 	}
 
-	// Update Addr to the actual bound address (matters when port is 0).
-	s.server.Addr = ln.Addr().String()
+	// Store the actual bound address (matters when port is 0).
+	actual := ln.Addr().String()
+	s.mu.Lock()
+	s.listenAddr = actual
+	s.mu.Unlock()
 
-	slog.Info("server listening", "addr", s.server.Addr)
+	slog.Info("server listening", "addr", actual)
 
 	serveErr := make(chan error, 1)
 	go func() {
