@@ -1,4 +1,5 @@
-root = true
+# Inherit from D:\DevSpace\.editorconfig (DevKit standard)
+root = false
 
 [*]
 charset = utf-8
