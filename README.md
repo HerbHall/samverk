@@ -73,9 +73,13 @@ Not targeting: enterprise teams, AI engineers, or full-time developers who can s
 
 ## Status
 
-**Phase 1 complete.** Core components implemented: dispatcher routing, frontmatter parser, profile store, SQLite persistence, GitHub and Gitea forge adapters, Ollama provider, autonomy policy engine. 72 tests passing across 8 packages.
+**Phase 2 complete.** Core infrastructure operational with MCP server, check-in digest, and end-to-end validation (GO decision). 118 tests passing across 11 packages.
 
-Next: Issue #11 (manual check-in prototype), then Phase 2 (MCP server, web dashboard, cloud providers).
+**Phase 1** delivered: dispatcher routing, frontmatter parser, profile store, SQLite persistence, GitHub and Gitea forge adapters, Ollama provider, autonomy policy engine.
+
+**Phase 2** delivered: HTTP server with health endpoint, MCP handler (get_digest + get_cost_summary tools via Streamable HTTP), cost tracking adapter, check-in digest prototype, label taxonomy (47 labels), front-end agent system prompt design.
+
+Next: Phase 3 -- wire remaining forge ops as MCP tools, session recording, Claude Desktop integration, authentication middleware, web dashboard.
 
 ## Related Projects
 
