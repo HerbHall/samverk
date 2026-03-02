@@ -24,13 +24,15 @@ samverk/
 │   ├── api/                   # REST API handlers for dashboard
 │   ├── mcp/                   # MCP protocol handler (Streamable HTTP)
 │   ├── dispatcher/            # Issue watcher, task router, dependency DAG
+│   ├── digest/                # Check-in digest builder and formatting
 │   ├── forge/                 # IssueTracker interface + GitHub/Gitea impls
 │   ├── agent/                 # Agent runtime, container management
 │   ├── provider/              # AI provider clients (Claude, OpenAI, Ollama)
 │   ├── autonomy/              # Trust tier evaluation engine
 │   ├── profile/               # User profile management
 │   ├── cost/                  # Token tracking, budget, attribution
-│   └── store/                 # SQLite persistence layer
+│   ├── store/                 # SQLite persistence layer
+│   └── version/               # Build version injection (ldflags)
 ├── pkg/models/                # Shared types (Issue, Agent, Action, etc.)
 ├── web/                       # React SPA dashboard (Vite + TypeScript)
 ├── docs/                      # Design docs and ADRs
@@ -44,7 +46,7 @@ samverk/
 │   ├── autonomy-model.md      # Three-tier trust model for agent actions
 │   ├── user-profile.md        # Persistent user preferences across projects
 │   ├── open-questions.md      # Unresolved design and business questions
-│   └── decisions/             # Architecture Decision Records (20 so far)
+│   └── decisions/             # Architecture Decision Records (25 total)
 ├── .samverk/                  # Runtime config (gitignored)
 ├── .github/workflows/         # CI/CD pipelines
 └── Makefile                   # Build and development tasks
@@ -82,7 +84,7 @@ For full details including specific libraries, what NOT to use, and project stru
 
 ## Known Constraints
 
-- Phase 1 implementation complete -- dispatcher, forge, store, autonomy, profile, provider all functional
+- Phase 2 complete -- dispatcher, forge, store, autonomy, profile, provider, MCP handler, digest, cost adapter all functional
 - Async-first architecture (not synchronous tooling)
 - Hybrid local/cloud agent model
 - Target audience: hobbyist devs with limited time, not enterprise teams
@@ -108,6 +110,8 @@ For full details including specific libraries, what NOT to use, and project stru
 - Intent verification protocol ([ADR-021](docs/decisions/ADR-021-intent-verification.md))
 - Full project lifecycle -- idea to delivery ([ADR-022](docs/decisions/ADR-022-full-project-lifecycle.md))
 - Per-project repos with coordination layer ([ADR-023](docs/decisions/ADR-023-per-project-repos.md))
+- Failure recovery strategy ([ADR-027](docs/decisions/ADR-027-failure-recovery.md))
+- Cross-model QA validation ([ADR-030](docs/decisions/ADR-030-cross-model-qa.md))
 
 ## References
 
