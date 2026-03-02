@@ -12,6 +12,7 @@ import (
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge/github"
 	"github.com/herbhall/samverk/internal/server"
+	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/internal/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
@@ -69,7 +70,8 @@ func dispatchCmd() *cobra.Command {
 }
 
 func digestCmd() *cobra.Command {
-	var owner, repo, since string
+	var owner, repo, since, dbPath string
+	var budget float64
 
 	cmd := &cobra.Command{
 		Use:   "digest",
@@ -102,7 +104,19 @@ func digestCmd() *cobra.Command {
 			tracker := github.New(owner, repo, httpClient)
 			ctx := context.Background()
 
-			d, err := digest.BuildDigest(ctx, tracker, nil, lastCheckIn)
+			// Wire cost source from SQLite store if the database exists.
+			var costs digest.CostSource
+			if dbPath != "" {
+				s, storeErr := store.New(dbPath)
+				if storeErr != nil {
+					slog.Warn("could not open cost database, continuing without cost data", "path", dbPath, "error", storeErr)
+				} else {
+					defer func() { _ = s.Close() }()
+					costs = digest.NewStoreCostSource(s, budget)
+				}
+			}
+
+			d, err := digest.BuildDigest(ctx, tracker, costs, lastCheckIn)
 			if err != nil {
 				return fmt.Errorf("building digest: %w", err)
 			}
@@ -115,6 +129,8 @@ func digestCmd() *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
 	cmd.Flags().StringVar(&since, "since", "24h", "Time window for digest (e.g., 24h, 720h)")
+	cmd.Flags().StringVar(&dbPath, "db", ".samverk/samverk.db", "Path to SQLite database for cost tracking")
+	cmd.Flags().Float64Var(&budget, "budget", 0, "Daily budget in USD (0 = unlimited)")
 
 	return cmd
 }
