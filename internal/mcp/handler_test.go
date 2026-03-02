@@ -161,7 +161,7 @@ type callToolResult struct {
 // newTestMCPServer sets up an httptest.Server serving the MCP handler.
 func newTestMCPServer(t *testing.T, tracker forge.IssueTracker, costs digest.CostSource) *httptest.Server {
 	t.Helper()
-	h := internalmcp.NewHandler(tracker, costs)
+	h := internalmcp.NewHandler(tracker, costs, nil)
 	handler := internalmcp.NewHTTPHandler(h)
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
