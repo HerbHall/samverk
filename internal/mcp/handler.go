@@ -7,20 +7,30 @@ import (
 
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/internal/version"
 )
 
 // Handler holds dependencies for MCP tool handlers.
 type Handler struct {
-	tracker forge.IssueTracker
-	costs   digest.CostSource // may be nil
+	tracker  forge.IssueTracker
+	costs    digest.CostSource // may be nil
+	store    store.Store       // may be nil
+	recorder *sessionRecorder  // derived from store; nil when store is nil
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
-func NewHandler(tracker forge.IssueTracker, costs digest.CostSource) *Handler {
+// The store parameter is optional (may be nil) for graceful degradation.
+func NewHandler(tracker forge.IssueTracker, costs digest.CostSource, s store.Store) *Handler {
+	var rec *sessionRecorder
+	if s != nil {
+		rec = &sessionRecorder{store: s}
+	}
 	return &Handler{
-		tracker: tracker,
-		costs:   costs,
+		tracker:  tracker,
+		costs:    costs,
+		store:    s,
+		recorder: rec,
 	}
 }
 

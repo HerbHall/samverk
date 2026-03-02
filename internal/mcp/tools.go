@@ -124,6 +124,8 @@ func (h *Handler) handleAddLabel(
 		return nil, nil, fmt.Errorf("adding label: %w", err)
 	}
 
+	h.recorder.recordToolCall(ctx, "add_label", input.IssueNumber)
+
 	text := fmt.Sprintf("Added label %q to issue #%d", input.Label, input.IssueNumber)
 	return &gosdk.CallToolResult{
 		Content: []gosdk.Content{
@@ -148,6 +150,8 @@ func (h *Handler) handleRemoveLabel(
 	if err := h.tracker.RemoveLabel(ctx, input.IssueNumber, input.Label); err != nil {
 		return nil, nil, fmt.Errorf("removing label: %w", err)
 	}
+
+	h.recorder.recordToolCall(ctx, "remove_label", input.IssueNumber)
 
 	text := fmt.Sprintf("Removed label %q from issue #%d", input.Label, input.IssueNumber)
 	return &gosdk.CallToolResult{
@@ -174,6 +178,8 @@ func (h *Handler) handleAddComment(
 	if err != nil {
 		return nil, nil, fmt.Errorf("adding comment: %w", err)
 	}
+
+	h.recorder.recordToolCall(ctx, "add_comment", input.IssueNumber)
 
 	result, err := json.Marshal(map[string]any{
 		"comment_id":   comment.ID,
@@ -209,6 +215,8 @@ func (h *Handler) handleCreateIssue(
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating issue: %w", err)
 	}
+
+	h.recorder.recordToolCall(ctx, "create_issue", issue.Number)
 
 	result, err := json.Marshal(map[string]any{
 		"issue_number": issue.Number,

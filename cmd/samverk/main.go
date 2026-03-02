@@ -37,7 +37,8 @@ func main() {
 }
 
 func serveCmd() *cobra.Command {
-	var addr, owner, repo string
+	var addr, owner, repo, dbPath string
+	var budget float64
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -54,6 +55,21 @@ func serveCmd() *cobra.Command {
 				slog.Info("MCP authentication enabled")
 			}
 
+			// Open SQLite store for session/cost recording.
+			var costs digest.CostSource
+			var st store.Store
+			if dbPath != "" {
+				s, err := store.New(dbPath)
+				if err != nil {
+					slog.Warn("could not open database", "path", dbPath, "error", err)
+				} else {
+					st = s
+					costs = digest.NewStoreCostSource(s, budget)
+					defer func() { _ = s.Close() }()
+					slog.Info("database opened", "path", dbPath)
+				}
+			}
+
 			// Wire MCP handler if GitHub credentials are available.
 			token := os.Getenv("GITHUB_TOKEN")
 			if owner == "" {
@@ -66,7 +82,7 @@ func serveCmd() *cobra.Command {
 				ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 				httpClient := oauth2.NewClient(ctx, ts)
 				tracker := github.New(owner, repo, httpClient)
-				mcpHandler := internalmcp.NewHandler(tracker, nil)
+				mcpHandler := internalmcp.NewHandler(tracker, costs, st)
 				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
 				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
 			} else {
@@ -86,6 +102,8 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address")
 	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
+	cmd.Flags().StringVar(&dbPath, "db", ".samverk/samverk.db", "Path to SQLite database for session/cost tracking")
+	cmd.Flags().Float64Var(&budget, "budget", 0, "Daily budget in USD (0 = unlimited)")
 	return cmd
 }
 
