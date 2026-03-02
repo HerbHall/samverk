@@ -53,7 +53,8 @@ func (s *Server) Handler() http.Handler {
 // Start begins listening. It blocks until ctx is cancelled or an error occurs.
 // When ctx is cancelled, Start calls Shutdown and returns nil.
 func (s *Server) Start(ctx context.Context) error {
-	ln, err := net.Listen("tcp", s.cfg.Addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", s.cfg.Addr)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", s.cfg.Addr, err)
 	}
