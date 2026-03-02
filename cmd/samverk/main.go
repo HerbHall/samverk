@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge/github"
+	internalmcp "github.com/herbhall/samverk/internal/mcp"
 	"github.com/herbhall/samverk/internal/server"
 	"github.com/herbhall/samverk/internal/version"
 	"github.com/spf13/cobra"
@@ -35,7 +36,7 @@ func main() {
 }
 
 func serveCmd() *cobra.Command {
-	var addr string
+	var addr, owner, repo string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -44,7 +45,28 @@ func serveCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
-			s := server.New(server.Config{Addr: addr})
+			cfg := server.Config{Addr: addr}
+
+			// Wire MCP handler if GitHub credentials are available.
+			token := os.Getenv("GITHUB_TOKEN")
+			if owner == "" {
+				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
+			}
+			if repo == "" {
+				repo = os.Getenv("SAMVERK_GITHUB_REPO")
+			}
+			if token != "" && owner != "" && repo != "" {
+				ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+				httpClient := oauth2.NewClient(ctx, ts)
+				tracker := github.New(owner, repo, httpClient)
+				mcpHandler := internalmcp.NewHandler(tracker, nil)
+				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
+				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
+			} else {
+				slog.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
+			}
+
+			s := server.New(cfg)
 			slog.Info("starting samverk server", "addr", addr)
 
 			if err := s.Start(ctx); err != nil {
@@ -55,6 +77,8 @@ func serveCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address")
+	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
+	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
 	return cmd
 }
 

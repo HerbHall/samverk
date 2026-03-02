@@ -13,7 +13,8 @@ import (
 
 // Config holds server configuration.
 type Config struct {
-	Addr string // listen address, e.g. ":8080"
+	Addr       string       // listen address, e.g. ":8080"
+	MCPHandler http.Handler // optional MCP protocol handler; nil keeps the 501 placeholder
 }
 
 // Server is the main HTTP server.
@@ -106,7 +107,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // registerRoutes wires all HTTP endpoints.
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
-	s.mux.HandleFunc("POST /mcp", s.handleNotImplemented)
+
+	if s.cfg.MCPHandler != nil {
+		s.mux.Handle("POST /mcp", s.cfg.MCPHandler)
+	} else {
+		s.mux.HandleFunc("POST /mcp", s.handleNotImplemented)
+	}
+
 	s.mux.HandleFunc("/api/v1/", s.handleNotImplemented)
 	s.mux.HandleFunc("/", s.handleNotImplemented)
 }
