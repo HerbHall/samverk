@@ -48,6 +48,49 @@ type createIssueInput struct {
 	Assignees []string `json:"assignees,omitempty" jsonschema:"optional usernames to assign"`
 }
 
+// listIssuesInput is the typed input for the list_issues tool.
+type listIssuesInput struct {
+	State    string   `json:"state,omitempty" jsonschema:"filter by state: open or closed"`
+	Labels   []string `json:"labels,omitempty" jsonschema:"filter by label names"`
+	Assignee string   `json:"assignee,omitempty" jsonschema:"filter by assignee username"`
+	Page     int      `json:"page,omitempty" jsonschema:"page number for pagination"`
+	PerPage  int      `json:"per_page,omitempty" jsonschema:"results per page for pagination"`
+}
+
+// getIssueInput is the typed input for the get_issue tool.
+type getIssueInput struct {
+	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to retrieve"`
+}
+
+// updateIssueInput is the typed input for the update_issue tool.
+type updateIssueInput struct {
+	IssueNumber int     `json:"issue_number" jsonschema:"required,the issue number to update"`
+	Title       *string `json:"title,omitempty" jsonschema:"new title for the issue"`
+	Body        *string `json:"body,omitempty" jsonschema:"new body for the issue"`
+	State       *string `json:"state,omitempty" jsonschema:"new state: open or closed"`
+}
+
+// closeIssueInput is the typed input for the close_issue tool.
+type closeIssueInput struct {
+	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to close"`
+}
+
+// reopenIssueInput is the typed input for the reopen_issue tool.
+type reopenIssueInput struct {
+	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to reopen"`
+}
+
+// setLabelsInput is the typed input for the set_labels tool.
+type setLabelsInput struct {
+	IssueNumber int      `json:"issue_number" jsonschema:"required,the issue number to set labels on"`
+	Labels      []string `json:"labels" jsonschema:"required,the complete set of labels to apply"`
+}
+
+// listCommentsInput is the typed input for the list_comments tool.
+type listCommentsInput struct {
+	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to list comments for"`
+}
+
 // registerTools adds all MCP tools to the server.
 func registerTools(srv *gosdk.Server, h *Handler) {
 	gosdk.AddTool(srv, &gosdk.Tool{
@@ -79,6 +122,41 @@ func registerTools(srv *gosdk.Server, h *Handler) {
 		Name:        "create_issue",
 		Description: "Create a new issue on the forge",
 	}, h.handleCreateIssue)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "list_issues",
+		Description: "List issues with optional filters for state, labels, and assignee",
+	}, h.handleListIssues)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "get_issue",
+		Description: "Get full details of a single issue by number",
+	}, h.handleGetIssue)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "update_issue",
+		Description: "Update an existing issue's title, body, or state",
+	}, h.handleUpdateIssue)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "close_issue",
+		Description: "Close an issue",
+	}, h.handleCloseIssue)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "reopen_issue",
+		Description: "Reopen a closed issue",
+	}, h.handleReopenIssue)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "set_labels",
+		Description: "Replace all labels on an issue with the given set",
+	}, h.handleSetLabels)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "list_comments",
+		Description: "List all comments on an issue",
+	}, h.handleListComments)
 }
 
 // handleGetDigest builds and formats a check-in digest.
@@ -224,6 +302,212 @@ func (h *Handler) handleCreateIssue(
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshalling issue result: %w", err)
+	}
+
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{
+			&gosdk.TextContent{Text: string(result)},
+		},
+	}, nil, nil
+}
+
+// handleListIssues lists issues with optional filters.
+func (h *Handler) handleListIssues(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	input listIssuesInput,
+) (*gosdk.CallToolResult, any, error) {
+	opts := &forge.ListOptions{
+		State:    forge.State(input.State),
+		Labels:   input.Labels,
+		Assignee: input.Assignee,
+		Page:     input.Page,
+		PerPage:  input.PerPage,
+	}
+
+	issues, err := h.tracker.ListIssues(ctx, opts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listing issues: %w", err)
+	}
+
+	result, err := json.Marshal(issues)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshalling issues: %w", err)
+	}
+
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{
+			&gosdk.TextContent{Text: string(result)},
+		},
+	}, nil, nil
+}
+
+// handleGetIssue retrieves full details of a single issue.
+func (h *Handler) handleGetIssue(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	input getIssueInput,
+) (*gosdk.CallToolResult, any, error) {
+	if input.IssueNumber <= 0 {
+		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
+	}
+
+	issue, err := h.tracker.GetIssue(ctx, input.IssueNumber)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting issue: %w", err)
+	}
+
+	result, err := json.Marshal(issue)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshalling issue: %w", err)
+	}
+
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{
+			&gosdk.TextContent{Text: string(result)},
+		},
+	}, nil, nil
+}
+
+// handleUpdateIssue updates an existing issue's title, body, or state.
+func (h *Handler) handleUpdateIssue(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	input updateIssueInput,
+) (*gosdk.CallToolResult, any, error) {
+	if input.IssueNumber <= 0 {
+		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
+	}
+
+	req := &forge.UpdateIssueRequest{
+		Title: input.Title,
+		Body:  input.Body,
+	}
+	if input.State != nil {
+		s := forge.State(*input.State)
+		req.State = &s
+	}
+
+	issue, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("updating issue: %w", err)
+	}
+
+	h.recorder.recordToolCall(ctx, "update_issue", input.IssueNumber)
+
+	result, err := json.Marshal(issue)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshalling updated issue: %w", err)
+	}
+
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{
+			&gosdk.TextContent{Text: string(result)},
+		},
+	}, nil, nil
+}
+
+// handleCloseIssue is a convenience wrapper that closes an issue.
+func (h *Handler) handleCloseIssue(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	input closeIssueInput,
+) (*gosdk.CallToolResult, any, error) {
+	if input.IssueNumber <= 0 {
+		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
+	}
+
+	closedState := forge.StateClosed
+	_, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
+		State: &closedState,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("closing issue: %w", err)
+	}
+
+	h.recorder.recordToolCall(ctx, "close_issue", input.IssueNumber)
+
+	text := fmt.Sprintf("Closed issue #%d", input.IssueNumber)
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{
+			&gosdk.TextContent{Text: text},
+		},
+	}, nil, nil
+}
+
+// handleReopenIssue is a convenience wrapper that reopens a closed issue.
+func (h *Handler) handleReopenIssue(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	input reopenIssueInput,
+) (*gosdk.CallToolResult, any, error) {
+	if input.IssueNumber <= 0 {
+		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
+	}
+
+	openState := forge.StateOpen
+	_, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
+		State: &openState,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("reopening issue: %w", err)
+	}
+
+	h.recorder.recordToolCall(ctx, "reopen_issue", input.IssueNumber)
+
+	text := fmt.Sprintf("Reopened issue #%d", input.IssueNumber)
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{
+			&gosdk.TextContent{Text: text},
+		},
+	}, nil, nil
+}
+
+// handleSetLabels replaces all labels on an issue with the given set.
+func (h *Handler) handleSetLabels(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	input setLabelsInput,
+) (*gosdk.CallToolResult, any, error) {
+	if input.IssueNumber <= 0 {
+		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
+	}
+	if len(input.Labels) == 0 {
+		return nil, nil, fmt.Errorf("labels must not be empty")
+	}
+
+	if err := h.tracker.SetLabels(ctx, input.IssueNumber, input.Labels); err != nil {
+		return nil, nil, fmt.Errorf("setting labels: %w", err)
+	}
+
+	h.recorder.recordToolCall(ctx, "set_labels", input.IssueNumber)
+
+	text := fmt.Sprintf("Set %d label(s) on issue #%d", len(input.Labels), input.IssueNumber)
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{
+			&gosdk.TextContent{Text: text},
+		},
+	}, nil, nil
+}
+
+// handleListComments lists all comments on an issue.
+func (h *Handler) handleListComments(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	input listCommentsInput,
+) (*gosdk.CallToolResult, any, error) {
+	if input.IssueNumber <= 0 {
+		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
+	}
+
+	comments, err := h.tracker.ListComments(ctx, input.IssueNumber)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listing comments: %w", err)
+	}
+
+	result, err := json.Marshal(comments)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshalling comments: %w", err)
 	}
 
 	return &gosdk.CallToolResult{
