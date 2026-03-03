@@ -66,7 +66,7 @@ func TestBearerAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := server.BearerAuth(tt.token)(okHandler)
+			handler := server.BearerAuth(tt.token, nil)(okHandler)
 
 			req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
 			if tt.authHeader != "" {
@@ -88,6 +88,79 @@ func TestBearerAuth(t *testing.T) {
 				if body["error"] != tt.wantError {
 					t.Errorf("error = %q, want %q", body["error"], tt.wantError)
 				}
+			}
+		})
+	}
+}
+
+func TestBearerAuth_WithKeyStore(t *testing.T) {
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	apiKey, err := ks.Create("test-api-key", nil)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		token      string // env-var token
+		authHeader string
+		wantStatus int
+	}{
+		{
+			name:       "env token wins when both configured",
+			token:      "env-secret",
+			authHeader: "Bearer env-secret",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "keystore fallback when env token mismatches",
+			token:      "env-secret",
+			authHeader: "Bearer " + apiKey,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "keystore-only auth with no env token",
+			token:      "",
+			authHeader: "Bearer " + apiKey,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "neither matches returns 401",
+			token:      "env-secret",
+			authHeader: "Bearer totally-wrong",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "keystore configured but missing header returns 401",
+			token:      "",
+			authHeader: "",
+			wantStatus: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := server.BearerAuth(tt.token, ks)(okHandler)
+
+			req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
 			}
 		})
 	}

@@ -7,11 +7,13 @@ import (
 )
 
 // BearerAuth returns middleware that validates Bearer token authentication.
-// If token is empty, the middleware is a no-op (passes through).
-func BearerAuth(token string) func(http.Handler) http.Handler {
+// It checks the env-var token first (backwards compatible), then falls back
+// to the KeyStore if provided. If both token and keyStore are empty/nil,
+// the middleware is a no-op (passes through).
+func BearerAuth(token string, keyStore *KeyStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if token == "" {
+			if token == "" && keyStore == nil {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -28,12 +30,23 @@ func BearerAuth(token string) func(http.Handler) http.Handler {
 				return
 			}
 
-			if subtle.ConstantTimeCompare([]byte(auth[len(prefix):]), []byte(token)) != 1 {
-				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "invalid token"})
+			bearerToken := auth[len(prefix):]
+
+			// Try env-var token first (constant-time comparison).
+			if token != "" && subtle.ConstantTimeCompare([]byte(bearerToken), []byte(token)) == 1 {
+				next.ServeHTTP(w, r)
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			// Fall back to KeyStore validation.
+			if keyStore != nil {
+				if _, ok := keyStore.Validate(bearerToken); ok {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "invalid token"})
 		})
 	}
 }

@@ -20,6 +20,7 @@ type APIRegistrar interface {
 type Config struct {
 	Addr       string         // listen address, e.g. ":8080"
 	AuthToken  string         //nolint:gosec // G117: config field, not a hardcoded secret
+	KeyStore   *KeyStore      // YAML-backed API key store (may be nil)
 	MCPHandler http.Handler   // optional MCP protocol handler; nil keeps the 501 placeholder
 	APIHandler APIRegistrar   // optional REST API handler; nil keeps the 501 placeholder
 }
@@ -117,8 +118,8 @@ func (s *Server) registerRoutes() {
 
 	if s.cfg.MCPHandler != nil {
 		handler := s.cfg.MCPHandler
-		if s.cfg.AuthToken != "" {
-			handler = BearerAuth(s.cfg.AuthToken)(handler)
+		if s.cfg.AuthToken != "" || s.cfg.KeyStore != nil {
+			handler = BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)(handler)
 		}
 		s.mux.Handle("POST /mcp", handler)
 	} else {
