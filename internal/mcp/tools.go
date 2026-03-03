@@ -193,7 +193,7 @@ func (h *Handler) handleGetDigest(
 	}
 
 	sinceTime := time.Now().Add(-dur)
-	data, err := digest.BuildDigest(ctx, h.tracker, h.costs, sinceTime)
+	data, err := digest.BuildDigest(ctx, h.activeTracker(), h.costs, sinceTime)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building digest: %w", err)
 	}
@@ -231,7 +231,7 @@ func (h *Handler) handleAddLabel(
 }
 
 func (h *Handler) executeAddLabel(ctx context.Context, input addLabelInput) (*gosdk.CallToolResult, error) {
-	if err := h.tracker.AddLabel(ctx, input.IssueNumber, input.Label); err != nil {
+	if err := h.activeTracker().AddLabel(ctx, input.IssueNumber, input.Label); err != nil {
 		return nil, fmt.Errorf("adding label: %w", err)
 	}
 
@@ -269,7 +269,7 @@ func (h *Handler) handleRemoveLabel(
 }
 
 func (h *Handler) executeRemoveLabel(ctx context.Context, input removeLabelInput) (*gosdk.CallToolResult, error) {
-	if err := h.tracker.RemoveLabel(ctx, input.IssueNumber, input.Label); err != nil {
+	if err := h.activeTracker().RemoveLabel(ctx, input.IssueNumber, input.Label); err != nil {
 		return nil, fmt.Errorf("removing label: %w", err)
 	}
 
@@ -307,7 +307,7 @@ func (h *Handler) handleAddComment(
 }
 
 func (h *Handler) executeAddComment(ctx context.Context, input addCommentInput) (*gosdk.CallToolResult, error) {
-	comment, err := h.tracker.AddComment(ctx, input.IssueNumber, input.Body)
+	comment, err := h.activeTracker().AddComment(ctx, input.IssueNumber, input.Body)
 	if err != nil {
 		return nil, fmt.Errorf("adding comment: %w", err)
 	}
@@ -350,7 +350,7 @@ func (h *Handler) handleCreateIssue(
 }
 
 func (h *Handler) executeCreateIssue(ctx context.Context, input createIssueInput) (*gosdk.CallToolResult, error) {
-	issue, err := h.tracker.CreateIssue(ctx, &forge.CreateIssueRequest{
+	issue, err := h.activeTracker().CreateIssue(ctx, &forge.CreateIssueRequest{
 		Title:     input.Title,
 		Body:      input.Body,
 		Labels:    input.Labels,
@@ -391,7 +391,7 @@ func (h *Handler) handleListIssues(
 		PerPage:  input.PerPage,
 	}
 
-	issues, err := h.tracker.ListIssues(ctx, opts)
+	issues, err := h.activeTracker().ListIssues(ctx, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing issues: %w", err)
 	}
@@ -418,7 +418,7 @@ func (h *Handler) handleGetIssue(
 		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
 	}
 
-	issue, err := h.tracker.GetIssue(ctx, input.IssueNumber)
+	issue, err := h.activeTracker().GetIssue(ctx, input.IssueNumber)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting issue: %w", err)
 	}
@@ -465,7 +465,7 @@ func (h *Handler) executeUpdateIssue(ctx context.Context, input updateIssueInput
 		req.State = &s
 	}
 
-	issue, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, req)
+	issue, err := h.activeTracker().UpdateIssue(ctx, input.IssueNumber, req)
 	if err != nil {
 		return nil, fmt.Errorf("updating issue: %w", err)
 	}
@@ -506,7 +506,7 @@ func (h *Handler) handleCloseIssue(
 
 func (h *Handler) executeCloseIssue(ctx context.Context, input closeIssueInput) (*gosdk.CallToolResult, error) {
 	closedState := forge.StateClosed
-	_, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
+	_, err := h.activeTracker().UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
 		State: &closedState,
 	})
 	if err != nil {
@@ -545,7 +545,7 @@ func (h *Handler) handleReopenIssue(
 
 func (h *Handler) executeReopenIssue(ctx context.Context, input reopenIssueInput) (*gosdk.CallToolResult, error) {
 	openState := forge.StateOpen
-	_, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
+	_, err := h.activeTracker().UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
 		State: &openState,
 	})
 	if err != nil {
@@ -586,7 +586,7 @@ func (h *Handler) handleSetLabels(
 }
 
 func (h *Handler) executeSetLabels(ctx context.Context, input setLabelsInput) (*gosdk.CallToolResult, error) {
-	if err := h.tracker.SetLabels(ctx, input.IssueNumber, input.Labels); err != nil {
+	if err := h.activeTracker().SetLabels(ctx, input.IssueNumber, input.Labels); err != nil {
 		return nil, fmt.Errorf("setting labels: %w", err)
 	}
 
@@ -610,7 +610,7 @@ func (h *Handler) handleListComments(
 		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
 	}
 
-	comments, err := h.tracker.ListComments(ctx, input.IssueNumber)
+	comments, err := h.activeTracker().ListComments(ctx, input.IssueNumber)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing comments: %w", err)
 	}

@@ -23,6 +23,7 @@ type Handler struct {
 	policy   autonomy.AutonomyPolicy // may be nil (no enforcement)
 	pending  *pendingActions          // Tier 3 action queue
 	repo     forge.RepoReader        // may be nil (no repo browsing)
+	projects *ProjectRegistry        // may be nil (single-project mode)
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
@@ -41,6 +42,38 @@ func NewHandler(tracker forge.IssueTracker, costs digest.CostSource, s store.Sto
 		pending:  newPendingActions(),
 		repo:     repo,
 	}
+}
+
+// SetProjects attaches a project registry to the handler for multi-project support.
+// When set, tools resolve tracker and repo through the active project.
+func (h *Handler) SetProjects(reg *ProjectRegistry) {
+	h.projects = reg
+}
+
+// activeTracker returns the IssueTracker to use for the current context.
+// If a project registry is configured, it uses the active project's tracker.
+// Otherwise, it falls back to the handler's directly-configured tracker.
+func (h *Handler) activeTracker() forge.IssueTracker {
+	if h.projects != nil {
+		p, err := h.projects.Active()
+		if err == nil && p.Tracker != nil {
+			return p.Tracker
+		}
+	}
+	return h.tracker
+}
+
+// activeReader returns the RepoReader to use for the current context.
+// If a project registry is configured, it uses the active project's reader.
+// Otherwise, it falls back to the handler's directly-configured reader.
+func (h *Handler) activeReader() forge.RepoReader {
+	if h.projects != nil {
+		p, err := h.projects.Active()
+		if err == nil && p.Reader != nil {
+			return p.Reader
+		}
+	}
+	return h.repo
 }
 
 // checkTier evaluates the autonomy tier for an action. Returns nil if the action
@@ -80,6 +113,7 @@ func newMCPServer(h *Handler) *gosdk.Server {
 
 	registerTools(srv, h)
 	registerRepoTools(srv, h)
+	registerProjectTools(srv, h)
 	return srv
 }
 
