@@ -1,4 +1,4 @@
-.PHONY: build test test-race test-coverage lint lint-md lint-all ci hooks run clean
+.PHONY: build test test-race test-coverage lint lint-md lint-all ci hooks run clean web dev-web
 
 # Binary
 BIN=samverk
@@ -14,7 +14,14 @@ LDFLAGS=-ldflags "-s -w \
 	-X $(VERSION_PKG).GitCommit=$(COMMIT) \
 	-X $(VERSION_PKG).BuildDate=$(DATE)"
 
-build:
+web:
+	cd web && npx pnpm install --no-frozen-lockfile && npx pnpm build
+	cp -r web/dist/* internal/server/static/
+
+dev-web:
+	cd web && npx pnpm dev
+
+build: web
 	go build $(LDFLAGS) -o bin/$(BIN) ./cmd/samverk/
 
 test:
