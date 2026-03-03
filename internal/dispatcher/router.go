@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/pkg/models"
 )
@@ -63,6 +64,31 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	d.mu.Unlock()
 
 	d.logger.Printf("routed issue #%d to %s", issue.Number, agentType)
+
+	// Submit to agent pool if available.
+	if d.pool != nil && d.store != nil {
+		sessionID := fmt.Sprintf("sess_%d_%d", issue.Number, time.Now().Unix())
+		session := &models.Session{
+			ID:          sessionID,
+			IssueNumber: issue.Number,
+			AgentType:   string(agentType),
+			Status:      models.SessionStatusPending,
+			StartedAt:   time.Now(),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+		if err := d.store.CreateSession(ctx, session); err != nil {
+			return fmt.Errorf("create session for #%d: %w", issue.Number, err)
+		}
+		task := agent.Task{
+			Issue:     issue,
+			AgentType: agentType,
+			SessionID: sessionID,
+		}
+		if err := d.pool.Submit(task); err != nil {
+			return fmt.Errorf("submit agent task for #%d: %w", issue.Number, err)
+		}
+	}
 	return nil
 }
 

@@ -254,14 +254,14 @@ func newTestDispatcher(tracker *mockTracker) *Dispatcher {
 	// Use short intervals for tests.
 	cfg.HeartbeatInterval = 100 * time.Millisecond
 	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
-	return New(tracker, &mockPolicy{costThreshold: 5.0}, nil, cfg)
+	return New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg)
 }
 
 // --- Tests ---
 
 func TestNewDispatcher(t *testing.T) {
 	tracker := newMockTracker()
-	d := New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil)
+	d := New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, nil)
 	if d == nil {
 		t.Fatal("expected non-nil dispatcher")
 	}

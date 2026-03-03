@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/store"
@@ -28,6 +29,7 @@ type Dispatcher struct {
 	tracker forge.IssueTracker
 	policy  autonomy.AutonomyPolicy
 	store   store.Store
+	pool    *agent.Pool
 	config  *Config
 	claimed map[int]*claimedIssue
 	mu      sync.Mutex
@@ -35,8 +37,9 @@ type Dispatcher struct {
 	stop    context.CancelFunc
 }
 
-// New creates a Dispatcher with the given dependencies.
-func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.Store, cfg *Config) *Dispatcher {
+// New creates a Dispatcher with the given dependencies. The pool parameter
+// is optional; when nil, routed issues are labeled but no agent tasks are spawned.
+func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.Store, pool *agent.Pool, cfg *Config) *Dispatcher {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
@@ -44,6 +47,7 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 		tracker: tracker,
 		policy:  policy,
 		store:   st,
+		pool:    pool,
 		config:  cfg,
 		claimed: make(map[int]*claimedIssue),
 		logger:  log.Default(),
