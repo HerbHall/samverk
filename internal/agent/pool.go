@@ -1,0 +1,166 @@
+// Package agent provides the agent runtime pool and runner for processing
+// tasks as goroutines with session lifecycle management and cost recording.
+package agent
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/herbhall/samverk/internal/cost"
+	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/provider"
+	"github.com/herbhall/samverk/internal/store"
+	"github.com/herbhall/samverk/pkg/models"
+)
+
+// ErrPoolShutdown is returned when Submit is called on a shut-down pool.
+var ErrPoolShutdown = errors.New("pool is shut down")
+
+// defaultWorkers is the number of worker goroutines when none is specified.
+const defaultWorkers = 3
+
+// Task represents a unit of work to be processed by the agent pool.
+type Task struct {
+	Issue     *forge.Issue
+	AgentType models.AgentType
+	SessionID string
+}
+
+// Pool manages a fixed set of worker goroutines that process agent tasks.
+type Pool struct {
+	registry *provider.Registry
+	tracker  forge.IssueTracker
+	store    store.Store
+	costs    *cost.Tracker
+	workers  int
+	tasks    chan Task
+	wg       sync.WaitGroup
+	logger   *slog.Logger
+	done     chan struct{}
+	mu       sync.Mutex
+	shutdown bool
+}
+
+// NewPool creates a pool with the given number of worker goroutines and starts
+// them immediately. If workers is <= 0, it defaults to 3.
+func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.Store, costs *cost.Tracker, workers int) *Pool {
+	if workers <= 0 {
+		workers = defaultWorkers
+	}
+
+	p := &Pool{
+		registry: registry,
+		tracker:  tracker,
+		store:    st,
+		costs:    costs,
+		workers:  workers,
+		tasks:    make(chan Task, workers*2),
+		logger:   slog.Default(),
+		done:     make(chan struct{}),
+	}
+
+	p.wg.Add(workers)
+	for range workers {
+		go p.worker()
+	}
+
+	return p
+}
+
+// Submit enqueues a task for processing. Returns ErrPoolShutdown if the pool
+// has been shut down.
+func (p *Pool) Submit(task Task) error {
+	p.mu.Lock()
+	if p.shutdown {
+		p.mu.Unlock()
+		return ErrPoolShutdown
+	}
+	p.mu.Unlock()
+
+	p.tasks <- task
+	return nil
+}
+
+// Shutdown signals all workers to stop and waits for in-flight tasks to
+// complete. After Shutdown returns, Submit will return ErrPoolShutdown.
+func (p *Pool) Shutdown() {
+	p.mu.Lock()
+	if p.shutdown {
+		p.mu.Unlock()
+		return
+	}
+	p.shutdown = true
+	p.mu.Unlock()
+
+	close(p.tasks)
+	p.wg.Wait()
+	close(p.done)
+}
+
+// Done returns a channel that is closed after Shutdown completes.
+func (p *Pool) Done() <-chan struct{} {
+	return p.done
+}
+
+// worker is the main loop for a single worker goroutine.
+func (p *Pool) worker() {
+	defer p.wg.Done()
+
+	for task := range p.tasks {
+		p.processTask(task)
+	}
+}
+
+// processTask resolves a provider, creates a runner, and executes the task.
+func (p *Pool) processTask(task Task) {
+	ctx := context.Background()
+	logger := p.logger.With(
+		slog.String("session_id", task.SessionID),
+		slog.Int("issue", task.Issue.Number),
+		slog.String("agent_type", string(task.AgentType)),
+	)
+
+	prov, model, err := p.registry.Get(ctx, string(task.AgentType))
+	if err != nil {
+		logger.Error("no healthy provider", slog.String("error", err.Error()))
+		p.failSession(ctx, task.SessionID, fmt.Sprintf("no healthy provider: %v", err))
+		return
+	}
+
+	runner := NewRunner(prov, model, p.tracker, p.store, p.costs)
+	if err = runner.Run(ctx, task); err != nil {
+		logger.Error("runner failed", slog.String("error", err.Error()))
+		return
+	}
+
+	logger.Info("task completed")
+}
+
+// failSession marks a session as failed when the pool cannot even start it.
+func (p *Pool) failSession(ctx context.Context, sessionID, errMsg string) {
+	session, err := p.store.GetSession(ctx, sessionID)
+	if err != nil {
+		p.logger.Error("failed to get session for failure update",
+			slog.String("session_id", sessionID),
+			slog.String("error", err.Error()),
+		)
+		return
+	}
+
+	now := time.Now()
+	session.Status = models.SessionStatusFailed
+	session.Error = errMsg
+	session.FinishedAt = &now
+	session.UpdatedAt = now
+
+	if err = p.store.UpdateSession(ctx, session); err != nil {
+		p.logger.Error("failed to update session status",
+			slog.String("session_id", sessionID),
+			slog.String("error", err.Error()),
+		)
+	}
+}
