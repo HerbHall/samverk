@@ -22,11 +22,12 @@ type Handler struct {
 	recorder *sessionRecorder        // derived from store; nil when store is nil
 	policy   autonomy.AutonomyPolicy // may be nil (no enforcement)
 	pending  *pendingActions          // Tier 3 action queue
+	repo     forge.RepoReader        // may be nil (no repo browsing)
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
-// The store and policy parameters are optional (may be nil) for graceful degradation.
-func NewHandler(tracker forge.IssueTracker, costs digest.CostSource, s store.Store, policy autonomy.AutonomyPolicy) *Handler {
+// The store, policy, and repo parameters are optional (may be nil) for graceful degradation.
+func NewHandler(tracker forge.IssueTracker, costs digest.CostSource, s store.Store, policy autonomy.AutonomyPolicy, repo forge.RepoReader) *Handler {
 	var rec *sessionRecorder
 	if s != nil {
 		rec = &sessionRecorder{store: s}
@@ -38,6 +39,7 @@ func NewHandler(tracker forge.IssueTracker, costs digest.CostSource, s store.Sto
 		recorder: rec,
 		policy:   policy,
 		pending:  newPendingActions(),
+		repo:     repo,
 	}
 }
 
@@ -77,6 +79,7 @@ func newMCPServer(h *Handler) *gosdk.Server {
 	)
 
 	registerTools(srv, h)
+	registerRepoTools(srv, h)
 	return srv
 }
 

@@ -196,7 +196,7 @@ type callToolResult struct {
 // newTestMCPServer sets up an httptest.Server serving the MCP handler.
 func newTestMCPServer(t *testing.T, tracker forge.IssueTracker, costs digest.CostSource) *httptest.Server {
 	t.Helper()
-	h := internalmcp.NewHandler(tracker, costs, nil, nil)
+	h := internalmcp.NewHandler(tracker, costs, nil, nil, nil)
 	handler := internalmcp.NewHTTPHandler(h)
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
@@ -270,14 +270,16 @@ func TestToolsListDiscovery(t *testing.T) {
 		"list_issues", "get_issue", "update_issue",
 		"close_issue", "reopen_issue", "set_labels", "list_comments",
 		"approve_action", "reject_action",
+		"list_files", "read_file", "get_diff", "list_branches",
+		"get_commit_log", "search_code",
 	}
 	for _, name := range expectedTools {
 		if !toolNames[name] {
 			t.Errorf("%s tool not found in tools/list", name)
 		}
 	}
-	if len(result.Tools) != 15 {
-		t.Errorf("expected 15 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 21 {
+		t.Errorf("expected 21 tools, got %d", len(result.Tools))
 	}
 }
 
@@ -1572,7 +1574,7 @@ func TestListCommentsToolValidation(t *testing.T) {
 // newTestMCPServerWithPolicy sets up an httptest.Server with a specific autonomy policy.
 func newTestMCPServerWithPolicy(t *testing.T, tracker forge.IssueTracker, costs digest.CostSource, policy autonomy.AutonomyPolicy) *httptest.Server {
 	t.Helper()
-	h := internalmcp.NewHandler(tracker, costs, nil, policy)
+	h := internalmcp.NewHandler(tracker, costs, nil, policy, nil)
 	handler := internalmcp.NewHTTPHandler(h)
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
