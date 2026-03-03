@@ -82,6 +82,30 @@ Samverk doesn't just build projects -- it helps decide which projects to build i
 
 The user provides ideas, creative direction, and approval at gates. Samverk provides the discipline, research, and legwork that a solo developer doesn't have time to manage. See [Project Lifecycle](project-lifecycle.md) for the full specification.
 
+## Long-Term Vision
+
+Samverk is not a finished product with a fixed scope. It is a living, growing development house -- a personal mini software company that evolves as needs and capabilities evolve.
+
+### DevKit Incorporation
+
+DevKit currently exists as a separate project providing cross-session learning (autolearn), CI templates, rules governance, project scaffolding, and subagent coordination patterns. Long-term, DevKit's capabilities merge into Samverk. The result: one ecosystem that manages its own tooling, its own rules, and its own improvement loop. Samverk becomes self-improving -- the autolearn patterns that help agents avoid mistakes become part of the shared memory that all agents can query.
+
+### Beyond Software
+
+The scope is intentionally open-ended. The same lifecycle (idea -> research -> validation -> build -> deliver -> maintain) applies to physical products, hardware prototypes, and workshop projects -- not just code. Modular architecture is an investment: each capability (shared memory, provider registry, cost tracking, agent pool) is a building block that can be composed for use cases that don't exist yet.
+
+### Modularity as Strategy
+
+Every component should be:
+
+- **Independently useful** -- Shared memory works without the dispatcher. The provider registry works without the agent pool. Any piece can be used in contexts we haven't imagined yet.
+- **Replaceable** -- If a better embedding model appears, swap it. If SQLite hits a wall, the store interface abstracts the backend. No component should be load-bearing in a way that prevents growth.
+- **Composable** -- New capabilities plug in without rewriting existing ones. A future "hardware project tracker" module should be able to use the same shared memory, the same provider registry, and the same cost tracking.
+
+### The Gitea-to-GitHub Flow
+
+Projects live in Gitea (self-hosted, private, development) until ready for public release, then move or mirror to GitHub. Samverk manages both sides through the forge abstraction. This isn't a temporary workaround -- it's the intended workflow. Private iteration with full autonomy, public release when ready.
+
 ## What This Is Not
 
 - Not a synchronous AI coding assistant
