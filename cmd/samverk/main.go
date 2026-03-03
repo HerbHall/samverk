@@ -9,13 +9,19 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/autonomy"
+	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/dispatcher"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/forge/github"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"github.com/herbhall/samverk/internal/provider"
+	"github.com/herbhall/samverk/internal/provider/claude"
+	"github.com/herbhall/samverk/internal/provider/ollama"
+	"github.com/herbhall/samverk/internal/provider/openai"
 	"github.com/herbhall/samverk/internal/server"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/internal/version"
@@ -192,8 +198,9 @@ func serveCmd() *cobra.Command {
 }
 
 func dispatchCmd() *cobra.Command {
-	var owner, repo, dbPath string
-	var pollSeconds int
+	var owner, repo, dbPath, providersConfig string
+	var pollSeconds, workers int
+	var budget float64
 
 	cmd := &cobra.Command{
 		Use:   "dispatch",
@@ -241,7 +248,21 @@ func dispatchCmd() *cobra.Command {
 				}
 			}
 
-			disp := dispatcher.New(ghClient, policy, st, nil)
+			// Load provider registry and construct agent pool if config exists.
+			var pool *agent.Pool
+			if providersConfig != "" {
+				registry, regErr := provider.LoadRegistry(providersConfig, providerFactory)
+				if regErr != nil {
+					slog.Warn("could not load provider registry, agents disabled", "path", providersConfig, "error", regErr)
+				} else {
+					costs := cost.NewTracker(st, budget, 24)
+					pool = agent.NewPool(registry, ghClient, st, costs, workers)
+					defer pool.Shutdown()
+					slog.Info("agent pool started", "workers", workers, "providers", len(registry.List(ctx)))
+				}
+			}
+
+			disp := dispatcher.New(ghClient, policy, st, pool, nil)
 			slog.Info("starting dispatcher", "owner", owner, "repo", repo)
 
 			if err := disp.Run(ctx); err != nil && err != context.Canceled {
@@ -254,7 +275,10 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
 	cmd.Flags().StringVar(&dbPath, "db", ".samverk/samverk.db", "Path to SQLite database")
+	cmd.Flags().StringVar(&providersConfig, "providers-config", ".samverk/providers.yaml", "Path to provider registry YAML config")
 	cmd.Flags().IntVar(&pollSeconds, "poll-interval", 30, "Polling interval in seconds")
+	cmd.Flags().IntVar(&workers, "workers", 3, "Number of agent worker goroutines")
+	cmd.Flags().Float64Var(&budget, "budget", 0, "Daily budget in USD (0 = unlimited)")
 
 	return cmd
 }
@@ -448,5 +472,41 @@ func versionCmd() *cobra.Command {
 			fmt.Printf("samverk %s (commit: %s, built: %s)\n",
 				version.Version, version.GitCommit, version.BuildDate)
 		},
+	}
+}
+
+// providerFactory constructs a provider.Provider from YAML config.
+// It wires the concrete provider sub-packages (claude, openai, ollama)
+// so the registry package doesn't import them directly.
+func providerFactory(name string, cfg provider.ProviderConfig) (provider.Provider, error) {
+	switch cfg.Type {
+	case "claude":
+		apiKey := os.Getenv(cfg.APIKeyEnv)
+		if apiKey == "" {
+			return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+		}
+		model := cfg.DefaultModel
+		if model == "" {
+			model = "claude-sonnet-4-20250514"
+		}
+		return claude.New(apiKey, model), nil
+	case "openai":
+		apiKey := os.Getenv(cfg.APIKeyEnv)
+		if apiKey == "" {
+			return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+		}
+		model := cfg.DefaultModel
+		if model == "" {
+			model = "gpt-4o"
+		}
+		return openai.New(apiKey, model), nil
+	case "ollama":
+		baseURL := cfg.BaseURL
+		if baseURL == "" {
+			baseURL = "http://localhost:11434"
+		}
+		return ollama.New(baseURL), nil
+	default:
+		return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 	}
 }
