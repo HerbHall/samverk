@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/digest"
+	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/forge/github"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
 	"github.com/herbhall/samverk/internal/server"
@@ -92,7 +93,9 @@ func serveCmd() *cobra.Command {
 				}
 				policy := autonomy.NewPolicy(policyCfg)
 
-				mcpHandler := internalmcp.NewHandler(tracker, costs, st, policy)
+				// The GitHub Client implements both IssueTracker and RepoReader.
+				var repoReader forge.RepoReader = tracker
+				mcpHandler := internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
 				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
 				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
 			} else {
