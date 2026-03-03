@@ -123,6 +123,11 @@ This concept draws from several sources that should be researched in depth befor
 13. **Agent performance metrics**: What metrics best predict agent suitability for a task type? First-pass CI success rate? Error category distribution? Cost per quality unit? How many data points are needed before a routing preference is statistically meaningful?
 14. **Recurring research scheduling**: How frequently should agent landscape scans run? What triggers a re-scan (new model release, price change, capability benchmark)? How do we avoid stale agent profiles influencing dispatch decisions?
 15. **Prompt enrichment from memory**: When the dispatcher enriches an agent's prompt with warnings from past failures, what's the optimal format? How many warnings before context pollution degrades performance?
+16. **Query performance at scale**: What access patterns does the dispatcher need? Can SQLite with proper indexing handle sub-50ms multi-query dispatch decisions, or does this require an in-memory layer? What materialized views or pre-aggregated summaries eliminate expensive runtime queries?
+17. **Confidence scoring and decay**: What confidence models exist in knowledge management systems? How do systems like Wikidata, knowledge graphs, or recommendation engines handle confidence decay over time? What decay curves fit different knowledge categories (pricing vs. architectural patterns)?
+18. **Confirmation bias in feedback loops**: How do reinforcement learning systems handle explore/exploit tradeoffs? What exploration budget percentage balances learning with efficiency? How do recommendation systems avoid filter bubbles -- same structural problem as routing bias?
+19. **Contradiction resolution**: When two agents produce conflicting findings, what resolution strategies exist? Voting? Evidence weighting? Human escalation? How do collaborative knowledge bases (Wikipedia, Wikidata) handle contradictory edits?
+20. **Validation pipeline for incoming data**: What gates should new findings pass before entering trusted memory? Independent corroboration? Source quality scoring? Automated fact-checking against external references?
 
 ## The Dispatch Feedback Loop
 
@@ -174,6 +179,58 @@ Every mistake becomes a permanent learning:
    - Both -- route to a better agent AND include the warning
 
 This is the "once found, always fix, never leave" principle applied to agent orchestration. The system prevents errors by remembering them, not by hoping agents read instruction files.
+
+## Design Constraints
+
+### Query Performance
+
+Every dispatch decision queries shared memory. If dispatch happens dozens of times per sprint, and each dispatch requires agent profile lookups, historical performance queries, and error pattern checks, the storage layer must handle this without becoming a bottleneck.
+
+Design implications:
+
+- **Indexed access patterns** -- The most common queries are predictable: "agent performance by task type," "recent errors for agent X," "cost comparison across providers." These should be indexed, not full scans.
+- **Materialized summaries** -- Don't compute "Copilot's Go test success rate" by scanning every historical outcome at query time. Maintain pre-aggregated summaries that update incrementally as new outcomes arrive.
+- **Tiered storage** -- Hot data (recent outcomes, active agent profiles) in fast-access structures. Cold data (historical trends, archived findings) can be slower. The dispatcher only needs hot data for routing decisions.
+- **Query budget** -- Define a latency budget per dispatch decision (e.g., < 50ms for all memory queries combined). If a query pattern exceeds this, it belongs in a pre-computed summary, not a live query.
+
+The data model must be designed around access patterns, not just storage convenience. Schema decisions that optimize writes at the expense of reads will cripple the feedback loop.
+
+### Data Integrity and Confirmation Bias
+
+A self-learning system that trusts its own output uncritically will converge on wrong answers with high confidence. The feedback loop is powerful when it works, but it can corrupt shared memory with faulty logic and bad data disguised as solutions. Three categories of risk:
+
+**1. Poisoned data -- bad findings entering memory**
+
+An agent misdiagnoses a problem, stores the wrong conclusion, and future agents retrieve and reinforce it. Example: Agent records "SQLite doesn't support concurrent writes" (wrong -- WAL mode handles this), and subsequent agents avoid SQLite for concurrent workloads based on a false premise.
+
+Mitigations:
+
+- **Confidence tiers** -- New findings start as `provisional` (low confidence). They graduate to `verified` only after independent corroboration (a different agent or model reaches the same conclusion, or a human confirms). The dispatcher weights `verified` knowledge higher than `provisional`.
+- **Source attribution** -- Every finding records which agent, which model, and what evidence. A finding from a capable model with cited sources ranks higher than an unsourced assertion from a less capable model.
+- **Contradiction detection** -- When a new finding contradicts an existing one, don't silently overwrite. Flag the conflict, record both with evidence, and escalate for resolution (human review, or a dedicated validation agent).
+
+**2. Stale data -- correct findings becoming wrong over time**
+
+Agent performance changes as models are updated. Pricing changes. Libraries release breaking versions. A finding that was true six months ago may be dangerously wrong today.
+
+Mitigations:
+
+- **Confidence decay** -- Findings lose confidence over time unless refreshed. A 6-month-old performance benchmark carries less weight than a 1-week-old one. Decay rate varies by category: pricing data decays fast (weeks), architectural patterns decay slowly (months).
+- **Recurring validation** -- Scheduled research tasks don't just discover new information -- they re-validate existing high-value findings. "Is it still true that Copilot struggles with multi-file refactors?" Run a test, update the record.
+- **Staleness alerts** -- When the dispatcher relies on a finding older than its decay threshold, flag it. Don't block the decision, but log it so research tasks know what to re-validate.
+
+**3. Confirmation bias -- the system reinforcing its own mistakes**
+
+If the dispatcher routes Go test tasks away from Copilot based on early poor results, Copilot never gets a chance to prove it improved (model updates, better instructions). The system locks into suboptimal routing because it stopped collecting data.
+
+Mitigations:
+
+- **Exploration budget** -- Reserve a percentage of tasks (e.g., 10%) for deliberate exploration: route to an agent the data says is suboptimal, measure the result, update the model. This is the explore/exploit tradeoff from reinforcement learning.
+- **Periodic re-evaluation** -- After N weeks or after a model update, force a re-test of routing assumptions. "We haven't sent a Go task to Copilot in 30 days. Run a controlled test."
+- **External benchmarks** -- Don't rely solely on internal task outcomes. Recurring research tasks bring in external data (published benchmarks, community reports, release notes) that can challenge internal assumptions.
+- **Human override with tracking** -- When a human overrides a routing decision ("use Claude for this, not Copilot"), record the override and the outcome. If human overrides consistently outperform the system, the routing model is wrong and needs recalibration.
+
+These constraints are not optional safety features. They are structural requirements. A shared memory system without data integrity guarantees is worse than no shared memory at all -- it provides false confidence in unreliable information.
 
 ## Non-Goals (at this stage)
 
