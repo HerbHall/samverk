@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
@@ -72,7 +73,8 @@ func serveCmd() *cobra.Command {
 				}
 			}
 
-			// Wire MCP handler if GitHub credentials are available.
+			// Wire GitHub forge if credentials are available.
+			var tracker forge.IssueTracker
 			token := os.Getenv("GITHUB_TOKEN")
 			if owner == "" {
 				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
@@ -83,7 +85,8 @@ func serveCmd() *cobra.Command {
 			if token != "" && owner != "" && repo != "" {
 				ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 				httpClient := oauth2.NewClient(ctx, ts)
-				tracker := github.New(owner, repo, httpClient)
+				ghClient := github.New(owner, repo, httpClient)
+				tracker = ghClient
 
 				// Load autonomy policy for tier enforcement.
 				policyCfg, policyErr := autonomy.LoadOrDefault(".")
@@ -94,13 +97,17 @@ func serveCmd() *cobra.Command {
 				policy := autonomy.NewPolicy(policyCfg)
 
 				// The GitHub Client implements both IssueTracker and RepoReader.
-				var repoReader forge.RepoReader = tracker
+				var repoReader forge.RepoReader = ghClient
 				mcpHandler := internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
 				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
 				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
 			} else {
 				slog.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
 			}
+
+			// Wire REST API handler for dashboard.
+			cfg.APIHandler = api.New(tracker, st, costs)
+			slog.Info("REST API enabled")
 
 			s := server.New(cfg)
 			slog.Info("starting samverk server", "addr", addr)

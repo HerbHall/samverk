@@ -11,11 +11,17 @@ import (
 	"time"
 )
 
+// APIRegistrar can register REST API routes on an http.ServeMux.
+type APIRegistrar interface {
+	RegisterRoutes(mux *http.ServeMux)
+}
+
 // Config holds server configuration.
 type Config struct {
-	Addr       string       // listen address, e.g. ":8080"
-	AuthToken  string       //nolint:gosec // G117: config field, not a hardcoded secret
-	MCPHandler http.Handler // optional MCP protocol handler; nil keeps the 501 placeholder
+	Addr       string         // listen address, e.g. ":8080"
+	AuthToken  string         //nolint:gosec // G117: config field, not a hardcoded secret
+	MCPHandler http.Handler   // optional MCP protocol handler; nil keeps the 501 placeholder
+	APIHandler APIRegistrar   // optional REST API handler; nil keeps the 501 placeholder
 }
 
 // Server is the main HTTP server.
@@ -119,7 +125,12 @@ func (s *Server) registerRoutes() {
 		s.mux.HandleFunc("POST /mcp", s.handleNotImplemented)
 	}
 
-	s.mux.HandleFunc("/api/v1/", s.handleNotImplemented)
+	if s.cfg.APIHandler != nil {
+		s.cfg.APIHandler.RegisterRoutes(s.mux)
+	} else {
+		s.mux.HandleFunc("/api/v1/", s.handleNotImplemented)
+	}
+
 	s.mux.HandleFunc("/", s.handleNotImplemented)
 }
 
