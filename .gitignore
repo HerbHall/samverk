@@ -47,3 +47,7 @@ config/local/
 
 # One-time setup scripts
 setup-github.ps1
+
+# Web dashboard
+web/node_modules/
+web/dist/
