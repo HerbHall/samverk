@@ -120,6 +120,60 @@ This concept draws from several sources that should be researched in depth befor
 10. **DevKit as the home**: Should this be a DevKit library (reusable across all projects) with Samverk as a consumer, or a Samverk-only feature? What are the tradeoffs for each ownership model?
 11. **Autolearn migration path**: How would existing DevKit autolearn data (100+ patterns, 80+ gotchas in flat markdown) be migrated into a structured memory store without losing fidelity?
 12. **Multi-model write conflicts**: When two agents running different models write contradictory findings about the same topic concurrently, how is the conflict detected and resolved?
+13. **Agent performance metrics**: What metrics best predict agent suitability for a task type? First-pass CI success rate? Error category distribution? Cost per quality unit? How many data points are needed before a routing preference is statistically meaningful?
+14. **Recurring research scheduling**: How frequently should agent landscape scans run? What triggers a re-scan (new model release, price change, capability benchmark)? How do we avoid stale agent profiles influencing dispatch decisions?
+15. **Prompt enrichment from memory**: When the dispatcher enriches an agent's prompt with warnings from past failures, what's the optimal format? How many warnings before context pollution degrades performance?
+
+## The Dispatch Feedback Loop
+
+Shared memory's most powerful application is closing the loop between agent selection, execution, and improvement. The dispatcher doesn't just route tasks -- it learns which agent handles which task types best, based on accumulated evidence.
+
+### How It Works
+
+```text
+1. Research agents scan the agent landscape on a recurring schedule
+   -> Store: capabilities, pricing, benchmarks, model updates
+   -> Memory type: "agent_profile"
+
+2. Dispatcher classifies an incoming issue
+   -> Query memory: "which agents performed best on Go test generation?"
+   -> Query memory: "what's the current pricing for Claude vs GPT-4?"
+   -> Select agent based on evidence, not configuration
+
+3. Agent executes the task, produces a result (PR, comment, report)
+
+4. Autolearn evaluates the outcome
+   -> Quality: did CI pass first try? Were there lint violations?
+   -> Cost: tokens consumed, Actions minutes, wall time
+   -> Errors: what went wrong, was it agent-specific or task-specific?
+   -> Store evaluation as "task_outcome" in shared memory
+
+5. Next dispatch decision uses steps 1-4 as input
+   -> Agent X scored 95% on Go test tasks but 60% on React components
+   -> Agent Y is 3x cheaper but needs 2 iterations on average
+   -> Agent Z consistently misses golangci-lint patterns
+```
+
+### What Gets Learned Over Time
+
+- **Agent strengths**: "Copilot handles test expansion well (87% first-pass CI success) but struggles with multi-file refactors (42%)"
+- **Error patterns**: "Ollama models consistently miss named return conventions -- add to instruction prompts"
+- **Cost efficiency**: "For docs tasks, Copilot at $0 (Actions minutes) outperforms Claude at $0.12/task with equivalent quality"
+- **Task classification**: "Issues with 3+ file changes should never route to Copilot -- historical failure rate is 71%"
+- **Recovery patterns**: "When Agent X fails on task type Y, reassigning to Agent Z resolves 89% of the time"
+
+### Error Prevention Through Institutional Memory
+
+Every mistake becomes a permanent learning:
+
+1. Agent produces a lint violation -> autolearn captures the pattern
+2. Pattern is stored in shared memory with agent ID, task type, and error details
+3. Next time a similar task is dispatched, the dispatcher either:
+   - Routes to a different agent that doesn't make this mistake
+   - Enriches the agent's prompt with the specific warning
+   - Both -- route to a better agent AND include the warning
+
+This is the "once found, always fix, never leave" principle applied to agent orchestration. The system prevents errors by remembering them, not by hoping agents read instruction files.
 
 ## Non-Goals (at this stage)
 
