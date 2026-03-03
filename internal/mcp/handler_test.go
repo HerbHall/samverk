@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
@@ -195,7 +196,7 @@ type callToolResult struct {
 // newTestMCPServer sets up an httptest.Server serving the MCP handler.
 func newTestMCPServer(t *testing.T, tracker forge.IssueTracker, costs digest.CostSource) *httptest.Server {
 	t.Helper()
-	h := internalmcp.NewHandler(tracker, costs, nil)
+	h := internalmcp.NewHandler(tracker, costs, nil, nil)
 	handler := internalmcp.NewHTTPHandler(h)
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
@@ -268,14 +269,15 @@ func TestToolsListDiscovery(t *testing.T) {
 		"add_label", "remove_label", "add_comment", "create_issue",
 		"list_issues", "get_issue", "update_issue",
 		"close_issue", "reopen_issue", "set_labels", "list_comments",
+		"approve_action", "reject_action",
 	}
 	for _, name := range expectedTools {
 		if !toolNames[name] {
 			t.Errorf("%s tool not found in tools/list", name)
 		}
 	}
-	if len(result.Tools) != 13 {
-		t.Errorf("expected 13 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 15 {
+		t.Errorf("expected 15 tools, got %d", len(result.Tools))
 	}
 }
 
@@ -1564,5 +1566,414 @@ func TestListCommentsToolValidation(t *testing.T) {
 				t.Error("expected isError=true for invalid input")
 			}
 		})
+	}
+}
+
+// newTestMCPServerWithPolicy sets up an httptest.Server with a specific autonomy policy.
+func newTestMCPServerWithPolicy(t *testing.T, tracker forge.IssueTracker, costs digest.CostSource, policy autonomy.AutonomyPolicy) *httptest.Server {
+	t.Helper()
+	h := internalmcp.NewHandler(tracker, costs, nil, policy)
+	handler := internalmcp.NewHTTPHandler(h)
+	ts := httptest.NewServer(handler)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// tier3Policy is a test policy that makes all actions Tier 3 (require confirmation).
+type tier3Policy struct{}
+
+func (p *tier3Policy) TierFor(_ autonomy.ActionType) autonomy.Tier    { return autonomy.Tier3 }
+func (p *tier3Policy) RequiresConfirmation(_ autonomy.ActionType) bool { return true }
+func (p *tier3Policy) CostThreshold() float64                         { return 5.0 }
+
+// tier1Policy is a test policy that makes all actions Tier 1 (always autonomous).
+type tier1Policy struct{}
+
+func (p *tier1Policy) TierFor(_ autonomy.ActionType) autonomy.Tier    { return autonomy.Tier1 }
+func (p *tier1Policy) RequiresConfirmation(_ autonomy.ActionType) bool { return false }
+func (p *tier1Policy) CostThreshold() float64                         { return 5.0 }
+
+func TestTierEnforcement_Tier3BlocksCloseIssue(t *testing.T) {
+	tracker := &mockTracker{
+		issues: []*forge.Issue{
+			{Number: 10, Title: "Test issue", State: forge.StateOpen},
+		},
+	}
+	ts := newTestMCPServerWithPolicy(t, tracker, nil, &tier3Policy{})
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      100,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "close_issue",
+			"arguments": map[string]any{
+				"issue_number": 10,
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+
+	// Parse the confirmation_required JSON response.
+	var confirmation map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &confirmation); err != nil {
+		t.Fatalf("expected JSON confirmation response, got %q: %v", result.Content[0].Text, err)
+	}
+
+	if confirmation["status"] != "confirmation_required" {
+		t.Errorf("status = %v, want confirmation_required", confirmation["status"])
+	}
+	if confirmation["action"] != "close_issue" {
+		t.Errorf("action = %v, want close_issue", confirmation["action"])
+	}
+	if confirmation["tier"] != float64(3) {
+		t.Errorf("tier = %v, want 3", confirmation["tier"])
+	}
+	actionID, ok := confirmation["action_id"].(string)
+	if !ok || actionID == "" {
+		t.Error("action_id should be a non-empty string")
+	}
+
+	// Verify the tracker was NOT called (action was blocked).
+	if len(tracker.updateIssueCalls) != 0 {
+		t.Errorf("expected 0 UpdateIssue calls, got %d", len(tracker.updateIssueCalls))
+	}
+}
+
+func TestTierEnforcement_NilPolicyAllowsAll(t *testing.T) {
+	tracker := &mockTracker{
+		issues: []*forge.Issue{
+			{Number: 10, Title: "Test issue", State: forge.StateOpen},
+		},
+	}
+	// nil policy = no enforcement, all actions proceed.
+	ts := newTestMCPServer(t, tracker, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      101,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "close_issue",
+			"arguments": map[string]any{
+				"issue_number": 10,
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+
+	text := result.Content[0].Text
+	if !strings.Contains(text, "Closed issue #10") {
+		t.Errorf("expected 'Closed issue #10', got %q", text)
+	}
+
+	// Verify the tracker was called (action proceeded).
+	if len(tracker.updateIssueCalls) != 1 {
+		t.Errorf("expected 1 UpdateIssue call, got %d", len(tracker.updateIssueCalls))
+	}
+}
+
+func TestTierEnforcement_Tier1AllowsAll(t *testing.T) {
+	tracker := &mockTracker{
+		issues: []*forge.Issue{
+			{Number: 10, Title: "Test issue", State: forge.StateOpen},
+		},
+	}
+	ts := newTestMCPServerWithPolicy(t, tracker, nil, &tier1Policy{})
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      102,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "close_issue",
+			"arguments": map[string]any{
+				"issue_number": 10,
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+
+	text := result.Content[0].Text
+	if !strings.Contains(text, "Closed issue #10") {
+		t.Errorf("expected 'Closed issue #10', got %q", text)
+	}
+}
+
+func TestApproveAction_ExecutesPending(t *testing.T) {
+	tracker := &mockTracker{
+		issues: []*forge.Issue{
+			{Number: 10, Title: "Test issue", State: forge.StateOpen},
+		},
+	}
+	ts := newTestMCPServerWithPolicy(t, tracker, nil, &tier3Policy{})
+
+	// Step 1: Call close_issue -- should be queued.
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      110,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "close_issue",
+			"arguments": map[string]any{
+				"issue_number": 10,
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var queueResult callToolResult
+	if err := json.Unmarshal(resp.Result, &queueResult); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	var confirmation map[string]any
+	if err := json.Unmarshal([]byte(queueResult.Content[0].Text), &confirmation); err != nil {
+		t.Fatalf("unmarshal confirmation: %v", err)
+	}
+
+	actionID := confirmation["action_id"].(string)
+
+	// Step 2: Approve the action.
+	respBody = postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      111,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "approve_action",
+			"arguments": map[string]any{
+				"action_id": actionID,
+			},
+		},
+	})
+
+	var approveResp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &approveResp); err != nil {
+		t.Fatalf("unmarshal approve response: %v\nbody: %s", err, respBody)
+	}
+	if approveResp.Error != nil {
+		t.Fatalf("unexpected error on approve: %s", approveResp.Error)
+	}
+
+	var approveResult callToolResult
+	if err := json.Unmarshal(approveResp.Result, &approveResult); err != nil {
+		t.Fatalf("unmarshal approve result: %v", err)
+	}
+
+	if len(approveResult.Content) == 0 {
+		t.Fatal("expected content in approve response")
+	}
+
+	text := approveResult.Content[0].Text
+	if !strings.Contains(text, "Closed issue #10") {
+		t.Errorf("expected 'Closed issue #10' after approval, got %q", text)
+	}
+
+	// Verify the tracker was called.
+	if len(tracker.updateIssueCalls) != 1 {
+		t.Errorf("expected 1 UpdateIssue call after approval, got %d", len(tracker.updateIssueCalls))
+	}
+}
+
+func TestApproveAction_UnknownIDReturnsError(t *testing.T) {
+	tracker := &mockTracker{}
+	ts := newTestMCPServerWithPolicy(t, tracker, nil, &tier3Policy{})
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      120,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "approve_action",
+			"arguments": map[string]any{
+				"action_id": "nonexistent-id",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+
+	// Either protocol-level error or isError=true in result.
+	if resp.Error != nil {
+		return
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected isError=true for unknown action ID")
+	}
+}
+
+func TestRejectAction_RemovesPending(t *testing.T) {
+	tracker := &mockTracker{
+		issues: []*forge.Issue{
+			{Number: 10, Title: "Test issue", State: forge.StateOpen},
+		},
+	}
+	ts := newTestMCPServerWithPolicy(t, tracker, nil, &tier3Policy{})
+
+	// Step 1: Call close_issue -- should be queued.
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      130,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "close_issue",
+			"arguments": map[string]any{
+				"issue_number": 10,
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+
+	var queueResult callToolResult
+	if err := json.Unmarshal(resp.Result, &queueResult); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	var confirmation map[string]any
+	if err := json.Unmarshal([]byte(queueResult.Content[0].Text), &confirmation); err != nil {
+		t.Fatalf("unmarshal confirmation: %v", err)
+	}
+
+	actionID := confirmation["action_id"].(string)
+
+	// Step 2: Reject the action.
+	respBody = postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      131,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "reject_action",
+			"arguments": map[string]any{
+				"action_id": actionID,
+				"reason":    "not needed",
+			},
+		},
+	})
+
+	var rejectResp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &rejectResp); err != nil {
+		t.Fatalf("unmarshal reject response: %v\nbody: %s", err, respBody)
+	}
+	if rejectResp.Error != nil {
+		t.Fatalf("unexpected error on reject: %s", rejectResp.Error)
+	}
+
+	var rejectResult callToolResult
+	if err := json.Unmarshal(rejectResp.Result, &rejectResult); err != nil {
+		t.Fatalf("unmarshal reject result: %v", err)
+	}
+
+	if len(rejectResult.Content) == 0 {
+		t.Fatal("expected content in reject response")
+	}
+
+	text := rejectResult.Content[0].Text
+	if !strings.Contains(text, "rejected") {
+		t.Errorf("expected 'rejected' in response, got %q", text)
+	}
+	if !strings.Contains(text, "not needed") {
+		t.Errorf("expected rejection reason 'not needed' in response, got %q", text)
+	}
+
+	// Verify the tracker was NOT called.
+	if len(tracker.updateIssueCalls) != 0 {
+		t.Errorf("expected 0 UpdateIssue calls after rejection, got %d", len(tracker.updateIssueCalls))
+	}
+
+	// Step 3: Try to approve the same action -- should fail (already removed).
+	respBody = postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      132,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "approve_action",
+			"arguments": map[string]any{
+				"action_id": actionID,
+			},
+		},
+	})
+
+	var approveResp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &approveResp); err != nil {
+		t.Fatalf("unmarshal approve response: %v\nbody: %s", err, respBody)
+	}
+
+	if approveResp.Error != nil {
+		return // protocol-level error is acceptable
+	}
+
+	var approveResult callToolResult
+	if err := json.Unmarshal(approveResp.Result, &approveResult); err != nil {
+		t.Fatalf("unmarshal approve result: %v", err)
+	}
+	if !approveResult.IsError {
+		t.Error("expected isError=true for already-rejected action")
 	}
 }

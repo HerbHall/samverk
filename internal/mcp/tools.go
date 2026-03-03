@@ -8,6 +8,7 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
 )
@@ -91,6 +92,17 @@ type listCommentsInput struct {
 	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to list comments for"`
 }
 
+// approveActionInput is the typed input for the approve_action tool.
+type approveActionInput struct {
+	ActionID string `json:"action_id" jsonschema:"required,the pending action ID to approve"`
+}
+
+// rejectActionInput is the typed input for the reject_action tool.
+type rejectActionInput struct {
+	ActionID string `json:"action_id" jsonschema:"required,the pending action ID to reject"`
+	Reason   string `json:"reason,omitempty" jsonschema:"optional reason for rejection"`
+}
+
 // registerTools adds all MCP tools to the server.
 func registerTools(srv *gosdk.Server, h *Handler) {
 	gosdk.AddTool(srv, &gosdk.Tool{
@@ -157,6 +169,16 @@ func registerTools(srv *gosdk.Server, h *Handler) {
 		Name:        "list_comments",
 		Description: "List all comments on an issue",
 	}, h.handleListComments)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "approve_action",
+		Description: "Approve a pending Tier 3 action for execution",
+	}, h.handleApproveAction)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "reject_action",
+		Description: "Reject a pending Tier 3 action",
+	}, h.handleRejectAction)
 }
 
 // handleGetDigest builds and formats a check-in digest.
@@ -198,8 +220,19 @@ func (h *Handler) handleAddLabel(
 		return nil, nil, fmt.Errorf("label must not be empty")
 	}
 
+	if result := h.checkTier(autonomy.ActionLabelIssue, "add_label", func() (*gosdk.CallToolResult, error) {
+		return h.executeAddLabel(ctx, input)
+	}); result != nil {
+		return result, nil, nil
+	}
+
+	r, err := h.executeAddLabel(ctx, input)
+	return r, nil, err
+}
+
+func (h *Handler) executeAddLabel(ctx context.Context, input addLabelInput) (*gosdk.CallToolResult, error) {
 	if err := h.tracker.AddLabel(ctx, input.IssueNumber, input.Label); err != nil {
-		return nil, nil, fmt.Errorf("adding label: %w", err)
+		return nil, fmt.Errorf("adding label: %w", err)
 	}
 
 	h.recorder.recordToolCall(ctx, "add_label", input.IssueNumber)
@@ -209,7 +242,7 @@ func (h *Handler) handleAddLabel(
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: text},
 		},
-	}, nil, nil
+	}, nil
 }
 
 // handleRemoveLabel removes a label from an issue.
@@ -225,8 +258,19 @@ func (h *Handler) handleRemoveLabel(
 		return nil, nil, fmt.Errorf("label must not be empty")
 	}
 
+	if result := h.checkTier(autonomy.ActionLabelIssue, "remove_label", func() (*gosdk.CallToolResult, error) {
+		return h.executeRemoveLabel(ctx, input)
+	}); result != nil {
+		return result, nil, nil
+	}
+
+	r, err := h.executeRemoveLabel(ctx, input)
+	return r, nil, err
+}
+
+func (h *Handler) executeRemoveLabel(ctx context.Context, input removeLabelInput) (*gosdk.CallToolResult, error) {
 	if err := h.tracker.RemoveLabel(ctx, input.IssueNumber, input.Label); err != nil {
-		return nil, nil, fmt.Errorf("removing label: %w", err)
+		return nil, fmt.Errorf("removing label: %w", err)
 	}
 
 	h.recorder.recordToolCall(ctx, "remove_label", input.IssueNumber)
@@ -236,7 +280,7 @@ func (h *Handler) handleRemoveLabel(
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: text},
 		},
-	}, nil, nil
+	}, nil
 }
 
 // handleAddComment adds a comment to an issue.
@@ -252,9 +296,20 @@ func (h *Handler) handleAddComment(
 		return nil, nil, fmt.Errorf("body must not be empty")
 	}
 
+	if result := h.checkTier(autonomy.ActionCommentIssue, "add_comment", func() (*gosdk.CallToolResult, error) {
+		return h.executeAddComment(ctx, input)
+	}); result != nil {
+		return result, nil, nil
+	}
+
+	r, err := h.executeAddComment(ctx, input)
+	return r, nil, err
+}
+
+func (h *Handler) executeAddComment(ctx context.Context, input addCommentInput) (*gosdk.CallToolResult, error) {
 	comment, err := h.tracker.AddComment(ctx, input.IssueNumber, input.Body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("adding comment: %w", err)
+		return nil, fmt.Errorf("adding comment: %w", err)
 	}
 
 	h.recorder.recordToolCall(ctx, "add_comment", input.IssueNumber)
@@ -264,14 +319,14 @@ func (h *Handler) handleAddComment(
 		"issue_number": input.IssueNumber,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("marshalling comment result: %w", err)
+		return nil, fmt.Errorf("marshalling comment result: %w", err)
 	}
 
 	return &gosdk.CallToolResult{
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: string(result)},
 		},
-	}, nil, nil
+	}, nil
 }
 
 // handleCreateIssue creates a new issue on the forge.
@@ -284,6 +339,17 @@ func (h *Handler) handleCreateIssue(
 		return nil, nil, fmt.Errorf("title must not be empty")
 	}
 
+	if result := h.checkTier(autonomy.ActionOpenIssue, "create_issue", func() (*gosdk.CallToolResult, error) {
+		return h.executeCreateIssue(ctx, input)
+	}); result != nil {
+		return result, nil, nil
+	}
+
+	r, err := h.executeCreateIssue(ctx, input)
+	return r, nil, err
+}
+
+func (h *Handler) executeCreateIssue(ctx context.Context, input createIssueInput) (*gosdk.CallToolResult, error) {
 	issue, err := h.tracker.CreateIssue(ctx, &forge.CreateIssueRequest{
 		Title:     input.Title,
 		Body:      input.Body,
@@ -291,7 +357,7 @@ func (h *Handler) handleCreateIssue(
 		Assignees: input.Assignees,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating issue: %w", err)
+		return nil, fmt.Errorf("creating issue: %w", err)
 	}
 
 	h.recorder.recordToolCall(ctx, "create_issue", issue.Number)
@@ -301,14 +367,14 @@ func (h *Handler) handleCreateIssue(
 		"title":        issue.Title,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("marshalling issue result: %w", err)
+		return nil, fmt.Errorf("marshalling issue result: %w", err)
 	}
 
 	return &gosdk.CallToolResult{
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: string(result)},
 		},
-	}, nil, nil
+	}, nil
 }
 
 // handleListIssues lists issues with optional filters.
@@ -379,6 +445,17 @@ func (h *Handler) handleUpdateIssue(
 		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
 	}
 
+	if result := h.checkTier(autonomy.ActionEditFile, "update_issue", func() (*gosdk.CallToolResult, error) {
+		return h.executeUpdateIssue(ctx, input)
+	}); result != nil {
+		return result, nil, nil
+	}
+
+	r, err := h.executeUpdateIssue(ctx, input)
+	return r, nil, err
+}
+
+func (h *Handler) executeUpdateIssue(ctx context.Context, input updateIssueInput) (*gosdk.CallToolResult, error) {
 	req := &forge.UpdateIssueRequest{
 		Title: input.Title,
 		Body:  input.Body,
@@ -390,21 +467,21 @@ func (h *Handler) handleUpdateIssue(
 
 	issue, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("updating issue: %w", err)
+		return nil, fmt.Errorf("updating issue: %w", err)
 	}
 
 	h.recorder.recordToolCall(ctx, "update_issue", input.IssueNumber)
 
 	result, err := json.Marshal(issue)
 	if err != nil {
-		return nil, nil, fmt.Errorf("marshalling updated issue: %w", err)
+		return nil, fmt.Errorf("marshalling updated issue: %w", err)
 	}
 
 	return &gosdk.CallToolResult{
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: string(result)},
 		},
-	}, nil, nil
+	}, nil
 }
 
 // handleCloseIssue is a convenience wrapper that closes an issue.
@@ -417,12 +494,23 @@ func (h *Handler) handleCloseIssue(
 		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
 	}
 
+	if result := h.checkTier(autonomy.ActionCloseIssue, "close_issue", func() (*gosdk.CallToolResult, error) {
+		return h.executeCloseIssue(ctx, input)
+	}); result != nil {
+		return result, nil, nil
+	}
+
+	r, err := h.executeCloseIssue(ctx, input)
+	return r, nil, err
+}
+
+func (h *Handler) executeCloseIssue(ctx context.Context, input closeIssueInput) (*gosdk.CallToolResult, error) {
 	closedState := forge.StateClosed
 	_, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
 		State: &closedState,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("closing issue: %w", err)
+		return nil, fmt.Errorf("closing issue: %w", err)
 	}
 
 	h.recorder.recordToolCall(ctx, "close_issue", input.IssueNumber)
@@ -432,7 +520,7 @@ func (h *Handler) handleCloseIssue(
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: text},
 		},
-	}, nil, nil
+	}, nil
 }
 
 // handleReopenIssue is a convenience wrapper that reopens a closed issue.
@@ -445,12 +533,23 @@ func (h *Handler) handleReopenIssue(
 		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
 	}
 
+	if result := h.checkTier(autonomy.ActionCloseIssue, "reopen_issue", func() (*gosdk.CallToolResult, error) {
+		return h.executeReopenIssue(ctx, input)
+	}); result != nil {
+		return result, nil, nil
+	}
+
+	r, err := h.executeReopenIssue(ctx, input)
+	return r, nil, err
+}
+
+func (h *Handler) executeReopenIssue(ctx context.Context, input reopenIssueInput) (*gosdk.CallToolResult, error) {
 	openState := forge.StateOpen
 	_, err := h.tracker.UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
 		State: &openState,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("reopening issue: %w", err)
+		return nil, fmt.Errorf("reopening issue: %w", err)
 	}
 
 	h.recorder.recordToolCall(ctx, "reopen_issue", input.IssueNumber)
@@ -460,7 +559,7 @@ func (h *Handler) handleReopenIssue(
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: text},
 		},
-	}, nil, nil
+	}, nil
 }
 
 // handleSetLabels replaces all labels on an issue with the given set.
@@ -476,8 +575,19 @@ func (h *Handler) handleSetLabels(
 		return nil, nil, fmt.Errorf("labels must not be empty")
 	}
 
+	if result := h.checkTier(autonomy.ActionLabelIssue, "set_labels", func() (*gosdk.CallToolResult, error) {
+		return h.executeSetLabels(ctx, input)
+	}); result != nil {
+		return result, nil, nil
+	}
+
+	r, err := h.executeSetLabels(ctx, input)
+	return r, nil, err
+}
+
+func (h *Handler) executeSetLabels(ctx context.Context, input setLabelsInput) (*gosdk.CallToolResult, error) {
 	if err := h.tracker.SetLabels(ctx, input.IssueNumber, input.Labels); err != nil {
-		return nil, nil, fmt.Errorf("setting labels: %w", err)
+		return nil, fmt.Errorf("setting labels: %w", err)
 	}
 
 	h.recorder.recordToolCall(ctx, "set_labels", input.IssueNumber)
@@ -487,7 +597,7 @@ func (h *Handler) handleSetLabels(
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: text},
 		},
-	}, nil, nil
+	}, nil
 }
 
 // handleListComments lists all comments on an issue.
@@ -549,6 +659,60 @@ func (h *Handler) handleGetCostSummary(
 		summary.BudgetRemainingUSD,
 	)
 
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{
+			&gosdk.TextContent{Text: text},
+		},
+	}, nil, nil
+}
+
+// handleApproveAction executes a pending Tier 3 action after user confirmation.
+func (h *Handler) handleApproveAction(
+	_ context.Context,
+	_ *gosdk.CallToolRequest,
+	input approveActionInput,
+) (*gosdk.CallToolResult, any, error) {
+	if input.ActionID == "" {
+		return nil, nil, fmt.Errorf("action_id must not be empty")
+	}
+
+	action, ok := h.pending.get(input.ActionID)
+	if !ok {
+		return nil, nil, fmt.Errorf("pending action %q not found or expired", input.ActionID)
+	}
+
+	h.pending.remove(input.ActionID)
+
+	result, err := action.Execute()
+	if err != nil {
+		return nil, nil, err
+	}
+	return result, nil, nil
+}
+
+// handleRejectAction removes a pending Tier 3 action without executing it.
+func (h *Handler) handleRejectAction(
+	_ context.Context,
+	_ *gosdk.CallToolRequest,
+	input rejectActionInput,
+) (*gosdk.CallToolResult, any, error) {
+	if input.ActionID == "" {
+		return nil, nil, fmt.Errorf("action_id must not be empty")
+	}
+
+	_, ok := h.pending.get(input.ActionID)
+	if !ok {
+		return nil, nil, fmt.Errorf("pending action %q not found or expired", input.ActionID)
+	}
+
+	h.pending.remove(input.ActionID)
+
+	reason := input.Reason
+	if reason == "" {
+		reason = "rejected by user"
+	}
+
+	text := fmt.Sprintf("Action %s rejected: %s", input.ActionID, reason)
 	return &gosdk.CallToolResult{
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: text},
