@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge/github"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
@@ -82,7 +83,16 @@ func serveCmd() *cobra.Command {
 				ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 				httpClient := oauth2.NewClient(ctx, ts)
 				tracker := github.New(owner, repo, httpClient)
-				mcpHandler := internalmcp.NewHandler(tracker, costs, st)
+
+				// Load autonomy policy for tier enforcement.
+				policyCfg, policyErr := autonomy.LoadOrDefault(".")
+				if policyErr != nil {
+					slog.Warn("could not load autonomy config, using defaults", "error", policyErr)
+					policyCfg = autonomy.DefaultConfig()
+				}
+				policy := autonomy.NewPolicy(policyCfg)
+
+				mcpHandler := internalmcp.NewHandler(tracker, costs, st, policy)
 				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
 				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
 			} else {

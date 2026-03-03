@@ -16,7 +16,7 @@ import (
 // newTestMCPServerWithStore sets up an httptest.Server with a real SQLite store.
 func newTestMCPServerWithStore(t *testing.T, tracker *mockTracker, costs digest.CostSource, s store.Store) *httptest.Server {
 	t.Helper()
-	h := internalmcp.NewHandler(tracker, costs, s)
+	h := internalmcp.NewHandler(tracker, costs, s, nil)
 	handler := internalmcp.NewHTTPHandler(h)
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
