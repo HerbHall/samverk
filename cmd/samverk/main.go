@@ -12,6 +12,7 @@ import (
 	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/digest"
+	"github.com/herbhall/samverk/internal/dispatcher"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/forge/github"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
@@ -128,13 +129,71 @@ func serveCmd() *cobra.Command {
 }
 
 func dispatchCmd() *cobra.Command {
-	return &cobra.Command{
+	var owner, repo, dbPath string
+	var pollSeconds int
+
+	cmd := &cobra.Command{
 		Use:   "dispatch",
-		Short: "Start the dispatcher agent (watches issue tracker, routes work)",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("samverk dispatch: not yet implemented")
+		Short: "Start the dispatcher (watches issues, routes work to agents)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer cancel()
+
+			token := os.Getenv("GITHUB_TOKEN")
+			if owner == "" {
+				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
+			}
+			if repo == "" {
+				repo = os.Getenv("SAMVERK_GITHUB_REPO")
+			}
+			if token == "" || owner == "" || repo == "" {
+				return fmt.Errorf("GITHUB_TOKEN, --owner, and --repo are required")
+			}
+
+			ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+			httpClient := oauth2.NewClient(ctx, ts)
+			ghClient := github.New(owner, repo, httpClient)
+
+			if pollSeconds > 0 {
+				ghClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
+			}
+
+			// Load autonomy policy.
+			policyCfg, policyErr := autonomy.LoadOrDefault(".")
+			if policyErr != nil {
+				slog.Warn("could not load autonomy config, using defaults", "error", policyErr)
+				policyCfg = autonomy.DefaultConfig()
+			}
+			policy := autonomy.NewPolicy(policyCfg)
+
+			// Open optional store.
+			var st store.Store
+			if dbPath != "" {
+				s, err := store.New(dbPath)
+				if err != nil {
+					slog.Warn("could not open database", "path", dbPath, "error", err)
+				} else {
+					st = s
+					defer func() { _ = s.Close() }()
+				}
+			}
+
+			disp := dispatcher.New(ghClient, policy, st, nil)
+			slog.Info("starting dispatcher", "owner", owner, "repo", repo)
+
+			if err := disp.Run(ctx); err != nil && err != context.Canceled {
+				return fmt.Errorf("dispatcher error: %w", err)
+			}
+			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
+	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
+	cmd.Flags().StringVar(&dbPath, "db", ".samverk/samverk.db", "Path to SQLite database")
+	cmd.Flags().IntVar(&pollSeconds, "poll-interval", 30, "Polling interval in seconds")
+
+	return cmd
 }
 
 func digestCmd() *cobra.Command {
