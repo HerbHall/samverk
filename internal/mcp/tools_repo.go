@@ -82,7 +82,7 @@ func (h *Handler) handleListFiles(
 	_ *gosdk.CallToolRequest,
 	input listFilesInput,
 ) (*gosdk.CallToolResult, any, error) {
-	if h.repo == nil {
+	if h.activeReader() == nil {
 		return &gosdk.CallToolResult{
 			Content: []gosdk.Content{
 				&gosdk.TextContent{Text: "repo operations not available: no RepoReader configured"},
@@ -90,7 +90,7 @@ func (h *Handler) handleListFiles(
 		}, nil, nil
 	}
 
-	entries, err := h.repo.ListFiles(ctx, input.Path, input.Ref)
+	entries, err := h.activeReader().ListFiles(ctx, input.Path, input.Ref)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing files: %w", err)
 	}
@@ -113,7 +113,7 @@ func (h *Handler) handleReadFile(
 	_ *gosdk.CallToolRequest,
 	input readFileInput,
 ) (*gosdk.CallToolResult, any, error) {
-	if h.repo == nil {
+	if h.activeReader() == nil {
 		return &gosdk.CallToolResult{
 			Content: []gosdk.Content{
 				&gosdk.TextContent{Text: "repo operations not available: no RepoReader configured"},
@@ -125,7 +125,7 @@ func (h *Handler) handleReadFile(
 		return nil, nil, fmt.Errorf("path must not be empty")
 	}
 
-	data, err := h.repo.ReadFile(ctx, input.Path, input.Ref)
+	data, err := h.activeReader().ReadFile(ctx, input.Path, input.Ref)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading file: %w", err)
 	}
@@ -168,7 +168,7 @@ func (h *Handler) handleGetDiff(
 	_ *gosdk.CallToolRequest,
 	input getDiffInput,
 ) (*gosdk.CallToolResult, any, error) {
-	if h.repo == nil {
+	if h.activeReader() == nil {
 		return &gosdk.CallToolResult{
 			Content: []gosdk.Content{
 				&gosdk.TextContent{Text: "repo operations not available: no RepoReader configured"},
@@ -183,7 +183,7 @@ func (h *Handler) handleGetDiff(
 		return nil, nil, fmt.Errorf("head must not be empty")
 	}
 
-	diff, err := h.repo.GetDiff(ctx, input.Base, input.Head)
+	diff, err := h.activeReader().GetDiff(ctx, input.Base, input.Head)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting diff: %w", err)
 	}
@@ -201,7 +201,7 @@ func (h *Handler) handleListBranches(
 	_ *gosdk.CallToolRequest,
 	_ listBranchesInput,
 ) (*gosdk.CallToolResult, any, error) {
-	if h.repo == nil {
+	if h.activeReader() == nil {
 		return &gosdk.CallToolResult{
 			Content: []gosdk.Content{
 				&gosdk.TextContent{Text: "repo operations not available: no RepoReader configured"},
@@ -209,7 +209,7 @@ func (h *Handler) handleListBranches(
 		}, nil, nil
 	}
 
-	branches, err := h.repo.ListBranches(ctx)
+	branches, err := h.activeReader().ListBranches(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing branches: %w", err)
 	}
@@ -232,7 +232,7 @@ func (h *Handler) handleGetCommitLog(
 	_ *gosdk.CallToolRequest,
 	input getCommitLogInput,
 ) (*gosdk.CallToolResult, any, error) {
-	if h.repo == nil {
+	if h.activeReader() == nil {
 		return &gosdk.CallToolResult{
 			Content: []gosdk.Content{
 				&gosdk.TextContent{Text: "repo operations not available: no RepoReader configured"},
@@ -249,7 +249,7 @@ func (h *Handler) handleGetCommitLog(
 		limit = 20
 	}
 
-	commits, err := h.repo.GetCommitLog(ctx, branch, limit)
+	commits, err := h.activeReader().GetCommitLog(ctx, branch, limit)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting commit log: %w", err)
 	}
@@ -272,7 +272,7 @@ func (h *Handler) handleSearchCode(
 	_ *gosdk.CallToolRequest,
 	input searchCodeInput,
 ) (*gosdk.CallToolResult, any, error) {
-	if h.repo == nil {
+	if h.activeReader() == nil {
 		return &gosdk.CallToolResult{
 			Content: []gosdk.Content{
 				&gosdk.TextContent{Text: "repo operations not available: no RepoReader configured"},
@@ -284,7 +284,7 @@ func (h *Handler) handleSearchCode(
 		return nil, nil, fmt.Errorf("query must not be empty")
 	}
 
-	results, err := h.repo.SearchCode(ctx, input.Query)
+	results, err := h.activeReader().SearchCode(ctx, input.Query)
 	if err != nil {
 		return nil, nil, fmt.Errorf("searching code: %w", err)
 	}

@@ -41,7 +41,7 @@ func main() {
 }
 
 func serveCmd() *cobra.Command {
-	var addr, owner, repo, dbPath string
+	var addr, owner, repo, dbPath, projectsConfig string
 	var budget float64
 
 	cmd := &cobra.Command{
@@ -100,6 +100,53 @@ func serveCmd() *cobra.Command {
 				// The GitHub Client implements both IssueTracker and RepoReader.
 				var repoReader forge.RepoReader = ghClient
 				mcpHandler := internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
+
+				// Wire multi-project support.
+				registry := internalmcp.NewProjectRegistry()
+
+				// Register the default project from --owner/--repo flags.
+				defaultProject := &internalmcp.Project{
+					Name:    repo,
+					Owner:   owner,
+					Repo:    repo,
+					Tracker: tracker,
+					Reader:  repoReader,
+				}
+				if regErr := registry.Register(defaultProject); regErr != nil {
+					slog.Warn("could not register default project", "error", regErr)
+				}
+
+				// Load additional projects from config file if it exists.
+				if projectsConfig != "" {
+					if configs, loadErr := internalmcp.LoadProjectConfig(projectsConfig); loadErr == nil {
+						for _, pc := range configs {
+							// Skip if already registered as the default.
+							if pc.Name == repo && pc.Owner == owner && pc.Repo == repo {
+								continue
+							}
+							ghExtra := github.New(pc.Owner, pc.Repo, httpClient)
+							p := &internalmcp.Project{
+								Name:    pc.Name,
+								Owner:   pc.Owner,
+								Repo:    pc.Repo,
+								Tracker: ghExtra,
+								Reader:  ghExtra,
+							}
+							if regErr := registry.Register(p); regErr != nil {
+								slog.Warn("could not register project from config",
+									"name", pc.Name, "error", regErr)
+							} else {
+								slog.Info("registered project from config",
+									"name", pc.Name, "owner", pc.Owner, "repo", pc.Repo)
+							}
+						}
+					} else if !os.IsNotExist(loadErr) {
+						slog.Warn("could not load projects config",
+							"path", projectsConfig, "error", loadErr)
+					}
+				}
+
+				mcpHandler.SetProjects(registry)
 				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
 				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
 			} else {
@@ -124,6 +171,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
 	cmd.Flags().StringVar(&dbPath, "db", ".samverk/samverk.db", "Path to SQLite database for session/cost tracking")
+	cmd.Flags().StringVar(&projectsConfig, "projects-config", ".samverk/server.yaml", "Path to multi-project YAML config")
 	cmd.Flags().Float64Var(&budget, "budget", 0, "Daily budget in USD (0 = unlimited)")
 	return cmd
 }
