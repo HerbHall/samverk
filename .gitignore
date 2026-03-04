@@ -41,6 +41,7 @@ todos/
 .credentials.json
 secrets/
 config/local/
+deploy/samverk.env
 
 # Archives
 *.zip

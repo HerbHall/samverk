@@ -1,4 +1,5 @@
-.PHONY: build test test-race test-coverage lint lint-md lint-all ci hooks run clean web dev-web
+.PHONY: build test test-race test-coverage lint lint-md lint-all ci hooks run clean web dev-web \
+       cross-build deploy deploy-binary deploy-config
 
 # Binary
 BIN=samverk
@@ -54,6 +55,31 @@ hooks:
 
 run: build
 	./bin/$(BIN) serve
+
+# Cross-compile for Linux (deploy target)
+DEPLOY_HOST ?= 192.168.1.161
+DEPLOY_USER ?= root
+
+cross-build: web
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BIN)-linux-amd64 ./cmd/samverk/
+	@echo "Built bin/$(BIN)-linux-amd64"
+
+# Deploy binary to the remote host
+deploy-binary: cross-build
+	scp bin/$(BIN)-linux-amd64 $(DEPLOY_USER)@$(DEPLOY_HOST):/usr/local/bin/$(BIN)
+	@echo "Binary deployed to $(DEPLOY_HOST)"
+
+# Deploy config templates (only copies if files don't already exist on target)
+deploy-config:
+	scp deploy/samverk-serve.service deploy/samverk-dispatch.service $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/
+	scp deploy/install.sh $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/install.sh
+	@echo "Service files and installer copied to $(DEPLOY_HOST)"
+
+# Full deploy: build, copy binary + configs, run installer
+deploy: deploy-binary deploy-config
+	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) 'bash /tmp/install.sh'
+	@echo "Deployment complete. Start services with:"
+	@echo "  ssh $(DEPLOY_USER)@$(DEPLOY_HOST) systemctl start samverk-serve samverk-dispatch"
 
 clean:
 	rm -rf bin/ coverage.out

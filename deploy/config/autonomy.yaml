@@ -1,0 +1,9 @@
+# Samverk Autonomy Policy
+# Controls what agents can do without human approval.
+
+defaults:
+  api_cost_threshold_usd: 5.00
+
+tier_overrides: {}
+agents: {}
+branches: {}

@@ -1,0 +1,17 @@
+# Samverk AI Provider Registry
+# Configure which AI providers are available for agent work.
+
+providers:
+  claude:
+    type: claude
+    api_key_env: ANTHROPIC_API_KEY
+    default_model: claude-sonnet-4-20250514
+
+  ollama:
+    type: ollama
+    base_url: http://192.168.1.207:11434
+
+# Routing chains: tried in order, first healthy provider wins.
+routing:
+  default: [claude, ollama]
+  frontend: [claude]
