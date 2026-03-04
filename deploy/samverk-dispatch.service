@@ -1,0 +1,32 @@
+[Unit]
+Description=Samverk Dispatcher (Issue Watcher + Agent Router)
+Documentation=https://github.com/herbhall/samverk
+After=network-online.target samverk-serve.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=samverk
+Group=samverk
+WorkingDirectory=/var/lib/samverk
+ExecStart=/usr/local/bin/samverk dispatch \
+  --db /var/lib/samverk/.samverk/samverk.db \
+  --providers-config /var/lib/samverk/.samverk/providers.yaml \
+  --poll-interval 30 \
+  --workers 3
+EnvironmentFile=/var/lib/samverk/.samverk/samverk.env
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=samverk-dispatch
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/samverk
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+# Samverk Multi-Project Configuration
+# Add additional projects to manage beyond the default --owner/--repo.
+
+projects: []
+  # - name: another-project
+  #   owner: herbhall
+  #   repo: another-project
