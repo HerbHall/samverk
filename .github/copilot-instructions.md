@@ -54,3 +54,8 @@ TypeScript dashboard embedded via `go:embed`.
 - Use gRPC, PostgreSQL, Redis, or web frameworks (gin/echo/fiber)
 - Add dependencies without checking if stdlib covers the need
 - Commit directly to `main` -- always use feature branches
+
+## Path Instructions
+
+Files: **/*.md
+excludeAgent: "code-review"
