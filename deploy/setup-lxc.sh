@@ -11,18 +11,26 @@ set -euo pipefail
 CTID="${1:-201}"
 IP="${2:-192.168.1.161}"
 HOSTNAME="samverk"
-TEMPLATE="local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
-
 echo "=== Samverk LXC Setup ==="
 echo "Container ID: $CTID"
 echo "IP Address:   $IP"
 echo ""
 
-# Check if template exists; list available if not.
-if ! pveam list local | grep -q "debian-12-standard"; then
-    echo "Debian 12 template not found. Downloading..."
-    pveam download local debian-12-standard_12.7-1_amd64.tar.zst
+# Find or download the latest Debian 12 template.
+TEMPLATE_FILE=$(pveam list local | grep "debian-12-standard" | awk '{print $1}' | tail -1)
+if [ -z "$TEMPLATE_FILE" ]; then
+    echo "Debian 12 template not found locally. Downloading latest..."
+    LATEST=$(pveam available --section system | grep "debian-12-standard" | awk '{print $2}' | tail -1)
+    if [ -z "$LATEST" ]; then
+        echo "ERROR: No Debian 12 standard template found in pveam repository."
+        exit 1
+    fi
+    pveam download local "$LATEST"
+    TEMPLATE_FILE="local:vztmpl/${LATEST}"
+else
+    echo "Using template: $TEMPLATE_FILE"
 fi
+TEMPLATE="$TEMPLATE_FILE"
 
 # Create the container.
 echo "Creating LXC container $CTID..."

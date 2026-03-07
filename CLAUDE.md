@@ -113,6 +113,15 @@ For full details including specific libraries, what NOT to use, and project stru
 - Failure recovery strategy ([ADR-027](docs/decisions/ADR-027-failure-recovery.md))
 - Cross-model QA validation ([ADR-030](docs/decisions/ADR-030-cross-model-qa.md))
 
+## Infrastructure
+
+- **Proxmox host:** `root@192.168.1.203` (SSH key auth configured)
+- **Samverk container:** `root@192.168.1.162` CT 202 (SSH key auth configured)
+- **Health check:** `curl http://192.168.1.162:8080/healthz`
+- **Deploy command:** `make deploy DEPLOY_HOST=192.168.1.162`
+- **Redeploy shortcut:** `make redeploy` -- cross-compiles, deploys, restarts services, and verifies the health check in one step. Use this after any code change that should reach the live server.
+- Claude Code has SSH access to both hosts and should use it for deployment tasks
+
 ## References
 
 - [Architecture](docs/architecture.md)
