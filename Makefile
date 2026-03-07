@@ -1,5 +1,5 @@
 .PHONY: build test test-race test-coverage lint lint-md lint-all ci hooks run clean web dev-web \
-       cross-build deploy deploy-binary deploy-config
+       cross-build deploy deploy-binary deploy-config redeploy
 
 # Binary
 BIN=samverk
@@ -75,11 +75,19 @@ deploy-config:
 	scp deploy/install.sh $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/install.sh
 	@echo "Service files and installer copied to $(DEPLOY_HOST)"
 
-# Full deploy: build, copy binary + configs, run installer
+# Full deploy: build, copy binary + configs, run installer, restart services
 deploy: deploy-binary deploy-config
-	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) 'bash /tmp/install.sh'
-	@echo "Deployment complete. Start services with:"
-	@echo "  ssh $(DEPLOY_USER)@$(DEPLOY_HOST) systemctl start samverk-serve samverk-dispatch"
+	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) 'systemctl stop samverk-dispatch samverk-serve 2>/dev/null; \
+		sed -i "s/\r$$//" /tmp/install.sh && bash /tmp/install.sh && \
+		systemctl start samverk-serve samverk-dispatch'
+	@echo "Deployment complete. Services restarted."
+
+# One-step redeploy with health verification
+redeploy:
+	$(MAKE) deploy DEPLOY_HOST=192.168.1.162
+	@echo "Verifying health..."
+	@sleep 3
+	@ssh root@192.168.1.162 'curl -sf http://localhost:8080/healthz' && echo " OK" || (echo " FAIL"; exit 1)
 
 clean:
 	rm -rf bin/ coverage.out
