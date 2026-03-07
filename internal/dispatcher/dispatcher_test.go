@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // mockTracker implements forge.IssueTracker for testing.
@@ -359,6 +360,170 @@ func TestHandleOpened_NoFrontmatter(t *testing.T) {
 
 	if !hasLabel(issue.Labels, "status:needs-human") {
 		t.Error("expected status:needs-human label for missing frontmatter")
+	}
+}
+
+func TestClassifyByHeuristic(t *testing.T) {
+	tests := []struct {
+		name     string
+		title    string
+		labels   []string
+		wantType models.AgentType
+	}{
+		{
+			name:     "agent:human label",
+			title:    "Some issue",
+			labels:   []string{"agent:human"},
+			wantType: models.AgentTypeHuman,
+		},
+		{
+			name:     "type:spike label",
+			title:    "Investigate options",
+			labels:   []string{"type:spike"},
+			wantType: models.AgentTypeResearch,
+		},
+		{
+			name:     "type:research label",
+			title:    "Explore alternatives",
+			labels:   []string{"type:research"},
+			wantType: models.AgentTypeResearch,
+		},
+		{
+			name:     "bug label",
+			title:    "Something is broken",
+			labels:   []string{"bug"},
+			wantType: models.AgentTypeCodeGen,
+		},
+		{
+			name:     "fix: title prefix",
+			title:    "fix: null pointer in handler",
+			labels:   nil,
+			wantType: models.AgentTypeCodeGen,
+		},
+		{
+			name:     "feat: title prefix",
+			title:    "feat: add dark mode",
+			labels:   nil,
+			wantType: models.AgentTypeCodeGen,
+		},
+		{
+			name:     "feature: title prefix",
+			title:    "feature: new dashboard",
+			labels:   nil,
+			wantType: models.AgentTypeCodeGen,
+		},
+		{
+			name:     "docs: title prefix",
+			title:    "docs: update README",
+			labels:   nil,
+			wantType: models.AgentTypeDocs,
+		},
+		{
+			name:     "chore: title prefix",
+			title:    "chore: bump dependencies",
+			labels:   nil,
+			wantType: models.AgentTypeDocs,
+		},
+		{
+			name:     "test: title prefix",
+			title:    "test: add unit tests for router",
+			labels:   nil,
+			wantType: models.AgentTypeTest,
+		},
+		{
+			name:     "agent:human takes priority over bug",
+			title:    "Something broken",
+			labels:   []string{"agent:human", "bug"},
+			wantType: models.AgentTypeHuman,
+		},
+		{
+			name:     "no match returns empty",
+			title:    "Random issue title",
+			labels:   []string{"enhancement"},
+			wantType: "",
+		},
+		{
+			name:     "case insensitive title prefix",
+			title:    "FIX: uppercase prefix",
+			labels:   nil,
+			wantType: models.AgentTypeCodeGen,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := &forge.Issue{
+				Number: 99,
+				Title:  tt.title,
+				Labels: tt.labels,
+			}
+			got := classifyByHeuristic(issue)
+			if got != tt.wantType {
+				t.Errorf("classifyByHeuristic() = %q, want %q", got, tt.wantType)
+			}
+		})
+	}
+}
+
+func TestHandleOpened_NoFrontmatter_BugLabel(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "Something is broken",
+		Body:   "No frontmatter here, just a plain issue body.",
+		State:  forge.StateOpen,
+		Labels: []string{"bug"},
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("did not expect status:needs-human for issue with bug label")
+	}
+	if !hasLabel(issue.Labels, "status:claimed") {
+		t.Error("expected status:claimed after heuristic routing")
+	}
+}
+
+func TestHandleOpened_NoFrontmatter_AgentHumanLabel(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "Design review needed",
+		Body:   "Plain issue without frontmatter.",
+		State:  forge.StateOpen,
+		Labels: []string{"agent:human"},
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("did not expect status:needs-human for agent:human label")
+	}
+	if !hasLabel(issue.Labels, "status:claimed") {
+		t.Error("expected status:claimed after heuristic routing")
+	}
+	if len(issue.Assignees) == 0 || issue.Assignees[0] != "human" {
+		t.Errorf("expected assignee human, got %v", issue.Assignees)
 	}
 }
 

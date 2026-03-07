@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/herbhall/samverk/internal/agent"
@@ -30,7 +31,10 @@ func (d *Dispatcher) classify(_ context.Context, issue *forge.Issue) (models.Age
 		return "", fmt.Errorf("classify issue #%d: %w", issue.Number, err)
 	}
 	if fm == nil {
-		return "", fmt.Errorf("classify issue #%d: no frontmatter found", issue.Number)
+		if at := classifyByHeuristic(issue); at != "" {
+			return at, nil
+		}
+		return "", fmt.Errorf("classify issue #%d: no frontmatter found and no heuristic match", issue.Number)
 	}
 	if fm.AgentType == "" {
 		return "", fmt.Errorf("classify issue #%d: agent_type is empty", issue.Number)
@@ -39,6 +43,44 @@ func (d *Dispatcher) classify(_ context.Context, issue *forge.Issue) (models.Age
 		return "", fmt.Errorf("classify issue #%d: unknown agent_type %q", issue.Number, fm.AgentType)
 	}
 	return fm.AgentType, nil
+}
+
+// classifyByHeuristic attempts to determine the agent type from issue labels
+// and title prefix when no YAML frontmatter is present.
+// Returns empty string if no heuristic matches.
+func classifyByHeuristic(issue *forge.Issue) models.AgentType {
+	labels := make(map[string]bool, len(issue.Labels))
+	for _, l := range issue.Labels {
+		labels[l] = true
+	}
+
+	// Label-based rules (highest priority).
+	if labels["agent:human"] {
+		return models.AgentTypeHuman
+	}
+	if labels["type:spike"] || labels["type:research"] {
+		return models.AgentTypeResearch
+	}
+	if labels["bug"] {
+		return models.AgentTypeCodeGen
+	}
+
+	// Title-prefix rules.
+	lower := strings.ToLower(issue.Title)
+	switch {
+	case strings.HasPrefix(lower, "fix:") || strings.HasPrefix(lower, "fix("):
+		return models.AgentTypeCodeGen
+	case strings.HasPrefix(lower, "feat:") || strings.HasPrefix(lower, "feat("),
+		strings.HasPrefix(lower, "feature:") || strings.HasPrefix(lower, "feature("):
+		return models.AgentTypeCodeGen
+	case strings.HasPrefix(lower, "docs:") || strings.HasPrefix(lower, "docs("),
+		strings.HasPrefix(lower, "chore:") || strings.HasPrefix(lower, "chore("):
+		return models.AgentTypeDocs
+	case strings.HasPrefix(lower, "test:") || strings.HasPrefix(lower, "test("):
+		return models.AgentTypeTest
+	}
+
+	return ""
 }
 
 // route assigns the issue to the agent pool matching agentType.
