@@ -12,11 +12,12 @@ import (
 
 // Project represents a registered project with its forge connection.
 type Project struct {
-	Name    string             `json:"name" yaml:"name"`
-	Owner   string             `json:"owner" yaml:"owner"`
-	Repo    string             `json:"repo" yaml:"repo"`
-	Tracker forge.IssueTracker `json:"-" yaml:"-"`
-	Reader  forge.RepoReader   `json:"-" yaml:"-"`
+	Name      string                    `json:"name" yaml:"name"`
+	Owner     string                    `json:"owner" yaml:"owner"`
+	Repo      string                    `json:"repo" yaml:"repo"`
+	Tracker   forge.IssueTracker        `json:"-" yaml:"-"`
+	Reader    forge.RepoReader          `json:"-" yaml:"-"`
+	PRManager forge.PullRequestManager  `json:"-" yaml:"-"`
 }
 
 // ProjectRegistry manages the set of available projects.

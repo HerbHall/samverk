@@ -112,3 +112,51 @@ type ListOptions struct {
 	Page     int
 	PerPage  int
 }
+
+// MergeMethod specifies how a pull request should be merged.
+type MergeMethod string
+
+const (
+	MergeMethodMerge  MergeMethod = "merge"
+	MergeMethodSquash MergeMethod = "squash"
+	MergeMethodRebase MergeMethod = "rebase"
+)
+
+// PullRequestManager provides pull request operations on a git forge.
+type PullRequestManager interface {
+	CreatePullRequest(ctx context.Context, req *CreatePRRequest) (*PullRequest, error)
+	GetPullRequest(ctx context.Context, number int) (*PullRequest, error)
+	ListPullRequests(ctx context.Context, opts *ListPROptions) ([]*PullRequest, error)
+	MergePullRequest(ctx context.Context, number int, method MergeMethod, commitMsg string) error
+}
+
+// PullRequest represents a pull request in Samverk's domain.
+type PullRequest struct {
+	Number    int       `json:"number"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	State     State     `json:"state"`
+	Head      string    `json:"head"`
+	Base      string    `json:"base"`
+	Mergeable bool      `json:"mergeable"`
+	Draft     bool      `json:"draft"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// CreatePRRequest contains the fields needed to create a pull request.
+type CreatePRRequest struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Head  string `json:"head"`
+	Base  string `json:"base"`
+}
+
+// ListPROptions controls filtering for pull request listing.
+type ListPROptions struct {
+	State   State  `json:"state,omitempty"`
+	Head    string `json:"head,omitempty"`
+	Base    string `json:"base,omitempty"`
+	Page    int    `json:"page,omitempty"`
+	PerPage int    `json:"per_page,omitempty"`
+}

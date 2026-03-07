@@ -120,6 +120,7 @@ func serveCmd() *cobra.Command {
 				// The GitHub Client implements both IssueTracker and RepoReader.
 				var repoReader forge.RepoReader = ghClient
 				mcpHandler := internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
+				mcpHandler.SetPRManager(ghClient)
 
 				// Wire multi-project support.
 				registry := internalmcp.NewProjectRegistry()
@@ -129,8 +130,9 @@ func serveCmd() *cobra.Command {
 					Name:    repo,
 					Owner:   owner,
 					Repo:    repo,
-					Tracker: tracker,
-					Reader:  repoReader,
+					Tracker:   tracker,
+					Reader:    repoReader,
+					PRManager: ghClient,
 				}
 				if regErr := registry.Register(defaultProject); regErr != nil {
 					slog.Warn("could not register default project", "error", regErr)
@@ -149,8 +151,9 @@ func serveCmd() *cobra.Command {
 								Name:    pc.Name,
 								Owner:   pc.Owner,
 								Repo:    pc.Repo,
-								Tracker: ghExtra,
-								Reader:  ghExtra,
+								Tracker:   ghExtra,
+								Reader:    ghExtra,
+								PRManager: ghExtra,
 							}
 							if regErr := registry.Register(p); regErr != nil {
 								slog.Warn("could not register project from config",

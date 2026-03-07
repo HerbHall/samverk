@@ -279,8 +279,8 @@ func TestToolsListDiscovery(t *testing.T) {
 			t.Errorf("%s tool not found in tools/list", name)
 		}
 	}
-	if len(result.Tools) != 23 {
-		t.Errorf("expected 23 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 27 {
+		t.Errorf("expected 27 tools, got %d", len(result.Tools))
 	}
 }
 
