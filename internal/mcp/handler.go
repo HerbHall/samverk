@@ -16,14 +16,15 @@ import (
 
 // Handler holds dependencies for MCP tool handlers.
 type Handler struct {
-	tracker  forge.IssueTracker
-	costs    digest.CostSource      // may be nil
-	store    store.Store             // may be nil
-	recorder *sessionRecorder        // derived from store; nil when store is nil
-	policy   autonomy.AutonomyPolicy // may be nil (no enforcement)
-	pending  *pendingActions          // Tier 3 action queue
-	repo     forge.RepoReader        // may be nil (no repo browsing)
-	projects *ProjectRegistry        // may be nil (single-project mode)
+	tracker   forge.IssueTracker          // required
+	costs     digest.CostSource           // may be nil
+	store     store.Store                 // may be nil
+	recorder  *sessionRecorder            // derived from store; nil when store is nil
+	policy    autonomy.AutonomyPolicy     // may be nil (no enforcement)
+	pending   *pendingActions              // Tier 3 action queue
+	repo      forge.RepoReader            // may be nil (no repo browsing)
+	prManager forge.PullRequestManager    // may be nil (no PR operations)
+	projects  *ProjectRegistry            // may be nil (single-project mode)
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
@@ -42,6 +43,11 @@ func NewHandler(tracker forge.IssueTracker, costs digest.CostSource, s store.Sto
 		pending:  newPendingActions(),
 		repo:     repo,
 	}
+}
+
+// SetPRManager attaches a PullRequestManager to the handler.
+func (h *Handler) SetPRManager(prm forge.PullRequestManager) {
+	h.prManager = prm
 }
 
 // SetProjects attaches a project registry to the handler for multi-project support.
@@ -74,6 +80,19 @@ func (h *Handler) activeReader() forge.RepoReader {
 		}
 	}
 	return h.repo
+}
+
+// activePRManager returns the PullRequestManager to use for the current context.
+// If a project registry is configured, it uses the active project's PRManager.
+// Otherwise, it falls back to the handler's directly-configured prManager.
+func (h *Handler) activePRManager() forge.PullRequestManager {
+	if h.projects != nil {
+		p, err := h.projects.Active()
+		if err == nil && p.PRManager != nil {
+			return p.PRManager
+		}
+	}
+	return h.prManager
 }
 
 // checkTier evaluates the autonomy tier for an action. Returns nil if the action
@@ -114,6 +133,7 @@ func newMCPServer(h *Handler) *gosdk.Server {
 	registerTools(srv, h)
 	registerRepoTools(srv, h)
 	registerProjectTools(srv, h)
+	registerPRTools(srv, h)
 	return srv
 }
 
