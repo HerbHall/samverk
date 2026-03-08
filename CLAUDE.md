@@ -125,6 +125,7 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 - Per-project repos with coordination layer ([ADR-023](docs/decisions/ADR-023-per-project-repos.md))
 - Failure recovery strategy ([ADR-027](docs/decisions/ADR-027-failure-recovery.md))
 - Cross-model QA validation ([ADR-030](docs/decisions/ADR-030-cross-model-qa.md))
+- Unified execution plan -- Q2 2026 ([docs/unified-execution-plan.md](docs/unified-execution-plan.md))
 
 ## Infrastructure
 
@@ -155,3 +156,6 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 - [Decision Records](docs/decisions/)
 - [Samverk Overlay Spec](overlay/README.md)
 - [DevKit Boundary Contract](https://github.com/HerbHall/devkit/blob/main/docs/samverk-boundary.md)
+- [Unified Execution Plan](docs/unified-execution-plan.md)
+- [Gitea Migration Plan](docs/gitea-migration-plan.md)
+- [Adaptive Scaling Plan](docs/adaptive-scaling-plan.md)
