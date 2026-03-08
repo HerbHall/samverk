@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  web:
+    name: Build SPA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install and build
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Copy dist to static
+        run: cp -r web/dist/* internal/server/static/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/static/
+          retention-days: 1
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -30,6 +59,7 @@ jobs:
 
   build:
     name: Build
+    needs: [web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,11 +67,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/static/
 
       - run: go build ./cmd/samverk/
 
   test:
     name: Test
+    needs: [web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +85,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/static/
 
       - run: go test -race ./...
 
