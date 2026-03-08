@@ -17,7 +17,12 @@ import (
 // Compile-time check that Client satisfies provider.Provider.
 var _ provider.Provider = (*Client)(nil)
 
-const defaultTimeout = 300 * time.Second
+const (
+	defaultTimeout = 300 * time.Second
+	// maxErrOutputBytes caps the CLI output included in error messages to prevent
+	// oversized GitHub issue comments and avoid leaking unrelated terminal output.
+	maxErrOutputBytes = 2048
+)
 
 // Client invokes the claude CLI binary for chat completions.
 type Client struct {
@@ -26,12 +31,19 @@ type Client struct {
 	timeout   time.Duration
 }
 
-// New creates a claude-cli provider. If model is empty, the CLI uses its default.
+// New creates a claude-cli provider with the default timeout.
+// If model is empty, the CLI uses its default.
 func New(model string) *Client {
+	return NewWithTimeout(model, defaultTimeout)
+}
+
+// NewWithTimeout creates a claude-cli provider with a custom timeout.
+// Use this when the provider config specifies timeout_seconds.
+func NewWithTimeout(model string, timeout time.Duration) *Client {
 	return &Client{
 		claudeBin: "claude",
 		model:     model,
-		timeout:   defaultTimeout,
+		timeout:   timeout,
 	}
 }
 
@@ -78,7 +90,12 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("claude-cli: exec: %w: output: %s", err, strings.TrimSpace(string(out)))
+		snippet := out
+		if len(snippet) > maxErrOutputBytes {
+			// Keep the tail — the final lines are usually the most relevant.
+			snippet = snippet[len(snippet)-maxErrOutputBytes:]
+		}
+		return nil, fmt.Errorf("claude-cli: exec: %w: output: %s", err, strings.TrimSpace(string(snippet)))
 	}
 
 	return &provider.ChatResponse{

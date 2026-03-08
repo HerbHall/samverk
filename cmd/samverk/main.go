@@ -528,6 +528,9 @@ func providerFactory(name string, cfg provider.ProviderConfig) (provider.Provide
 		return ollama.New(baseURL), nil
 	case "claude-cli":
 		model := cfg.DefaultModel
+		if cfg.TimeoutSeconds > 0 {
+			return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second), nil
+		}
 		return claudecli.New(model), nil
 	default:
 		return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)

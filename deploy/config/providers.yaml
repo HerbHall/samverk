@@ -5,14 +5,17 @@ providers:
   claude-haiku:
     type: claude-cli
     default_model: claude-haiku-4-5-20251001
+    # default timeout (300s) is sufficient for triage/simple tasks
 
   claude-sonnet:
     type: claude-cli
     default_model: claude-sonnet-4-6
+    timeout_seconds: 600  # 10 min for standard code-gen and research
 
   claude-opus:
     type: claude-cli
     default_model: claude-opus-4-6
+    timeout_seconds: 900  # 15 min for complex/architectural tasks
 
   ollama-coder:
     type: ollama
