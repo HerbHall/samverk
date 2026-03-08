@@ -92,6 +92,8 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 	agentID := claimed.AgentID
 	lastHB := claimed.LastHeartbeat
 	delete(d.claimed, issueNumber)
+	// Persist the incremented failure count so the next dispatch cycle picks it up.
+	d.issueFailures[issueNumber] = failureCount
 	d.mu.Unlock()
 
 	comment := fmt.Sprintf(
