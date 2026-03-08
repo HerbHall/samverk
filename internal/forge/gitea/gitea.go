@@ -13,8 +13,11 @@ import (
 	"github.com/herbhall/samverk/internal/forge"
 )
 
-// Compile-time interface check.
-var _ forge.IssueTracker = (*Client)(nil)
+// Compile-time interface checks.
+var (
+	_ forge.IssueTracker = (*Client)(nil)
+	_ forge.RepoWriter   = (*Client)(nil)
+)
 
 // Client implements forge.IssueTracker for Gitea repositories.
 type Client struct {
@@ -479,6 +482,19 @@ func extractAssigneeLogins(users []*gogitea.User) []string {
 		result = append(result, users[i].UserName)
 	}
 	return result
+}
+
+// ErrNotImplemented is returned by Gitea methods that are not yet implemented.
+var ErrNotImplemented = fmt.Errorf("gitea: not implemented")
+
+// CreateBranch is not yet implemented for Gitea.
+func (c *Client) CreateBranch(_ context.Context, _ string) error {
+	return ErrNotImplemented
+}
+
+// CreateOrUpdateFile is not yet implemented for Gitea.
+func (c *Client) CreateOrUpdateFile(_ context.Context, _, _, _, _ string) error {
+	return ErrNotImplemented
 }
 
 // stringSliceEqual reports whether two string slices have the same elements.

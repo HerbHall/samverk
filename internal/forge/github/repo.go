@@ -10,8 +10,11 @@ import (
 	"github.com/herbhall/samverk/internal/forge"
 )
 
-// Compile-time interface check.
-var _ forge.RepoReader = (*Client)(nil)
+// Compile-time interface checks.
+var (
+	_ forge.RepoReader = (*Client)(nil)
+	_ forge.RepoWriter = (*Client)(nil)
+)
 
 // ListFiles returns the files and directories at the given path and ref.
 // If path is empty, the repository root is listed.
@@ -164,6 +167,62 @@ func (c *Client) GetCommitLog(ctx context.Context, branch string, limit int) ([]
 	}
 
 	return commits, nil
+}
+
+// CreateBranch creates a new branch from the default branch HEAD.
+func (c *Client) CreateBranch(ctx context.Context, name string) error {
+	// Get the default branch SHA.
+	ref, resp, err := c.gh.Git.GetRef(ctx, c.owner, c.repo, "refs/heads/main")
+	if err != nil {
+		return fmt.Errorf("github: get main ref: %w", err)
+	}
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+
+	newRef := &gogithub.Reference{
+		Ref:    gogithub.Ptr("refs/heads/" + name),
+		Object: &gogithub.GitObject{SHA: ref.Object.SHA},
+	}
+
+	_, resp2, err := c.gh.Git.CreateRef(ctx, c.owner, c.repo, newRef)
+	if err != nil {
+		return fmt.Errorf("github: create branch %q: %w", name, err)
+	}
+	if resp2 != nil && resp2.Body != nil {
+		defer func() { _ = resp2.Body.Close() }()
+	}
+
+	return nil
+}
+
+// CreateOrUpdateFile creates or updates a file on the given branch.
+func (c *Client) CreateOrUpdateFile(ctx context.Context, branch, path, content, message string) error {
+	opts := &gogithub.RepositoryContentFileOptions{
+		Message: gogithub.Ptr(message),
+		Content: []byte(content),
+		Branch:  gogithub.Ptr(branch),
+	}
+
+	// Check if file exists to get its SHA for updates.
+	existing, _, resp, err := c.gh.Repositories.GetContents(ctx, c.owner, c.repo, path,
+		&gogithub.RepositoryContentGetOptions{Ref: branch})
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err == nil && existing != nil {
+		opts.SHA = gogithub.Ptr(existing.GetSHA())
+	}
+
+	_, resp2, err := c.gh.Repositories.CreateFile(ctx, c.owner, c.repo, path, opts)
+	if err != nil {
+		return fmt.Errorf("github: create/update file %q on %q: %w", path, branch, err)
+	}
+	if resp2 != nil && resp2.Body != nil {
+		defer func() { _ = resp2.Body.Close() }()
+	}
+
+	return nil
 }
 
 // SearchCode searches for code matching the query within this repository.

@@ -17,17 +17,21 @@ import (
 )
 
 // Runner executes a single agent task: sends the issue to an AI provider,
-// records cost, and posts the response as an issue comment.
+// records cost, and posts the response as an issue comment or opens a PR.
 type Runner struct {
-	provider provider.Provider
-	model    string
-	tracker  forge.IssueTracker
-	store    store.Store
-	costs    *cost.Tracker
-	logger   *slog.Logger
+	provider   provider.Provider
+	model      string
+	tracker    forge.IssueTracker
+	repoWriter forge.RepoWriter
+	prManager  forge.PullRequestManager
+	store      store.Store
+	costs      *cost.Tracker
+	logger     *slog.Logger
 }
 
 // NewRunner creates a runner bound to a specific provider and model.
+// The repoWriter and prManager are optional; when nil, code-gen/test agents
+// fall back to posting comments instead of opening PRs.
 func NewRunner(p provider.Provider, model string, tracker forge.IssueTracker, st store.Store, costs *cost.Tracker) *Runner {
 	return &Runner{
 		provider: p,
@@ -37,6 +41,16 @@ func NewRunner(p provider.Provider, model string, tracker forge.IssueTracker, st
 		costs:    costs,
 		logger:   slog.Default(),
 	}
+}
+
+// SetRepoWriter configures write access for branch/file operations.
+func (r *Runner) SetRepoWriter(rw forge.RepoWriter) {
+	r.repoWriter = rw
+}
+
+// SetPRManager configures pull request operations.
+func (r *Runner) SetPRManager(pm forge.PullRequestManager) {
+	r.prManager = pm
 }
 
 // Run processes a single task through the AI provider pipeline.
@@ -94,15 +108,89 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		// Non-fatal: continue even if cost recording fails.
 	}
 
-	// Step 6: Post response as comment.
-	if _, err = r.tracker.AddComment(ctx, task.Issue.Number, resp.Message.Content); err != nil {
-		r.failTask(ctx, task, fmt.Sprintf("failed to post comment: %v", err))
-		return fmt.Errorf("add comment: %w", err)
+	// Step 6: Post-process response based on agent type.
+	if err = r.postProcess(ctx, task, resp.Message.Content); err != nil {
+		r.failTask(ctx, task, fmt.Sprintf("post-process error: %v", err))
+		return fmt.Errorf("post-process: %w", err)
 	}
 
 	// Step 7: Mark session completed.
 	if err = r.completeSession(ctx, task.SessionID); err != nil {
 		return fmt.Errorf("complete session: %w", err)
+	}
+
+	return nil
+}
+
+// postProcess routes the provider response to the appropriate output handler.
+// Code-gen and test agents open PRs when EDIT blocks are present and forge
+// write access is configured; all others post comments.
+func (r *Runner) postProcess(ctx context.Context, task Task, response string) error {
+	switch task.AgentType {
+	case models.AgentTypeCodeGen, models.AgentTypeTest:
+		if r.repoWriter != nil && r.prManager != nil {
+			parsed := ParseEditBlocks(response)
+			if len(parsed.Edits) > 0 {
+				return r.openPR(ctx, task, parsed)
+			}
+		}
+		// No EDIT blocks or no write access — fall back to comment.
+		return r.postComment(ctx, task, response)
+	default:
+		return r.postComment(ctx, task, response)
+	}
+}
+
+// postComment posts the response as an issue comment.
+func (r *Runner) postComment(ctx context.Context, task Task, response string) error {
+	if _, err := r.tracker.AddComment(ctx, task.Issue.Number, response); err != nil {
+		return fmt.Errorf("add comment: %w", err)
+	}
+	return nil
+}
+
+// openPR creates a branch, writes files, and opens a pull request.
+func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) error {
+	branch := BranchSlug(task.Issue.Number, task.Issue.Title)
+
+	// Create branch from main.
+	if err := r.repoWriter.CreateBranch(ctx, branch); err != nil {
+		return fmt.Errorf("create branch %q: %w", branch, err)
+	}
+
+	// Write each file edit to the branch.
+	for _, edit := range parsed.Edits {
+		msg := fmt.Sprintf("agent: update %s for issue #%d", edit.Path, task.Issue.Number)
+		if err := r.repoWriter.CreateOrUpdateFile(ctx, branch, edit.Path, edit.Content, msg); err != nil {
+			return fmt.Errorf("write file %q: %w", edit.Path, err)
+		}
+	}
+
+	// Determine PR title.
+	prTitle := parsed.PRTitle
+	if prTitle == "" {
+		prTitle = fmt.Sprintf("agent: resolve issue #%d", task.Issue.Number)
+	}
+
+	// Open PR.
+	pr, err := r.prManager.CreatePullRequest(ctx, &forge.CreatePRRequest{
+		Title: prTitle,
+		Body:  fmt.Sprintf("Closes #%d\n\nAgent-generated implementation.", task.Issue.Number),
+		Head:  branch,
+		Base:  "main",
+	})
+	if err != nil {
+		return fmt.Errorf("create PR: %w", err)
+	}
+
+	// Post comment on issue with PR link.
+	comment := fmt.Sprintf("PR opened: #%d", pr.Number)
+	if _, err = r.tracker.AddComment(ctx, task.Issue.Number, comment); err != nil {
+		r.logger.Error("failed to post PR link comment",
+			slog.String("session_id", task.SessionID),
+			slog.Int("issue", task.Issue.Number),
+			slog.String("error", err.Error()),
+		)
 	}
 
 	return nil
