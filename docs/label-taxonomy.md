@@ -2,6 +2,15 @@
 
 Samverk uses a structured labeling system to organize issues by lifecycle state, classification, and assignment. This document defines all labels in the repository and their purposes.
 
+## Two-Tier Label Architecture
+
+Labels are split into two tiers to support the DevKit ↔ Samverk boundary:
+
+- **Base labels** (DevKit `project-templates/github-labels.json`): Applied to all projects. Covers type, priority, milestones, and general workflow labels.
+- **Overlay labels** (Samverk `overlay/labels.json`): Applied only to Samverk-managed projects. All labels documented below are overlay labels — they are added when a project opts into Samverk lifecycle management.
+
+The machine-readable source of truth for overlay labels is `overlay/labels.json` in this repository. This document provides the human-readable reference with usage guidelines.
+
 ## Status Labels
 
 Lifecycle state labels indicate where an issue sits in the dispatcher workflow.

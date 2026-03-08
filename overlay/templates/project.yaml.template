@@ -1,0 +1,7 @@
+name: {{PROJECT_NAME}}
+forge: {{FORGE}}
+forge_url: {{FORGE_URL}}
+phase: scaffold
+registered: {{DATE}}
+labels_synced: false
+autonomy_overrides: {}

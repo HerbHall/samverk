@@ -1,0 +1,30 @@
+---
+phase: scaffold
+updated: {{DATETIME}}
+updated_by: devkit-scaffold
+---
+
+# {{PROJECT_NAME}} -- Current State
+
+## Phase
+
+Phase: scaffold. Initial project scaffolding complete.
+
+## What Is Running
+
+- Nothing yet -- project just scaffolded.
+
+## Queued
+
+- Review issue backlog and begin execution.
+
+## Last Session Summary
+
+Project created via DevKit Kit 3 with Samverk overlay.
+
+## Start Here (Cold Start Protocol)
+
+1. Read this file
+2. Call `samverk get_digest --since 168h` if MCP is configured
+3. Read open issues if relevant to the task
+4. Proceed -- do not ask the user to explain project state

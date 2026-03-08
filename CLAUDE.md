@@ -153,3 +153,5 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 - [Project Lifecycle](docs/project-lifecycle.md)
 - [Multi-Session Safety](docs/multi-session-safety.md)
 - [Decision Records](docs/decisions/)
+- [Samverk Overlay Spec](overlay/README.md)
+- [DevKit Boundary Contract](https://github.com/HerbHall/devkit/blob/main/docs/samverk-boundary.md)
