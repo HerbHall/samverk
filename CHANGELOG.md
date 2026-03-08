@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/HerbHall/samverk/compare/v0.1.6...v0.1.7) (2026-03-08)
+
+
+### Features
+
+* claude-cli provider uses Claude Code auth instead of API credits ([#219](https://github.com/HerbHall/samverk/issues/219)) ([e4041fd](https://github.com/HerbHall/samverk/commit/e4041fdd76dca8befd2b5ea5fdb978ff7f396a73)), closes [#218](https://github.com/HerbHall/samverk/issues/218)
+
 ## [0.1.6](https://github.com/HerbHall/samverk/compare/v0.1.5...v0.1.6) (2026-03-08)
 
 
