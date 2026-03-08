@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/HerbHall/samverk/compare/v0.1.3...v0.1.4) (2026-03-08)
+
+
+### Bug Fixes
+
+* dispatcher skips PRs and handles issue.assigned events ([#205](https://github.com/HerbHall/samverk/issues/205)) ([dee0595](https://github.com/HerbHall/samverk/commit/dee05954291b1534cc70488bac4cd887b7dda17b))
+
 ## [0.1.3](https://github.com/HerbHall/samverk/compare/v0.1.2...v0.1.3) (2026-03-08)
 
 
