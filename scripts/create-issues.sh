@@ -37,6 +37,9 @@ if [[ -z "$PYTHON" ]]; then
     exit 1
 fi
 
+# Force UTF-8 I/O on Windows (prevents cp1252 errors with Unicode in issue bodies)
+export PYTHONIOENCODING=utf-8
+
 # ── Detect repo owner/name from git remote ───────────────────────
 
 REPO=$(git remote get-url origin 2>/dev/null \
@@ -190,7 +193,7 @@ print(','.join(d.get('labels', [])))
         echo "  (continuing despite missing labels)"
     fi
 
-    # Resolve milestone
+    # Resolve milestone (validate it exists; gh issue create takes the title)
     MILESTONE_NUM=""
     if [[ -n "$MILESTONE_TITLE" && "$MILESTONE_TITLE" != "null" ]]; then
         MILESTONE_NUM=$(resolve_milestone "$MILESTONE_TITLE")
@@ -200,7 +203,7 @@ print(','.join(d.get('labels', [])))
         echo "  [dry-run] would create:"
         echo "    title:     $TITLE"
         echo "    labels:    $LABELS_CSV"
-        if [[ -n "$MILESTONE_NUM" ]]; then
+        if [[ -n "$MILESTONE_TITLE" && "$MILESTONE_TITLE" != "null" ]]; then
             echo "    milestone: $MILESTONE_TITLE (#$MILESTONE_NUM)"
         fi
         echo "    body:"
@@ -209,13 +212,13 @@ print(','.join(d.get('labels', [])))
         continue
     fi
 
-    # Build gh command
+    # Build gh command (--milestone takes the title, not the number)
     GH_ARGS=(issue create --repo "$REPO" --title "$TITLE" --body "$BODY")
     if [[ -n "$LABELS_CSV" ]]; then
         GH_ARGS+=(--label "$LABELS_CSV")
     fi
-    if [[ -n "$MILESTONE_NUM" ]]; then
-        GH_ARGS+=(--milestone "$MILESTONE_NUM")
+    if [[ -n "$MILESTONE_TITLE" && "$MILESTONE_TITLE" != "null" ]]; then
+        GH_ARGS+=(--milestone "$MILESTONE_TITLE")
     fi
 
     if RESULT=$(gh "${GH_ARGS[@]}" 2>&1); then
