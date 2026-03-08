@@ -1,6 +1,6 @@
 ---
 phase: 5
-updated: 2026-03-08T00:15:00Z
+updated: 2026-03-08T01:30:00Z
 updated_by: claude-code
 ---
 
@@ -19,8 +19,7 @@ Phase 4 complete (2026-03-02): MCP tools, REST API, dispatcher CLI, multi-projec
 
 ## In Flight
 
-- #183: create .samverk/status.md -- this file
-- #184: add cold-start protocol to CLAUDE.md
+- #185: roll out status.md and cold-start to registered projects (this PR)
 
 ## Queued
 
@@ -32,9 +31,10 @@ Phase 4 complete (2026-03-02): MCP tools, REST API, dispatcher CLI, multi-projec
 
 ## Last Session Summary
 
-Merged PR #188 fixing dispatcher false-positive escalation on issues without
-YAML frontmatter (issue #180). Added heuristic classification using labels and
-title prefixes. Created repo-first session orientation files.
+Rolled out .samverk/status.md and cold-start protocol to all 4 registered
+projects (subnetree, dockpulse, runbooks, devkit). Fixed dispatcher
+false-positive (#180, PR #188). Created status.md (#183) and cold-start
+protocol (#184, PR #190).
 
 ## Start Here (Cold Start Protocol)
 
