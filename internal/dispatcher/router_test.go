@@ -1,0 +1,219 @@
+package dispatcher
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
+)
+
+// longBody is a body with > 200 words to avoid triggering the "short body → triage" rule.
+var longBody = strings.Repeat("word ", 210)
+
+func TestSelectProviderKey(t *testing.T) {
+	tests := []struct {
+		name      string
+		issue     *forge.Issue
+		agentType models.AgentType
+		wantKey   string
+		wantReason string // substring match
+	}{
+		// --- complex tier ---
+		{
+			name:      "priority:critical → complex",
+			issue:     &forge.Issue{Title: "fix: something", Body: longBody, Labels: []string{"priority:critical"}},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "priority:critical",
+		},
+		{
+			name:      "complexity:high → complex",
+			issue:     &forge.Issue{Title: "fix: something", Body: longBody, Labels: []string{"complexity:high"}},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "complexity:high",
+		},
+		{
+			name:      "title keyword 'refactor' → complex",
+			issue:     &forge.Issue{Title: "refactor: the whole thing", Body: longBody},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "refactor",
+		},
+		{
+			name:      "title keyword 'architect' → complex",
+			issue:     &forge.Issue{Title: "architect new pipeline", Body: longBody},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "architect",
+		},
+		{
+			name:      "title keyword 'redesign' → complex",
+			issue:     &forge.Issue{Title: "redesign the UI", Body: longBody},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "redesign",
+		},
+		{
+			name:      "title keyword 'spike' → complex",
+			issue:     &forge.Issue{Title: "spike: evaluate new approach", Body: longBody},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "spike",
+		},
+		// keyword match is case-insensitive
+		{
+			name:      "title keyword uppercase REFACTOR → complex",
+			issue:     &forge.Issue{Title: "REFACTOR: something", Body: longBody},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "refactor",
+		},
+
+		// --- local tier ---
+		{
+			name:      "label type:boilerplate → local",
+			issue:     &forge.Issue{Title: "add boilerplate", Body: longBody, Labels: []string{"type:boilerplate"}},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "local",
+			wantReason: "type:boilerplate",
+		},
+		{
+			name:      "label type:scaffold → local",
+			issue:     &forge.Issue{Title: "scaffold new module", Body: longBody, Labels: []string{"type:scaffold"}},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "local",
+			wantReason: "type:scaffold",
+		},
+		{
+			name:      "title prefix chore: → local",
+			issue:     &forge.Issue{Title: "chore: update deps", Body: longBody},
+			agentType: models.AgentTypeDocs, // docs agent, but chore prefix wins
+			wantKey:   "local",
+			wantReason: "chore:",
+		},
+
+		// --- triage tier ---
+		{
+			name:      "label priority:low → triage",
+			issue:     &forge.Issue{Title: "fix: minor thing", Body: longBody, Labels: []string{"priority:low"}},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "triage",
+			wantReason: "priority:low",
+		},
+		{
+			name:      "agent type docs → triage",
+			issue:     &forge.Issue{Title: "update readme", Body: longBody},
+			agentType: models.AgentTypeDocs,
+			wantKey:   "triage",
+			wantReason: "agent type docs",
+		},
+		{
+			name:      "short body < 200 words → triage",
+			issue:     &forge.Issue{Title: "fix: something", Body: "short body"},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "triage",
+			wantReason: "short issue body",
+		},
+
+		// --- default tier ---
+		{
+			name:      "no signals → default",
+			issue:     &forge.Issue{Title: "feat: add feature", Body: longBody},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "default",
+			wantReason: "default routing",
+		},
+		{
+			name:      "research agent with long body → default",
+			issue:     &forge.Issue{Title: "research: investigate X", Body: longBody},
+			agentType: models.AgentTypeResearch,
+			wantKey:   "default",
+			wantReason: "default routing",
+		},
+
+		// --- priority/precedence conflicts ---
+		{
+			// complex beats local: priority:critical takes precedence over type:boilerplate
+			name: "priority:critical beats type:boilerplate",
+			issue: &forge.Issue{
+				Title:  "chore: generate scaffold",
+				Body:   longBody,
+				Labels: []string{"priority:critical", "type:boilerplate"},
+			},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "priority:critical",
+		},
+		{
+			// complex beats triage: complexity:high takes precedence over priority:low
+			name: "complexity:high beats priority:low",
+			issue: &forge.Issue{
+				Title:  "fix: something",
+				Body:   longBody,
+				Labels: []string{"complexity:high", "priority:low"},
+			},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: "complexity:high",
+		},
+		{
+			// local beats triage: type:scaffold takes precedence over docs agent type
+			name: "type:scaffold beats docs agent type",
+			issue: &forge.Issue{
+				Title:  "scaffold docs",
+				Body:   longBody,
+				Labels: []string{"type:scaffold"},
+			},
+			agentType: models.AgentTypeDocs,
+			wantKey:   "local",
+			wantReason: "type:scaffold",
+		},
+		{
+			// local beats triage: chore: prefix takes precedence over short body
+			name: "chore: prefix beats short body",
+			issue: &forge.Issue{
+				Title: "chore: tiny thing",
+				Body:  "short",
+			},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "local",
+			wantReason: "chore:",
+		},
+		{
+			// 200-word boundary: exactly 200 words is NOT short
+			name: "body with exactly 200 words → default (not triage)",
+			issue: &forge.Issue{
+				Title: "feat: something",
+				Body:  strings.Repeat("word ", 200),
+			},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "default",
+			wantReason: "default routing",
+		},
+		{
+			// 199 words IS short
+			name: "body with 199 words → triage",
+			issue: &forge.Issue{
+				Title: "feat: something",
+				Body:  strings.Repeat("word ", 199),
+			},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "triage",
+			wantReason: "short issue body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, reason := selectProviderKey(tt.issue, tt.agentType)
+			if key != tt.wantKey {
+				t.Errorf("key = %q, want %q", key, tt.wantKey)
+			}
+			if !strings.Contains(reason, tt.wantReason) {
+				t.Errorf("reason = %q, want it to contain %q", reason, tt.wantReason)
+			}
+		})
+	}
+}

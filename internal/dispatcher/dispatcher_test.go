@@ -275,6 +275,9 @@ func TestNewDispatcher(t *testing.T) {
 	if d.claimed == nil {
 		t.Fatal("expected non-nil claimed map")
 	}
+	if d.issueFailures == nil {
+		t.Fatal("expected non-nil issueFailures map")
+	}
 }
 
 func TestHandleOpened_ValidFrontmatter(t *testing.T) {
@@ -826,10 +829,72 @@ func TestCheckTimeouts_ThreeFailures(t *testing.T) {
 	}
 }
 
+// TestCheckTimeouts_MultiCycleRetryEscalation verifies that the failure counter
+// increments correctly across re-queue cycles (1 → 2 → 3) and that the issue
+// escalates to status:needs-human only after MaxConsecutiveFailures timeouts,
+// not on the first one.
+func TestCheckTimeouts_MultiCycleRetryEscalation(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+	ctx := context.Background()
+
+	tracker.issues[1] = &forge.Issue{
+		Number:    1,
+		State:     forge.StateOpen,
+		Labels:    []string{"status:claimed"},
+		Assignees: []string{"code-gen"},
+	}
+
+	// Simulate maxRetries timeout cycles. Each cycle:
+	//   1. Set claimed entry with an old heartbeat (mimics agent silence).
+	//   2. Call checkTimeouts — releases and increments failure count.
+	//   3. Verify escalation only happens on the final cycle.
+	maxRetries := d.config.MaxConsecutiveFailures // 3
+	for cycle := 1; cycle <= maxRetries; cycle++ {
+		d.mu.Lock()
+		// Restore the claimed entry as if the issue was re-queued and re-dispatched,
+		// carrying forward the failure count from issueFailures (what route() does).
+		priorFailures := d.issueFailures[1]
+		d.claimed[1] = &claimedIssue{
+			AgentID:       "code-gen",
+			ClaimedAt:     time.Now().Add(-time.Hour),
+			LastHeartbeat: time.Now().Add(-time.Hour),
+			FailureCount:  priorFailures,
+		}
+		d.mu.Unlock()
+
+		if err := d.checkTimeouts(ctx); err != nil {
+			t.Fatalf("cycle %d: unexpected error: %v", cycle, err)
+		}
+
+		// Verify the persisted failure count matches the cycle number.
+		d.mu.Lock()
+		persisted := d.issueFailures[1]
+		d.mu.Unlock()
+		if persisted != cycle {
+			t.Errorf("cycle %d: issueFailures[1] = %d, want %d", cycle, persisted, cycle)
+		}
+
+		issue := tracker.issues[1]
+		if cycle < maxRetries {
+			// Should NOT be escalated yet.
+			if hasLabel(issue.Labels, "status:needs-human") {
+				t.Errorf("cycle %d: premature escalation to status:needs-human", cycle)
+			}
+			if !hasLabel(issue.Labels, "status:queued") {
+				t.Errorf("cycle %d: expected status:queued after release", cycle)
+			}
+		} else if !hasLabel(issue.Labels, "status:needs-human") {
+			// Final cycle — must escalate.
+			t.Errorf("cycle %d: expected status:needs-human after %d failures", cycle, maxRetries)
+		}
+	}
+}
+
 func TestLoadConfig_Defaults(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.HeartbeatInterval != 10*time.Minute {
-		t.Errorf("HeartbeatInterval: got %v, want 10m", cfg.HeartbeatInterval)
+	if cfg.HeartbeatInterval != 20*time.Minute {
+		t.Errorf("HeartbeatInterval: got %v, want 20m", cfg.HeartbeatInterval)
 	}
 	if cfg.HeartbeatTimeoutMultiplier != 1.5 {
 		t.Errorf("HeartbeatTimeoutMultiplier: got %v, want 1.5", cfg.HeartbeatTimeoutMultiplier)

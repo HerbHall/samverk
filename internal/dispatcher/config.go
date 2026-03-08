@@ -29,7 +29,7 @@ type configFile struct {
 // DefaultConfig returns production-ready defaults for a self-hosted deployment.
 func DefaultConfig() *Config {
 	return &Config{
-		HeartbeatInterval:          10 * time.Minute,
+		HeartbeatInterval:          20 * time.Minute,
 		HeartbeatTimeoutMultiplier: 1.5,
 		MaxConsecutiveFailures:     3,
 		DependencyRecheckInterval:  2 * time.Minute,

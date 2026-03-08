@@ -21,6 +21,7 @@ providers:
     type: ollama
     base_url: http://192.168.1.207:11434
     default_model: qwen2.5-coder:7b
+    timeout_seconds: 120  # 2 min — covers cold model load + inference
 
 # Routing chains: tried in order, first healthy provider wins.
 # Non-default chains include claude-sonnet as a fallback.

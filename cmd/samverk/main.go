@@ -525,6 +525,9 @@ func providerFactory(name string, cfg provider.ProviderConfig) (provider.Provide
 		if baseURL == "" {
 			baseURL = "http://localhost:11434"
 		}
+		if cfg.TimeoutSeconds > 0 {
+			return ollama.NewWithTimeout(baseURL, time.Duration(cfg.TimeoutSeconds)*time.Second), nil
+		}
 		return ollama.New(baseURL), nil
 	case "claude-cli":
 		model := cfg.DefaultModel

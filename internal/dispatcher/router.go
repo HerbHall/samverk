@@ -141,7 +141,8 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 
 // route assigns the issue to the agent pool matching agentType.
 // It selects a provider routing chain based on issue signals, logs the selection,
-// and records the claim in memory.
+// and records the claim in memory. Any failure count accumulated from prior
+// timeout cycles is carried forward so the escalation threshold is not reset.
 func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType) error {
 	if err := d.tracker.RemoveLabel(ctx, issue.Number, "status:queued"); err != nil {
 		d.logger.Printf("remove queued label from #%d: %v", issue.Number, err)
@@ -158,10 +159,12 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 
 	now := time.Now()
 	d.mu.Lock()
+	priorFailures := d.issueFailures[issue.Number]
 	d.claimed[issue.Number] = &claimedIssue{
 		AgentID:       string(agentType),
 		ClaimedAt:     now,
 		LastHeartbeat: now,
+		FailureCount:  priorFailures,
 	}
 	d.mu.Unlock()
 

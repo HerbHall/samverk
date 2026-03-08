@@ -26,15 +26,16 @@ type claimedIssue struct {
 // changes, classifies incoming work, resolves dependencies, and assigns
 // tasks to agent pools.
 type Dispatcher struct {
-	tracker forge.IssueTracker
-	policy  autonomy.AutonomyPolicy
-	store   store.Store
-	pool    *agent.Pool
-	config  *Config
-	claimed map[int]*claimedIssue
-	mu      sync.Mutex
-	logger  *log.Logger
-	stop    context.CancelFunc
+	tracker       forge.IssueTracker
+	policy        autonomy.AutonomyPolicy
+	store         store.Store
+	pool          *agent.Pool
+	config        *Config
+	claimed       map[int]*claimedIssue
+	issueFailures map[int]int // persists failure counts across re-queue cycles
+	mu            sync.Mutex
+	logger        *log.Logger
+	stop          context.CancelFunc
 }
 
 // New creates a Dispatcher with the given dependencies. The pool parameter
@@ -44,13 +45,14 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 		cfg = DefaultConfig()
 	}
 	return &Dispatcher{
-		tracker: tracker,
-		policy:  policy,
-		store:   st,
-		pool:    pool,
-		config:  cfg,
-		claimed: make(map[int]*claimedIssue),
-		logger:  log.Default(),
+		tracker:       tracker,
+		policy:        policy,
+		store:         st,
+		pool:          pool,
+		config:        cfg,
+		claimed:       make(map[int]*claimedIssue),
+		issueFailures: make(map[int]int),
+		logger:        log.Default(),
 	}
 }
 
@@ -170,9 +172,10 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 
 // handleClosed processes a closed issue by unblocking dependents.
 func (d *Dispatcher) handleClosed(ctx context.Context, ev forge.Event) error {
-	// Remove from claimed map if tracked.
+	// Remove from claimed map and clear persistent failure count if tracked.
 	d.mu.Lock()
 	delete(d.claimed, ev.IssueNumber)
+	delete(d.issueFailures, ev.IssueNumber)
 	d.mu.Unlock()
 
 	return d.unblockDependents(ctx, ev.IssueNumber)

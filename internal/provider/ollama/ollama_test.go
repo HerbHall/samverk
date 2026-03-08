@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/herbhall/samverk/internal/provider"
 )
@@ -336,6 +337,43 @@ func TestPull(t *testing.T) {
 	}
 	if gotReq.Stream {
 		t.Error("Stream = true, want false")
+	}
+}
+
+func TestNewWithTimeout(t *testing.T) {
+	timeout := 120 * time.Second
+	c := NewWithTimeout("http://localhost:11434", timeout)
+
+	if c.httpClient.Timeout != timeout {
+		t.Errorf("httpClient.Timeout = %v, want %v", c.httpClient.Timeout, timeout)
+	}
+	if c.baseURL != "http://localhost:11434" {
+		t.Errorf("baseURL = %q, want %q", c.baseURL, "http://localhost:11434")
+	}
+}
+
+func TestNewWithTimeoutTrimsTrailingSlash(t *testing.T) {
+	c := NewWithTimeout("http://localhost:11434/", 60*time.Second)
+
+	if c.baseURL != "http://localhost:11434" {
+		t.Errorf("baseURL = %q, want trailing slash trimmed", c.baseURL)
+	}
+}
+
+func TestNewWithTimeoutServesRequests(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Ollama is running"))
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := NewWithTimeout(srv.URL, 5*time.Second)
+
+	if !c.Healthy(context.Background()) {
+		t.Error("Healthy = false, want true for NewWithTimeout client")
 	}
 }
 
