@@ -47,7 +47,7 @@ samverk/
 │   ├── user-profile.md        # Persistent user preferences across projects
 │   ├── open-questions.md      # Unresolved design and business questions
 │   └── decisions/             # Architecture Decision Records (25 total)
-├── .samverk/                  # Runtime config (gitignored)
+├── .samverk/                  # Project state (status.md) and runtime config
 ├── .github/workflows/         # CI/CD pipelines
 └── Makefile                   # Build and development tasks
 ```
@@ -67,6 +67,18 @@ samverk/
 
 For full details including specific libraries, what NOT to use, and project structure rationale, see [docs/tech-stack.md](docs/tech-stack.md).
 
+## Session Start (Required)
+
+Before any work in a new session:
+
+1. Read `.samverk/status.md` -- current phase, in-flight issues, last session summary
+2. Call `samverk get_digest --since 168h` if Samverk MCP is configured and available
+3. Check open issues if the task involves issue triage or project direction
+4. Proceed without asking the user to explain project state -- the repo has it
+
+**Rule**: Never ask the user "what's the current state?" or "where did we leave off?"
+Read the repo first. Ask only if something is genuinely ambiguous after reading.
+
 ## Development Workflow
 
 - Branch-per-issue: `feature/issue-NNN-desc`, `fix/issue-NNN-desc`
@@ -84,7 +96,8 @@ For full details including specific libraries, what NOT to use, and project stru
 
 ## Known Constraints
 
-- Phase 2 complete -- dispatcher, forge, store, autonomy, profile, provider, MCP handler, digest, cost adapter all functional
+- Phase 4 complete -- MCP tools, REST API, dispatcher CLI, multi-project, web dashboard scaffold
+- Phase 5 in progress -- agent runtime, provider integration, SPA embedding
 - Async-first architecture (not synchronous tooling)
 - Hybrid local/cloud agent model
 - Target audience: hobbyist devs with limited time, not enterprise teams
