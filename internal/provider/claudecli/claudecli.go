@@ -6,6 +6,7 @@ package claudecli
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -40,6 +41,7 @@ func New(model string) *Client {
 // IMPORTANT: The prompt MUST be sent via stdin, not as a CLI argument.
 // Passing the prompt as an argument causes the CLI to hang indefinitely.
 // --dangerously-skip-permissions is required for headless/non-interactive use.
+// ANTHROPIC_API_KEY must be unset so the CLI uses OAuth (~/.claude) not API credits.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	var prompt strings.Builder
 	for _, m := range req.Messages {
@@ -63,7 +65,18 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 	cmd := exec.CommandContext(ctx, c.claudeBin, args...) //nolint:gosec // G204: claudeBin is set internally
 	cmd.Stdin = strings.NewReader(prompt.String())        // prompt via stdin — argument mode hangs
-	out, err := cmd.CombinedOutput()                      // capture both stdout and stderr for diagnostics
+
+	// Inherit environment but strip ANTHROPIC_API_KEY so the CLI uses
+	// OAuth credentials (~/.claude) instead of API credits.
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
+			env = append(env, e)
+		}
+	}
+	cmd.Env = env
+
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("claude-cli: exec: %w: output: %s", err, strings.TrimSpace(string(out)))
 	}
