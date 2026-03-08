@@ -226,6 +226,16 @@ Only the Watch() method is blocked.
 
 ## Label Taxonomy
 
+### Two-Tier Label Architecture
+
+Labels are split into two tiers to support both Samverk-managed and plain DevKit projects:
+
+1. **Base labels** — Defined in DevKit's `project-templates/github-labels.json`. Applied to all projects regardless of Samverk status. Covers type (`feat`, `fix`, `chore`, etc.), priority (`priority:critical` through `priority:low`), milestones, and general workflow.
+
+2. **Overlay labels** — Defined in Samverk's `overlay/labels.json`. Applied only to Samverk-managed projects (projects with a `.samverk/` directory). Covers all labels listed below: agent types, status workflow, priority (shared naming with base), complexity routing, and lifecycle phases.
+
+The base and overlay sets are disjoint — no label appears in both files. A project scaffolded without the Samverk overlay uses only base labels. Applying the Samverk overlay adds the labels below additively.
+
 ### Agent Type (who should pick this up)
 
 | Label | Color | Description |

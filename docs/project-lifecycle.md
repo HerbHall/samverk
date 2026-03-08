@@ -283,6 +283,16 @@ Create the physical project: repository, directory structure, configuration file
 - Workspace file for VS Code
 - SETUP-INSTRUCTIONS.md for agent handoff
 
+### DevKit Integration
+
+Phase 5 scaffolding is split between two systems:
+
+- **DevKit's Kit 3** (`setup/new-project.ps1`) performs the mechanical scaffolding: directory creation, `git init`, template copying with substitutions, CI workflow setup, GitHub/Gitea repo creation. It applies the Samverk overlay when invoked with the `--samverk` flag, which adds `.samverk/project.yaml`, `.samverk/status.md`, and overlay labels from `overlay/labels.json`.
+
+- **Samverk's Phase 5 agent** handles the lifecycle-specific scaffolding: creating the issue backlog from Phase 4 requirements output, applying lifecycle labels, generating handoff documents, and registering the project with the coordination layer.
+
+The workflow: Samverk's Phase 5 produces a scaffold spec (project name, stack profile, requirements package). DevKit's Kit 3 executes the spec. Samverk then adds lifecycle artifacts on top. For now, the user runs Kit 3 manually with parameters from Phase 4. Future: Samverk's scaffold agent invokes Kit 3 programmatically.
+
 ### Phase Gate: Scaffold → Execution
 
 **Default: Auto-advance.** Scaffolding is mechanical — once the checklist completes, execution begins. The scaffold completion is reported in the next check-in digest.
