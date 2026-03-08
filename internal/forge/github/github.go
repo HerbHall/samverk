@@ -190,9 +190,14 @@ func (c *Client) AddLabel(ctx context.Context, number int, label string) error {
 }
 
 // RemoveLabel removes a single label from the given issue.
+// A 404 response is treated as a no-op: the label was already absent,
+// which is the desired end state.
 func (c *Client) RemoveLabel(ctx context.Context, number int, label string) error {
-	_, err := c.gh.Issues.RemoveLabelForIssue(ctx, c.owner, c.repo, number, label)
+	resp, err := c.gh.Issues.RemoveLabelForIssue(ctx, c.owner, c.repo, number, label)
 	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil
+		}
 		return fmt.Errorf("github: remove label %q from #%d: %w", label, number, err)
 	}
 

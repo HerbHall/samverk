@@ -353,6 +353,23 @@ func TestRemoveLabel(t *testing.T) {
 	}
 }
 
+func TestRemoveLabel_NotPresent(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("DELETE /repos/owner/repo/issues/7/labels/status:queued", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusNotFound, &gogithub.ErrorResponse{
+			Message: "Label does not exist",
+		})
+	})
+
+	c, _ := newTestClient(t, mux)
+
+	// A 404 must be silently suppressed — the label being absent is the desired state.
+	err := c.RemoveLabel(context.Background(), 7, "status:queued")
+	if err != nil {
+		t.Fatalf("RemoveLabel on absent label: expected nil, got %v", err)
+	}
+}
+
 func TestAssign(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /repos/owner/repo/issues/3/assignees", func(w http.ResponseWriter, _ *http.Request) {
