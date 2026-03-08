@@ -38,6 +38,15 @@ type Commit struct {
 	Date    time.Time `json:"date"`
 }
 
+// RepoWriter provides write access to a git repository's contents.
+type RepoWriter interface {
+	// CreateBranch creates a new branch from the default branch HEAD.
+	CreateBranch(ctx context.Context, name string) error
+
+	// CreateOrUpdateFile creates or updates a file on the given branch.
+	CreateOrUpdateFile(ctx context.Context, branch, path, content, message string) error
+}
+
 // SearchResult represents a single code search match.
 type SearchResult struct {
 	Path       string `json:"path"`
