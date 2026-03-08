@@ -1,6 +1,7 @@
 package gitea
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -66,11 +67,11 @@ func TestCreateOrUpdateFile_Create(t *testing.T) {
 		t.Fatalf("CreateOrUpdateFile (create): %v", err)
 	}
 
-	if gotCreateBody.FileOptions.Message != "docs: add new.md" {
-		t.Errorf("Message = %q, want %q", gotCreateBody.FileOptions.Message, "docs: add new.md")
+	if gotCreateBody.Message != "docs: add new.md" {
+		t.Errorf("Message = %q, want %q", gotCreateBody.Message, "docs: add new.md")
 	}
-	if gotCreateBody.FileOptions.BranchName != "main" {
-		t.Errorf("BranchName = %q, want %q", gotCreateBody.FileOptions.BranchName, "main")
+	if gotCreateBody.BranchName != "main" {
+		t.Errorf("BranchName = %q, want %q", gotCreateBody.BranchName, "main")
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(gotCreateBody.Content)
@@ -115,11 +116,11 @@ func TestCreateOrUpdateFile_Update(t *testing.T) {
 	if gotUpdateBody.SHA != existingSHA {
 		t.Errorf("SHA = %q, want %q", gotUpdateBody.SHA, existingSHA)
 	}
-	if gotUpdateBody.FileOptions.Message != "docs: update README" {
-		t.Errorf("Message = %q, want %q", gotUpdateBody.FileOptions.Message, "docs: update README")
+	if gotUpdateBody.Message != "docs: update README" {
+		t.Errorf("Message = %q, want %q", gotUpdateBody.Message, "docs: update README")
 	}
-	if gotUpdateBody.FileOptions.BranchName != "main" {
-		t.Errorf("BranchName = %q, want %q", gotUpdateBody.FileOptions.BranchName, "main")
+	if gotUpdateBody.BranchName != "main" {
+		t.Errorf("BranchName = %q, want %q", gotUpdateBody.BranchName, "main")
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(gotUpdateBody.Content)
@@ -188,8 +189,8 @@ func TestReadFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	if string(data) != string(fileContent) {
-		t.Errorf("content = %q, want %q", string(data), string(fileContent))
+	if !bytes.Equal(data, fileContent) {
+		t.Errorf("content = %q, want %q", data, fileContent)
 	}
 }
 
