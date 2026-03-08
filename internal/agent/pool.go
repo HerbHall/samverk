@@ -97,8 +97,10 @@ func (p *Pool) Shutdown() {
 	p.shutdown = true
 	p.mu.Unlock()
 
+	p.logger.Info("agent pool draining", slog.Int("queued", len(p.tasks)))
 	close(p.tasks)
 	p.wg.Wait()
+	p.logger.Info("agent pool drained")
 	close(p.done)
 }
 
