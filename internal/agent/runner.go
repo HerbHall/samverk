@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -67,7 +68,8 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	}
 
 	// Step 3: Build chat request.
-	systemPrompt := buildSystemPrompt(task)
+	fileContext := r.extractFileContext(task.Issue.Body)
+	systemPrompt := BuildSystemPrompt(task, fileContext)
 	req := provider.ChatRequest{
 		Model: r.model,
 		Messages: []provider.Message{
@@ -106,19 +108,32 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	return nil
 }
 
-// buildSystemPrompt constructs the system prompt for the AI provider based on
-// the task's agent type, issue number, title, and labels.
-func buildSystemPrompt(task Task) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "You are a %s agent working on issue #%d: %s\n",
-		task.AgentType, task.Issue.Number, task.Issue.Title)
+// filePathRe matches file paths in issue bodies that look like project source files.
+var filePathRe = regexp.MustCompile(`(?:^|\s)((?:internal|cmd|pkg|docs)/[\w/.\-]+\.\w+)`)
 
-	if len(task.Issue.Labels) > 0 {
-		fmt.Fprintf(&b, "Labels: %s\n", strings.Join(task.Issue.Labels, ", "))
+// extractFileContext scans the issue body for file paths matching project
+// source directories and returns a placeholder map. In a future iteration
+// this will fetch actual file contents from the repo; for now it records
+// which paths were referenced so BuildSystemPrompt can include them.
+func (r *Runner) extractFileContext(body string) map[string]string {
+	matches := filePathRe.FindAllStringSubmatch(body, -1)
+	if len(matches) == 0 {
+		return nil
 	}
 
-	fmt.Fprintf(&b, "\nAnalyze the issue and provide a thorough response.")
-	return b.String()
+	seen := make(map[string]bool, len(matches))
+	result := make(map[string]string, len(matches))
+	for _, m := range matches {
+		path := strings.TrimSpace(m[1])
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		// TODO(#194): fetch actual file contents from the repo via forge or local checkout.
+		// For now, leave content empty — the prompt builder handles empty values gracefully.
+		result[path] = ""
+	}
+	return result
 }
 
 // updateSessionStatus fetches and updates a session's status in the store.
