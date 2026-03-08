@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/HerbHall/samverk/compare/v0.1.4...v0.1.5) (2026-03-08)
+
+
+### Features
+
+* code-gen and test agents open PRs instead of posting comments ([#207](https://github.com/HerbHall/samverk/issues/207)) ([1bb3a51](https://github.com/HerbHall/samverk/commit/1bb3a5164437c6dde8029d67cc42b7c9af842894)), closes [#195](https://github.com/HerbHall/samverk/issues/195)
+
 ## [0.1.4](https://github.com/HerbHall/samverk/compare/v0.1.3...v0.1.4) (2026-03-08)
 
 
