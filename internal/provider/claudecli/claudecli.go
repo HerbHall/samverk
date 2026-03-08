@@ -40,6 +40,7 @@ func New(model string) *Client {
 //
 // IMPORTANT: The prompt MUST be sent via stdin, not as a CLI argument.
 // Passing the prompt as an argument causes the CLI to hang indefinitely.
+// --dangerously-skip-permissions is required for headless/non-interactive use.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	var prompt strings.Builder
 	for _, m := range req.Messages {
@@ -53,7 +54,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		}
 	}
 
-	args := []string{"--print"}
+	args := []string{"--print", "--dangerously-skip-permissions"}
 	if c.model != "" {
 		args = append(args, "--model", c.model)
 	}
