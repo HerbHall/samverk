@@ -5,7 +5,7 @@
 28 issues across 8 parallel tracks. Tracks A–D launch immediately with no dependencies.
 Tracks E–J depend on earlier work. Track K is the final validation gate.
 
-```
+```text
 PARALLEL START (no dependencies)
 ─────────────────────────────────────────────────────────────────────
 
@@ -81,6 +81,7 @@ Track K: Validation
 ## Parallel Execution Windows
 
 ### Window 1 (Immediate — no blockers)
+
 Up to 6 agents simultaneously:
 
 | Agent | Issue | Track |
@@ -96,6 +97,7 @@ Up to 6 agents simultaneously:
 | **human**   | **B11 Create Gitea prod repo** | D |
 
 ### Window 2 (After Window 1 completes)
+
 | Agent | Issue | Unlocked By |
 |-------|-------|-------------|
 | test  | B03 Verify RepoWriter | B01, B02 |
@@ -109,6 +111,7 @@ Up to 6 agents simultaneously:
 | human | B24 Dual-push remote | B11 |
 
 ### Window 3 (After Window 2)
+
 | Agent | Issue | Unlocked By |
 |-------|-------|-------------|
 | code-gen | B15 Port remaining workflows | B13, B14 |
@@ -118,6 +121,7 @@ Up to 6 agents simultaneously:
 | test  | B19 Dispatcher on Gitea **[CRITICAL]** | B08, B12, B17 |
 
 ### Window 4 (Final verification)
+
 | Agent | Issue | Unlocked By |
 |-------|-------|-------------|
 | qc    | B16 CI test PR | B14, B15 |
@@ -125,11 +129,13 @@ Up to 6 agents simultaneously:
 | docs  | B26 Update CLAUDE.md | B25 |
 
 ### Window 5 (Gate)
+
 | Agent | Issue | Unlocked By |
 |-------|-------|-------------|
 | qc    | **B27 Full agent loop [CRITICAL]** | B08,B10,B16,B19,B21,B23 |
 
 ### Window 6 (Ship it)
+
 | Agent | Issue | Unlocked By |
 |-------|-------|-------------|
 | human | **B28 Dual-forge check-in [CRITICAL]** | B27 |
@@ -138,7 +144,7 @@ Up to 6 agents simultaneously:
 
 The longest dependency chain determines minimum time to completion:
 
-```
+```text
 B04/B05/B06/B07 → B08 → B19 → B27 → B28
      (PR adapter)  (verify) (dispatcher) (full loop) (ship)
 ```

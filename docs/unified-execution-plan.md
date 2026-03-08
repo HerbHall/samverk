@@ -14,7 +14,7 @@ with full conversational oversight from any device.
 
 ## Cross-Stream Dependencies
 
-```
+```text
 B-track (Gitea)              W-track (Scaling)         P-track (PC Agent)
 ═══════════════              ═════════════════         ══════════════════
 
@@ -191,19 +191,22 @@ inflection point where the tool starts building itself:
 The three streams have different critical paths:
 
 **Gitea (fastest to complete):**
-```
+
+```text
 B04-B07 → B08 → B19 → B27 → B28
    4d        1d    1d    1d    1d  = ~8 days
 ```
 
 **Scaling (medium):**
-```
+
+```text
 W01-W02 → W05 → W09 → W10 → W11 → W14 → W20
    2d       1d    2d    2d    1d    1d    1d  = ~10 days
 ```
 
 **PC Agent (longest, but self-accelerating):**
-```
+
+```text
 P01 → P03 → P05 → P06 → P07 → P08 → P11 → P12 → P14
  2d    1d    2d    1d    1d    2d    soak   2d    soak = ~14 days
 ```
@@ -247,7 +250,7 @@ W20 (24-hour soak) and P14 (full batch) run in the background.
 
 Agents NEVER touch your working copy. The entire PC agent stream uses:
 
-```
+```text
 D:\devspace\Samverk\              ← YOUR repo. VS Code, uncommitted work. UNTOUCHED.
 D:\bots\
 ├── samverk.git\                  ← Bare clone (shared object store, ~150 MB)

@@ -5,7 +5,7 @@
 Each phase delivers standalone value. You don't need auto-scaling to benefit
 from observability. You don't need the full tune loop to benefit from basic scaling.
 
-```
+```text
 Phase 1: OBSERVE          Phase 2: EXPOSE           Phase 3: SCALE         Phase 4: TUNE
 (see what's happening)    (show it to humans)       (act on it)            (get smarter)
                                                                            
@@ -85,7 +85,7 @@ scaling. CLI and MCP tools give manual override capability.
 
 ## Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
 │                    cmd/samverk/main.go                     │
 │                                                           │
@@ -118,7 +118,7 @@ scaling. CLI and MCP tools give manual override capability.
 
 ## Scaling Decision Logic (Phase 3)
 
-```
+```text
 Every 30 seconds:
   ├── Read system metrics (CPU%, Memory%)
   ├── Read pool metrics (active/idle workers, queue depth)
@@ -141,7 +141,7 @@ Every 30 seconds:
 
 ## Critical Path
 
-```
+```text
 W01 ──► W05 ──► W06 ──► W13 ──► W14 ──► W15 ──► W20
    └──► W02 ──► W09 ──► W10 ──► W11 ──┘
 ```
