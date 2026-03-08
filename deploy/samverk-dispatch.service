@@ -26,6 +26,13 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=samverk-dispatch
 
+# Graceful shutdown: only signal the main PID so child processes (claude-cli)
+# are left running and the Go drain logic (pool.Shutdown) can finish them.
+KillMode=process
+# 30 minutes — matches opus provider timeout (900s) with headroom for
+# session teardown and issue updates.
+TimeoutStopSec=1800
+
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
