@@ -1,6 +1,6 @@
 ---
 phase: 5
-updated: 2026-03-08T04:00:00Z
+updated: 2026-03-08T21:00:00Z
 updated_by: claude-code
 ---
 
@@ -27,6 +27,7 @@ Phase 4 complete (2026-03-02): MCP tools, REST API, dispatcher CLI, multi-projec
 - #204: PR watcher auto-merges eligible PRs (PR #209)
 - #197: SPA build/embed in CI workflow (PR #212)
 - #198: end-to-end integration tests (PR #213)
+- #210: make redeploy works on Windows, stops services before scp (PR #214)
 
 ## Queued
 
@@ -37,10 +38,10 @@ Phase 4 complete (2026-03-02): MCP tools, REST API, dispatcher CLI, multi-projec
 
 ## Last Session Summary
 
-Completed 7 issues across 6 PRs. Added specialized agent prompts,
+Completed 8 issues across 7 PRs. Added specialized agent prompts,
 fixed dispatcher PR/issue conflation and unknown event types, enabled
 code-gen agents to open PRs, added PR watcher with auto-merge,
-built SPA in CI, and created integration tests for the full pipeline.
+built SPA in CI, created integration tests, and fixed Windows deploy.
 
 ## Start Here (Cold Start Protocol)
 
