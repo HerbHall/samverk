@@ -15,8 +15,9 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ forge.IssueTracker = (*Client)(nil)
-	_ forge.RepoWriter   = (*Client)(nil)
+	_ forge.IssueTracker      = (*Client)(nil)
+	_ forge.RepoWriter        = (*Client)(nil)
+	_ forge.PullRequestManager = (*Client)(nil)
 )
 
 // Client implements forge.IssueTracker for Gitea repositories.
@@ -495,6 +496,31 @@ func (c *Client) CreateBranch(_ context.Context, _ string) error {
 // CreateOrUpdateFile is not yet implemented for Gitea.
 func (c *Client) CreateOrUpdateFile(_ context.Context, _, _, _, _ string) error {
 	return ErrNotImplemented
+}
+
+// CreatePullRequest is not yet implemented for Gitea.
+func (c *Client) CreatePullRequest(_ context.Context, _ *forge.CreatePRRequest) (*forge.PullRequest, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetPullRequest is not yet implemented for Gitea.
+func (c *Client) GetPullRequest(_ context.Context, _ int) (*forge.PullRequest, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListPullRequests is not yet implemented for Gitea.
+func (c *Client) ListPullRequests(_ context.Context, _ *forge.ListPROptions) ([]*forge.PullRequest, error) {
+	return nil, ErrNotImplemented
+}
+
+// MergePullRequest is not yet implemented for Gitea.
+func (c *Client) MergePullRequest(_ context.Context, _ int, _ forge.MergeMethod, _ string) error {
+	return ErrNotImplemented
+}
+
+// GetPRChecks is not yet implemented for Gitea.
+func (c *Client) GetPRChecks(_ context.Context, _ int) ([]forge.Check, error) {
+	return nil, ErrNotImplemented
 }
 
 // stringSliceEqual reports whether two string slices have the same elements.

@@ -85,6 +85,41 @@ func (c *Client) MergePullRequest(ctx context.Context, number int, method forge.
 	return nil
 }
 
+// GetPRChecks returns the combined commit status checks for a pull request's head.
+func (c *Client) GetPRChecks(ctx context.Context, number int) ([]forge.Check, error) {
+	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, number)
+	if err != nil {
+		return nil, fmt.Errorf("github: get PR #%d for checks: %w", number, err)
+	}
+
+	ref := pr.Head.GetSHA()
+	if ref == "" {
+		return nil, nil
+	}
+
+	status, _, err := c.gh.Repositories.GetCombinedStatus(ctx, c.owner, c.repo, ref, nil)
+	if err != nil {
+		return nil, fmt.Errorf("github: get combined status for %s: %w", ref, err)
+	}
+
+	checks := make([]forge.Check, 0, len(status.Statuses))
+	for _, s := range status.Statuses {
+		cs := forge.CheckStatusPending
+		switch s.GetState() {
+		case "success":
+			cs = forge.CheckStatusSuccess
+		case "failure", "error":
+			cs = forge.CheckStatusFailure
+		}
+		checks = append(checks, forge.Check{
+			Name:   s.GetContext(),
+			Status: cs,
+		})
+	}
+
+	return checks, nil
+}
+
 // convertPR transforms a GitHub SDK pull request into a forge.PullRequest.
 func convertPR(gh *gogithub.PullRequest) *forge.PullRequest {
 	pr := &forge.PullRequest{
@@ -104,6 +139,15 @@ func convertPR(gh *gogithub.PullRequest) *forge.PullRequest {
 	if gh.Base != nil {
 		pr.Base = gh.Base.GetRef()
 	}
+	if gh.User != nil {
+		pr.Author = gh.User.GetLogin()
+	}
+
+	labels := make([]string, 0, len(gh.Labels))
+	for _, l := range gh.Labels {
+		labels = append(labels, l.GetName())
+	}
+	pr.Labels = labels
 
 	return pr
 }

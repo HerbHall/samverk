@@ -53,6 +53,10 @@ func (m *mockPRManager) MergePullRequest(_ context.Context, number int, method f
 	return nil
 }
 
+func (m *mockPRManager) GetPRChecks(_ context.Context, _ int) ([]forge.Check, error) {
+	return nil, nil
+}
+
 // newTestMCPServerWithPR sets up an httptest.Server with a PR manager wired.
 func newTestMCPServerWithPR(t *testing.T, tracker forge.IssueTracker, prm forge.PullRequestManager) *httptest.Server {
 	t.Helper()

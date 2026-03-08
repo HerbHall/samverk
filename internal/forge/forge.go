@@ -124,12 +124,28 @@ const (
 	MergeMethodRebase MergeMethod = "rebase"
 )
 
+// CheckStatus represents the state of a CI check.
+type CheckStatus string
+
+const (
+	CheckStatusSuccess CheckStatus = "success"
+	CheckStatusFailure CheckStatus = "failure"
+	CheckStatusPending CheckStatus = "pending"
+)
+
+// Check represents a single CI status check on a pull request.
+type Check struct {
+	Name   string      `json:"name"`
+	Status CheckStatus `json:"status"`
+}
+
 // PullRequestManager provides pull request operations on a git forge.
 type PullRequestManager interface {
 	CreatePullRequest(ctx context.Context, req *CreatePRRequest) (*PullRequest, error)
 	GetPullRequest(ctx context.Context, number int) (*PullRequest, error)
 	ListPullRequests(ctx context.Context, opts *ListPROptions) ([]*PullRequest, error)
 	MergePullRequest(ctx context.Context, number int, method MergeMethod, commitMsg string) error
+	GetPRChecks(ctx context.Context, number int) ([]Check, error)
 }
 
 // PullRequest represents a pull request in Samverk's domain.
@@ -140,8 +156,10 @@ type PullRequest struct {
 	State     State     `json:"state"`
 	Head      string    `json:"head"`
 	Base      string    `json:"base"`
+	Author    string    `json:"author"`
 	Mergeable bool      `json:"mergeable"`
 	Draft     bool      `json:"draft"`
+	Labels    []string  `json:"labels"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

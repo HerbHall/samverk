@@ -16,6 +16,15 @@ type Config struct {
 	TierOverrides map[ActionType]Tier        `yaml:"tier_overrides"`
 	Agents        map[string]ScopedOverrides `yaml:"agents"`
 	Branches      map[string]ScopedOverrides `yaml:"branches"`
+	Merge         MergeConfig                `yaml:"merge"`
+}
+
+// MergeConfig controls auto-merge behavior for agent PRs.
+type MergeConfig struct {
+	AutoMergeOnCIPass     bool     `yaml:"auto_merge_on_ci_pass"`
+	TrustedAuthors        []string `yaml:"trusted_authors"`
+	RequireAllChecksPass  bool     `yaml:"require_all_checks_pass"`
+	ExcludeLabels         []string `yaml:"exclude_labels"`
 }
 
 // Defaults holds global default values.
