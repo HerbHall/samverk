@@ -10,6 +10,19 @@ import (
 // maxFileContextBytes caps the total injected file context to ~8k tokens (~32k bytes).
 const maxFileContextBytes = 32_000
 
+// githubSourceInstructions is appended to AI-driven agent prompts that may need
+// to read source files. Agents run on CT 202 where the Go source tree is absent;
+// the GitHub Contents API is the canonical way to fetch source.
+const githubSourceInstructions = `
+
+You do not have access to the local source tree. To read source files, use the GitHub Contents API:
+
+  curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+    https://api.github.com/repos/herbhall/samverk/contents/<path> \
+    | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['content'].replace('\n','')).decode())"
+
+Always read the actual source before drawing conclusions.`
+
 // BuildSystemPrompt dispatches to per-agent-type prompt builders and appends
 // file context when available. Agent types that are not AI-driven (human,
 // orchestrator, dispatcher) return an empty string.
@@ -50,7 +63,7 @@ END
 
 Open one edit block per file. Do not explain your changes in prose — the edit blocks are your entire output. If you need to create a new file, use the same format with the new path.
 
-When done, add a single line: PR_TITLE: <one-line summary of the change>`,
+When done, add a single line: PR_TITLE: <one-line summary of the change>`+githubSourceInstructions,
 		task.Issue.Number, task.Issue.Title)
 }
 
@@ -62,7 +75,7 @@ Produce test file edits in the same EDIT/END format as code-gen. Focus on:
 - Edge cases identified in the issue
 - Regression tests for bug fixes
 
-Add a line: PR_TITLE: test: <what is being tested>`,
+Add a line: PR_TITLE: test: <what is being tested>`+githubSourceInstructions,
 		task.Issue.Number, task.Issue.Title)
 }
 
@@ -74,7 +87,7 @@ Produce markdown file edits in the EDIT/END format. Ensure:
 - Proper heading hierarchy
 - All links are relative and valid
 
-Add a line: PR_TITLE: docs: <what was documented>`,
+Add a line: PR_TITLE: docs: <what was documented>`+githubSourceInstructions,
 		task.Issue.Number, task.Issue.Title)
 }
 
@@ -87,7 +100,7 @@ Post your findings as a structured markdown comment with these sections:
 ## Recommendation
 ## Sources
 
-Do not produce file edits. Your output is a comment on the issue.`,
+Do not produce file edits. Your output is a comment on the issue.`+githubSourceInstructions,
 		task.Issue.Number, task.Issue.Title)
 }
 
