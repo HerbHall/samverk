@@ -519,14 +519,13 @@ func TestHandleOpened_NoFrontmatter_AgentHumanLabel(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if hasLabel(issue.Labels, "status:needs-human") {
-		t.Error("did not expect status:needs-human for agent:human label")
+	// agent:human issues are now intercepted by the route() human gate:
+	// status:needs-human is added and no pool submission occurs.
+	if !hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("expected status:needs-human for agent:human classified issue")
 	}
-	if !hasLabel(issue.Labels, "status:claimed") {
-		t.Error("expected status:claimed after heuristic routing")
-	}
-	if len(issue.Assignees) == 0 || issue.Assignees[0] != "human" {
-		t.Errorf("expected assignee human, got %v", issue.Assignees)
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("did not expect status:claimed — human issues must not be dispatched")
 	}
 }
 
@@ -981,6 +980,157 @@ func TestHandleEvent_UnknownTypeStillLogs(t *testing.T) {
 		IssueNumber: 1,
 	})
 	// No panic, no error — the handler exists now.
+}
+
+func TestHandleOpened_SkipsNeedsHuman(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[10] = &forge.Issue{
+		Number: 10,
+		Title:  "Needs human review",
+		Body:   "Some body",
+		State:  forge.StateOpen,
+		Labels: []string{"status:needs-human"},
+	}
+	tracker.mu.Unlock()
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 10,
+	})
+	if err != nil {
+		t.Fatalf("handleOpened returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	issue := tracker.issues[10]
+	tracker.mu.Unlock()
+
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("expected no status:claimed label — issue should be skipped")
+	}
+}
+
+func TestHandleOpened_SkipsBlocked(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[11] = &forge.Issue{
+		Number: 11,
+		Title:  "Blocked issue",
+		Body:   "Some body",
+		State:  forge.StateOpen,
+		Labels: []string{"status:blocked"},
+	}
+	tracker.mu.Unlock()
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 11,
+	})
+	if err != nil {
+		t.Fatalf("handleOpened returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	issue := tracker.issues[11]
+	tracker.mu.Unlock()
+
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("expected no status:claimed label — issue should be skipped")
+	}
+}
+
+func TestHandleOpened_SkipsClaimed(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[12] = &forge.Issue{
+		Number: 12,
+		Title:  "Already claimed",
+		Body:   "Some body",
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed"},
+	}
+	tracker.mu.Unlock()
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 12,
+	})
+	if err != nil {
+		t.Fatalf("handleOpened returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	calls := make([]string, len(tracker.calls))
+	copy(calls, tracker.calls)
+	tracker.mu.Unlock()
+
+	// Verify Assign was never called (no routing occurred).
+	for _, c := range calls {
+		if c == "Assign" {
+			t.Error("Assign was called — issue should have been skipped before routing")
+		}
+	}
+}
+
+func TestRoute_HumanAgentNotDispatched(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[20] = &forge.Issue{
+		Number: 20,
+		Title:  "Human task",
+		Body:   "Requires human decision",
+		State:  forge.StateOpen,
+		Labels: []string{"agent:human"},
+	}
+	tracker.mu.Unlock()
+
+	issue := &forge.Issue{
+		Number: 20,
+		Title:  "Human task",
+		Body:   "Requires human decision",
+		State:  forge.StateOpen,
+		Labels: []string{"agent:human"},
+	}
+
+	err := d.route(context.Background(), issue, models.AgentTypeHuman)
+	if err != nil {
+		t.Fatalf("route returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	routedIssue := tracker.issues[20]
+	calls := make([]string, len(tracker.calls))
+	copy(calls, tracker.calls)
+	tracker.mu.Unlock()
+
+	// status:needs-human must be set.
+	if !hasLabel(routedIssue.Labels, "status:needs-human") {
+		t.Error("expected status:needs-human label to be added")
+	}
+
+	// Assign must NOT be called — no agent pool submission.
+	for _, c := range calls {
+		if c == "Assign" {
+			t.Error("Assign was called — human issues must not be dispatched to agent pool")
+		}
+	}
+
+	// claimed map must not contain the issue.
+	d.mu.Lock()
+	_, inClaimed := d.claimed[20]
+	d.mu.Unlock()
+	if inClaimed {
+		t.Error("issue #20 should not be in claimed map — human issues are not routed")
+	}
 }
 
 func hasLabel(labels []string, target string) bool {

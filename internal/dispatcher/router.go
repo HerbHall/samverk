@@ -144,6 +144,15 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 // and records the claim in memory. Any failure count accumulated from prior
 // timeout cycles is carried forward so the escalation threshold is not reset.
 func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType) error {
+	// Human-typed issues are tracked but never submitted to the agent pool.
+	if agentType == models.AgentTypeHuman {
+		d.logger.Printf("issue #%d classified as human — not dispatching to agent pool", issue.Number)
+		if err := d.tracker.AddLabel(ctx, issue.Number, "status:needs-human"); err != nil {
+			d.logger.Printf("add needs-human to #%d: %v", issue.Number, err)
+		}
+		return nil
+	}
+
 	if err := d.tracker.RemoveLabel(ctx, issue.Number, "status:queued"); err != nil {
 		d.logger.Printf("remove queued label from #%d: %v", issue.Number, err)
 	}

@@ -137,6 +137,16 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		}
 	}
 
+	// Skip issues that are already in a terminal or human-managed state.
+	labels := make(map[string]bool, len(issue.Labels))
+	for _, l := range issue.Labels {
+		labels[l] = true
+	}
+	if labels["status:needs-human"] || labels["status:blocked"] || labels["status:claimed"] || labels["status:in-progress"] {
+		d.logger.Printf("skipping #%d: already has status label", issue.Number)
+		return nil
+	}
+
 	agentType, err := d.classify(ctx, issue)
 	if err != nil {
 		return d.escalate(ctx, issue.Number, "invalid_frontmatter", err.Error())
