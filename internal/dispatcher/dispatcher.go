@@ -103,6 +103,8 @@ func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
 		err = d.handleClosed(ctx, ev)
 	case forge.EventIssueLabeled:
 		err = d.handleLabeled(ctx, ev)
+	case forge.EventIssueAssigned:
+		err = d.handleAssigned(ctx, ev)
 	case forge.EventIssueCommented:
 		err = d.handleCommented(ctx, ev)
 	case forge.EventIssueEdited:
@@ -117,7 +119,13 @@ func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
 }
 
 // handleOpened processes a newly created issue: classify, check deps, route or block.
+// Pull requests are silently skipped — they are not routable work items.
 func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
+	if ev.IsPullRequest {
+		d.logger.Printf("skipping PR #%d", ev.IssueNumber)
+		return nil
+	}
+
 	issue := ev.Issue
 	if issue == nil {
 		var err error
@@ -194,6 +202,17 @@ func (d *Dispatcher) handleCommented(_ context.Context, ev forge.Event) error {
 		return nil
 	}
 	claimed.LastHeartbeat = hb.Timestamp
+	return nil
+}
+
+// handleAssigned logs assignment events. If the assignee matches a known agent
+// type pattern, it could trigger routing in a future iteration.
+func (d *Dispatcher) handleAssigned(_ context.Context, ev forge.Event) error {
+	assignee := ev.Assignee
+	if assignee == "" && ev.Issue != nil && len(ev.Issue.Assignees) > 0 {
+		assignee = ev.Issue.Assignees[len(ev.Issue.Assignees)-1]
+	}
+	d.logger.Printf("issue #%d assigned to %s", ev.IssueNumber, assignee)
 	return nil
 }
 

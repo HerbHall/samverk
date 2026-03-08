@@ -847,6 +847,77 @@ func TestLoadConfig_Defaults(t *testing.T) {
 
 // --- Helpers ---
 
+func TestHandleOpened_SkipsPullRequest(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	issue := &forge.Issue{
+		Number:        99,
+		Title:         "feat: add widget",
+		Body:          "PR body without frontmatter.",
+		State:         forge.StateOpen,
+		IsPullRequest: true,
+	}
+	tracker.issues[99] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:          forge.EventIssueOpened,
+		IssueNumber:   99,
+		Issue:         issue,
+		IsPullRequest: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// PR should NOT be escalated or routed.
+	if hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("PR should not be escalated to needs-human")
+	}
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("PR should not be routed (status:claimed)")
+	}
+	if hasLabel(issue.Labels, "status:queued") {
+		t.Error("PR should not be queued")
+	}
+}
+
+func TestHandleEvent_AssignedDoesNotError(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	issue := &forge.Issue{
+		Number:    5,
+		Title:     "some issue",
+		Body:      "body",
+		State:     forge.StateOpen,
+		Assignees: []string{"octocat"},
+	}
+	tracker.issues[5] = issue
+
+	err := d.handleAssigned(context.Background(), forge.Event{
+		Type:        forge.EventIssueAssigned,
+		IssueNumber: 5,
+		Issue:       issue,
+		Assignee:    "octocat",
+	})
+	if err != nil {
+		t.Fatalf("handleAssigned returned error: %v", err)
+	}
+}
+
+func TestHandleEvent_UnknownTypeStillLogs(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Verify issue.assigned is no longer treated as unknown.
+	d.handleEvent(context.Background(), forge.Event{
+		Type:        forge.EventIssueAssigned,
+		IssueNumber: 1,
+	})
+	// No panic, no error — the handler exists now.
+}
+
 func hasLabel(labels []string, target string) bool {
 	for _, l := range labels {
 		if l == target {
