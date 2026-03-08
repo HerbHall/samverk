@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/HerbHall/samverk/compare/v0.1.7...v0.1.8) (2026-03-08)
+
+
+### Features
+
+* claude-cli provider with multi-model routing and GitHub source access ([#223](https://github.com/HerbHall/samverk/issues/223)) ([b36cd37](https://github.com/HerbHall/samverk/commit/b36cd37d402fb5e4a36685da27876b77d560a784))
+
 ## [0.1.7](https://github.com/HerbHall/samverk/compare/v0.1.6...v0.1.7) (2026-03-08)
 
 
