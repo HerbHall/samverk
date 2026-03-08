@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/pkg/models"
@@ -1130,6 +1131,139 @@ func TestRoute_HumanAgentNotDispatched(t *testing.T) {
 	d.mu.Unlock()
 	if inClaimed {
 		t.Error("issue #20 should not be in claimed map — human issues are not routed")
+	}
+}
+
+func TestHandleTaskComplete_Success(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.issues[5] = &forge.Issue{
+		Number: 5,
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed", "status:in-progress"},
+	}
+
+	d.mu.Lock()
+	d.claimed[5] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.issueFailures[5] = 1
+	d.mu.Unlock()
+
+	d.handleTaskComplete(agent.TaskResult{
+		IssueNumber: 5,
+		SessionID:   "sess-5",
+		AgentType:   models.AgentTypeCodeGen,
+		Success:     true,
+	})
+
+	// claimed map must be cleared.
+	d.mu.Lock()
+	_, inClaimed := d.claimed[5]
+	_, inFailures := d.issueFailures[5]
+	d.mu.Unlock()
+	if inClaimed {
+		t.Error("expected issue #5 removed from claimed map")
+	}
+	if inFailures {
+		t.Error("expected issueFailures cleared on success")
+	}
+
+	issue := tracker.issues[5]
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("expected status:claimed removed")
+	}
+	if hasLabel(issue.Labels, "status:in-progress") {
+		t.Error("expected status:in-progress removed")
+	}
+	if !hasLabel(issue.Labels, "status:needs-qc") {
+		t.Error("expected status:needs-qc added on success")
+	}
+}
+
+func TestHandleTaskComplete_Failure(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.issues[6] = &forge.Issue{
+		Number: 6,
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed"},
+	}
+
+	d.mu.Lock()
+	d.claimed[6] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.issueFailures[6] = 1
+	d.mu.Unlock()
+
+	d.handleTaskComplete(agent.TaskResult{
+		IssueNumber: 6,
+		SessionID:   "sess-6",
+		AgentType:   models.AgentTypeCodeGen,
+		Success:     false,
+		Error:       "runner error",
+	})
+
+	// claimed map must be cleared but failure count preserved.
+	d.mu.Lock()
+	_, inClaimed := d.claimed[6]
+	failures := d.issueFailures[6]
+	d.mu.Unlock()
+	if inClaimed {
+		t.Error("expected issue #6 removed from claimed map")
+	}
+	if failures != 1 {
+		t.Errorf("expected issueFailures preserved on failure, got %d", failures)
+	}
+
+	issue := tracker.issues[6]
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("expected status:claimed removed")
+	}
+	if !hasLabel(issue.Labels, "status:queued") {
+		t.Error("expected status:queued added on failure")
+	}
+}
+
+func TestNoDoubleDispatch_AfterCompletion(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.issues[7] = &forge.Issue{
+		Number: 7,
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed"},
+	}
+
+	d.mu.Lock()
+	d.claimed[7] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	// Simulate successful completion removing issue from claimed map.
+	d.handleTaskComplete(agent.TaskResult{
+		IssueNumber: 7,
+		SessionID:   "sess-7",
+		AgentType:   models.AgentTypeCodeGen,
+		Success:     true,
+	})
+
+	// Give issue a stale heartbeat to trigger timeout sweep.
+	d.mu.Lock()
+	_, stillClaimed := d.claimed[7]
+	d.mu.Unlock()
+
+	if stillClaimed {
+		t.Fatal("issue #7 should not be in claimed map after completion callback")
+	}
+
+	// checkTimeouts must not re-queue an already-completed (not claimed) issue.
+	if err := d.checkTimeouts(context.Background()); err != nil {
+		t.Fatalf("checkTimeouts: %v", err)
+	}
+
+	// Status should remain needs-qc (set by handleTaskComplete), not be overwritten.
+	issue := tracker.issues[7]
+	if hasLabel(issue.Labels, "status:queued") {
+		t.Error("checkTimeouts re-queued a completed issue — double-dispatch bug")
 	}
 }
 

@@ -56,11 +56,44 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 	}
 }
 
+// handleTaskComplete is called by the agent pool when a task finishes.
+// It removes the issue from the claimed map and updates labels.
+func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
+	d.mu.Lock()
+	delete(d.claimed, result.IssueNumber)
+	if result.Success {
+		delete(d.issueFailures, result.IssueNumber)
+	}
+	d.mu.Unlock()
+
+	ctx := context.Background()
+
+	_ = d.tracker.RemoveLabel(ctx, result.IssueNumber, "status:claimed")
+	_ = d.tracker.RemoveLabel(ctx, result.IssueNumber, "status:in-progress")
+
+	if result.Success {
+		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
+			d.logger.Printf("add needs-qc to #%d: %v", result.IssueNumber, err)
+		}
+		d.logger.Printf("task #%d completed successfully, moved to needs-qc", result.IssueNumber)
+	} else {
+		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:queued"); err != nil {
+			d.logger.Printf("add queued to #%d: %v", result.IssueNumber, err)
+		}
+		d.logger.Printf("task #%d failed (%s), re-queued", result.IssueNumber, result.Error)
+	}
+}
+
 // Run starts the watch loop and heartbeat ticker. It blocks until ctx is
 // cancelled or an unrecoverable error occurs.
 func (d *Dispatcher) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	d.stop = cancel
+
+	// Register completion callback with agent pool.
+	if d.pool != nil {
+		d.pool.SetOnComplete(d.handleTaskComplete)
+	}
 
 	errCh := make(chan error, 1)
 
