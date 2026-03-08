@@ -210,6 +210,7 @@ W01-W02 → W05 → W09 → W10 → W11 → W14 → W20
 P01 → P03 → P05 → P06 → P07 → P08 → P11 → P12 → P14
  2d    1d    2d    1d    1d    2d    soak   2d    soak = ~14 days
 ```
+
 (P02 bare clone setup runs in parallel with P01, no dependency)
 
 After P08, the PC agent accelerates everything else.
