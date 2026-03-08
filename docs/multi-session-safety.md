@@ -55,6 +55,76 @@ You work on multiple projects (Samverk, DockPulse, PacketDeck, Subnetree, etc.) 
    }
    ```
 
+## Repo-First Principle
+
+**Session history is unreliable. The repo is not.**
+
+AI session history is subject to truncation, staleness, and cross-session
+unavailability. Any design that depends on an agent "remembering" what happened
+in a previous session is fragile. The repo is persistent, structured, and
+queryable by any tool on any device.
+
+### The Rule
+
+Every important decision, state change, and project milestone must be captured
+in the repo — not just in conversation. This means:
+
+- Architecture decisions go in `docs/decisions/` as ADRs
+- Current project state goes in `.samverk/status.md` ([#183](https://github.com/HerbHall/samverk/issues/183))
+- Agent instructions go in `CLAUDE.md` ([#184](https://github.com/HerbHall/samverk/issues/184))
+- Open work items go in GitHub issues
+- Design rationale goes in docs, not just in chat
+
+Conversations are ephemeral. The repo is permanent.
+
+### .samverk/status.md
+
+Every Samverk-managed project maintains a `.samverk/status.md` file — a
+compact snapshot of current state, updated by Claude Code at the end of
+every work session.
+
+**Format**: YAML frontmatter (phase, updated, updated_by) + markdown body
+with Phase, What Is Running, In Flight, Queued, Last Session Summary,
+and Cold Start Protocol sections. Maximum 40 lines.
+
+**Maintenance rules:**
+
+- Updated as the last commit of every CC session
+- Updated timestamp must be accurate
+- In Flight = only `status:in-progress` issues
+- Queued = top 5-6 actionable open issues
+- Last Session Summary = one paragraph, what changed
+- Compress ruthlessly — never exceed one screenful
+
+**Long-term:** The `samverk status --write` CLI command
+([#186](https://github.com/HerbHall/samverk/issues/186)) automates
+this maintenance. Until that ships, CC maintains it manually.
+
+### Cold-Start Protocol
+
+Every project's `CLAUDE.md` includes a mandatory session start sequence:
+
+1. Read `.samverk/status.md`
+2. Call `samverk get_digest --since 168h` if MCP is configured
+3. Check open issues if relevant
+4. Proceed — never ask the user to explain current state
+
+This protocol eliminates the failure mode where an agent starts a session
+by asking "where did we leave off?" — which puts the burden of context
+management on the user instead of the repo.
+
+### What Still Goes in Session History
+
+Session history is still useful for:
+
+- Detailed reasoning trails (why a particular approach was chosen)
+- Exploratory conversations that haven't yet produced repo artifacts
+- Cross-referencing when something is ambiguous in the repo
+
+But anything that matters must eventually land in the repo. If a decision
+was made in chat and not documented in an ADR or issue comment, it didn't
+happen as far as the next session is concerned.
+
 ## Active Project Registry
 
 Keep this list current. If a project isn't listed here, it's not being actively developed.
