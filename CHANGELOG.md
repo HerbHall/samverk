@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/HerbHall/samverk/compare/v0.1.1...v0.1.2) (2026-03-08)
+
+
+### Bug Fixes
+
+* **dispatcher:** heuristic fallback when issue has no frontmatter ([#188](https://github.com/HerbHall/samverk/issues/188)) ([67f09f2](https://github.com/HerbHall/samverk/commit/67f09f28836135d135f528f79f7e328be814ba56)), closes [#180](https://github.com/HerbHall/samverk/issues/180)
+
 ## [0.1.1](https://github.com/HerbHall/samverk/compare/v0.1.0...v0.1.1) (2026-03-07)
 
 
