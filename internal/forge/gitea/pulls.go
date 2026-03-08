@@ -194,9 +194,10 @@ func (c *Client) ListReviewComments(ctx context.Context, prNumber int) ([]forge.
 				author = rc.Reviewer.UserName
 			}
 
+			//nolint:gosec // G115: review line numbers are safely bounded in practice
 			startLine := int(rc.OldLineNum)
 			if startLine == 0 {
-				startLine = int(rc.LineNum)
+				startLine = int(rc.LineNum) //nolint:gosec // G115: line numbers fit in int
 			}
 
 			result = append(result, forge.ReviewComment{
@@ -204,7 +205,7 @@ func (c *Client) ListReviewComments(ctx context.Context, prNumber int) ([]forge.
 				Body:      rc.Body,
 				Path:      rc.Path,
 				StartLine: startLine,
-				EndLine:   int(rc.LineNum),
+				EndLine:   int(rc.LineNum), //nolint:gosec // G115: line numbers fit in int
 				Resolved:  rc.Resolver != nil,
 				CreatedAt: rc.Created,
 			})

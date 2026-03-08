@@ -114,8 +114,8 @@ func (c *Client) GetCommitLog(_ context.Context, branch string, limit int) ([]fo
 	for i := range gtCommits {
 		commit := forge.Commit{}
 		if gtCommits[i].CommitMeta != nil {
-			commit.SHA = gtCommits[i].CommitMeta.SHA
-			commit.Date = gtCommits[i].CommitMeta.Created
+			commit.SHA = gtCommits[i].SHA
+			commit.Date = gtCommits[i].Created
 		}
 		if gtCommits[i].RepoCommit != nil {
 			commit.Message = gtCommits[i].RepoCommit.Message
