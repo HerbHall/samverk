@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.6](https://github.com/HerbHall/samverk/compare/v0.1.5...v0.1.6) (2026-03-08)
+
+
+### Features
+
+* build and embed React SPA in CI workflow ([#212](https://github.com/HerbHall/samverk/issues/212)) ([482f66b](https://github.com/HerbHall/samverk/commit/482f66ba982a2ea3f60759d0d062e9419ee34bf4)), closes [#197](https://github.com/HerbHall/samverk/issues/197)
+* PR watcher auto-merges eligible pull requests ([#209](https://github.com/HerbHall/samverk/issues/209)) ([d6e877f](https://github.com/HerbHall/samverk/commit/d6e877f0230c7b27980406456472a9c8b9b896fe)), closes [#204](https://github.com/HerbHall/samverk/issues/204)
+
+
+### Bug Fixes
+
+* make redeploy works on Windows, stops services before scp ([#214](https://github.com/HerbHall/samverk/issues/214)) ([6910e9b](https://github.com/HerbHall/samverk/commit/6910e9bdec73d4769963d43e8d290845cca575ce)), closes [#210](https://github.com/HerbHall/samverk/issues/210)
+
 ## [0.1.5](https://github.com/HerbHall/samverk/compare/v0.1.4...v0.1.5) (2026-03-08)
 
 
