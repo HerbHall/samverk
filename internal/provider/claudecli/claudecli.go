@@ -4,7 +4,6 @@
 package claudecli
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
@@ -62,13 +61,11 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, c.claudeBin, args...) //nolint:gosec // G204: claudeBin is set internally
 	cmd.Stdin = strings.NewReader(prompt.String())        // prompt via stdin — argument mode hangs
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()                      // capture both stdout and stderr for diagnostics
 	if err != nil {
-		return nil, fmt.Errorf("claude-cli: exec: %w: stderr: %s", err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("claude-cli: exec: %w: output: %s", err, strings.TrimSpace(string(out)))
 	}
 
 	return &provider.ChatResponse{
