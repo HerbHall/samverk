@@ -36,6 +36,9 @@ func New(model string) *Client {
 
 // Chat builds a prompt from the request messages, invokes `claude --print`,
 // and returns the CLI output as the assistant response.
+//
+// IMPORTANT: The prompt MUST be sent via stdin, not as a CLI argument.
+// Passing the prompt as an argument causes the CLI to hang indefinitely.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	var prompt strings.Builder
 	for _, m := range req.Messages {
@@ -49,7 +52,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		}
 	}
 
-	args := []string{"--print", prompt.String()}
+	args := []string{"--print"}
 	if c.model != "" {
 		args = append(args, "--model", c.model)
 	}
@@ -58,6 +61,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, c.claudeBin, args...) //nolint:gosec // G204: claudeBin is set internally
+	cmd.Stdin = strings.NewReader(prompt.String())        // prompt via stdin — argument mode hangs
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("claude-cli: exec: %w", err)
