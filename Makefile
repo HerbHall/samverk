@@ -1,4 +1,4 @@
-.PHONY: build test test-race test-coverage lint lint-md lint-all ci hooks run clean web dev-web \
+.PHONY: build test test-race test-coverage test-integration test-all lint lint-md lint-all ci hooks run clean web dev-web \
        cross-build deploy deploy-binary deploy-config redeploy
 
 # Binary
@@ -34,6 +34,11 @@ test-race:
 test-coverage:
 	go test -race -coverprofile=coverage.out -covermode=atomic ./...
 	go tool cover -func=coverage.out
+
+test-integration:
+	go test -tags=integration -v -timeout 60s ./internal/integration/...
+
+test-all: test test-integration
 
 lint:
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1 run ./...
