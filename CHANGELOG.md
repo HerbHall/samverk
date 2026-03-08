@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.3](https://github.com/HerbHall/samverk/compare/v0.1.2...v0.1.3) (2026-03-08)
+
+
+### Features
+
+* specialized system prompts per agent type ([#200](https://github.com/HerbHall/samverk/issues/200)) ([04fa284](https://github.com/HerbHall/samverk/commit/04fa2849fa0d6a257c8966d04a8adc1eb5aa6735))
+
+
+### Bug Fixes
+
+* resolve markdownlint errors in CHANGELOG.md and remove lint workarounds ([#199](https://github.com/HerbHall/samverk/issues/199)) ([dff575b](https://github.com/HerbHall/samverk/commit/dff575b7f35a87136cba4a38b6105f554db5714e))
+
 ## [0.1.2](https://github.com/HerbHall/samverk/compare/v0.1.1...v0.1.2) (2026-03-08)
 
 ### Bug Fixes
