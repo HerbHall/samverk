@@ -18,6 +18,7 @@ import (
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/forge/github"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"github.com/herbhall/samverk/internal/prwatcher"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/provider/claude"
 	"github.com/herbhall/samverk/internal/provider/ollama"
@@ -27,6 +28,7 @@ import (
 	"github.com/herbhall/samverk/internal/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -268,8 +270,22 @@ func dispatchCmd() *cobra.Command {
 			disp := dispatcher.New(ghClient, policy, st, pool, nil)
 			slog.Info("starting dispatcher", "owner", owner, "repo", repo)
 
-			if err := disp.Run(ctx); err != nil && err != context.Canceled {
-				return fmt.Errorf("dispatcher error: %w", err)
+			g, gctx := errgroup.WithContext(ctx)
+
+			g.Go(func() error {
+				return disp.Run(gctx)
+			})
+
+			// Start PR watcher if auto-merge is enabled.
+			if policyCfg.Merge.AutoMergeOnCIPass {
+				pw := prwatcher.New(ghClient, policyCfg.Merge, time.Duration(pollSeconds)*time.Second)
+				g.Go(func() error {
+					return pw.Run(gctx)
+				})
+			}
+
+			if err := g.Wait(); err != nil && err != context.Canceled {
+				return fmt.Errorf("dispatch error: %w", err)
 			}
 			return nil
 		},
