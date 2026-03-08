@@ -6,6 +6,7 @@ package claudecli
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -16,7 +17,12 @@ import (
 // Compile-time check that Client satisfies provider.Provider.
 var _ provider.Provider = (*Client)(nil)
 
-const defaultTimeout = 300 * time.Second
+const (
+	defaultTimeout = 300 * time.Second
+	// maxErrOutputBytes caps the CLI output included in error messages to prevent
+	// oversized GitHub issue comments and avoid leaking unrelated terminal output.
+	maxErrOutputBytes = 2048
+)
 
 // Client invokes the claude CLI binary for chat completions.
 type Client struct {
@@ -25,17 +31,29 @@ type Client struct {
 	timeout   time.Duration
 }
 
-// New creates a claude-cli provider. If model is empty, the CLI uses its default.
+// New creates a claude-cli provider with the default timeout.
+// If model is empty, the CLI uses its default.
 func New(model string) *Client {
+	return NewWithTimeout(model, defaultTimeout)
+}
+
+// NewWithTimeout creates a claude-cli provider with a custom timeout.
+// Use this when the provider config specifies timeout_seconds.
+func NewWithTimeout(model string, timeout time.Duration) *Client {
 	return &Client{
 		claudeBin: "claude",
 		model:     model,
-		timeout:   defaultTimeout,
+		timeout:   timeout,
 	}
 }
 
 // Chat builds a prompt from the request messages, invokes `claude --print`,
 // and returns the CLI output as the assistant response.
+//
+// IMPORTANT: The prompt MUST be sent via stdin, not as a CLI argument.
+// Passing the prompt as an argument causes the CLI to hang indefinitely.
+// --dangerously-skip-permissions is required for headless/non-interactive use.
+// ANTHROPIC_API_KEY must be unset so the CLI uses OAuth (~/.claude) not API credits.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	var prompt strings.Builder
 	for _, m := range req.Messages {
@@ -49,7 +67,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		}
 	}
 
-	args := []string{"--print", prompt.String()}
+	args := []string{"--print", "--dangerously-skip-permissions"}
 	if c.model != "" {
 		args = append(args, "--model", c.model)
 	}
@@ -58,9 +76,26 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, c.claudeBin, args...) //nolint:gosec // G204: claudeBin is set internally
-	out, err := cmd.Output()
+	cmd.Stdin = strings.NewReader(prompt.String())        // prompt via stdin — argument mode hangs
+
+	// Inherit environment but strip ANTHROPIC_API_KEY so the CLI uses
+	// OAuth credentials (~/.claude) instead of API credits.
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
+			env = append(env, e)
+		}
+	}
+	cmd.Env = env
+
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("claude-cli: exec: %w", err)
+		snippet := out
+		if len(snippet) > maxErrOutputBytes {
+			// Keep the tail — the final lines are usually the most relevant.
+			snippet = snippet[len(snippet)-maxErrOutputBytes:]
+		}
+		return nil, fmt.Errorf("claude-cli: exec: %w: output: %s", err, strings.TrimSpace(string(snippet)))
 	}
 
 	return &provider.ChatResponse{

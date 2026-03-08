@@ -523,6 +523,11 @@ func (c *Client) GetPRChecks(_ context.Context, _ int) ([]forge.Check, error) {
 	return nil, ErrNotImplemented
 }
 
+// ListReviewComments is not yet implemented for Gitea.
+func (c *Client) ListReviewComments(_ context.Context, _ int) ([]forge.ReviewComment, error) {
+	return nil, ErrNotImplemented
+}
+
 // stringSliceEqual reports whether two string slices have the same elements.
 func stringSliceEqual(a, b []string) bool {
 	if len(a) != len(b) {

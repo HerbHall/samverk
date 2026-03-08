@@ -25,9 +25,10 @@ const defaultWorkers = 3
 
 // Task represents a unit of work to be processed by the agent pool.
 type Task struct {
-	Issue     *forge.Issue
-	AgentType models.AgentType
-	SessionID string
+	Issue       *forge.Issue
+	AgentType   models.AgentType
+	SessionID   string
+	ProviderKey string // routing chain key; defaults to string(AgentType) when empty
 }
 
 // Pool manages a fixed set of worker goroutines that process agent tasks.
@@ -116,6 +117,9 @@ func (p *Pool) worker() {
 }
 
 // processTask resolves a provider, creates a runner, and executes the task.
+// It uses task.ProviderKey for registry lookup when set, falling back to
+// string(task.AgentType). If the selected chain has no healthy provider,
+// it retries with the "default" chain before giving up.
 func (p *Pool) processTask(task Task) {
 	ctx := context.Background()
 	logger := p.logger.With(
@@ -124,7 +128,20 @@ func (p *Pool) processTask(task Task) {
 		slog.String("agent_type", string(task.AgentType)),
 	)
 
-	prov, model, err := p.registry.Get(ctx, string(task.AgentType))
+	routingKey := task.ProviderKey
+	if routingKey == "" {
+		routingKey = string(task.AgentType)
+	}
+
+	prov, model, err := p.registry.Get(ctx, routingKey)
+	if err != nil && routingKey != "default" {
+		// Selected provider chain is unhealthy; fall back to the default chain.
+		logger.Warn("selected provider chain unhealthy, falling back to default",
+			slog.String("provider_key", routingKey),
+			slog.String("error", err.Error()),
+		)
+		prov, model, err = p.registry.Get(ctx, "default")
+	}
 	if err != nil {
 		logger.Error("no healthy provider", slog.String("error", err.Error()))
 		p.failSession(ctx, task.SessionID, fmt.Sprintf("no healthy provider: %v", err))

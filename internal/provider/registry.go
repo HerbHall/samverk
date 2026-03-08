@@ -14,10 +14,11 @@ var ErrNoHealthyProvider = errors.New("no healthy provider available")
 
 // ProviderConfig describes a single provider entry in YAML config.
 type ProviderConfig struct {
-	Type         string `yaml:"type"`          // "claude", "openai", "ollama"
-	APIKeyEnv    string `yaml:"api_key_env"`   // env var name for API key
-	BaseURL      string `yaml:"base_url"`      // override base URL (for ollama or custom endpoints)
-	DefaultModel string `yaml:"default_model"` // default model for this provider
+	Type           string `yaml:"type"`            // "claude", "openai", "ollama", "claude-cli"
+	APIKeyEnv      string `yaml:"api_key_env"`     // env var name for API key
+	BaseURL        string `yaml:"base_url"`        // override base URL (for ollama or custom endpoints)
+	DefaultModel   string `yaml:"default_model"`   // default model for this provider
+	TimeoutSeconds int    `yaml:"timeout_seconds"` // per-provider timeout; 0 means use provider default
 }
 
 // RegistryConfig is the top-level YAML structure for provider configuration.

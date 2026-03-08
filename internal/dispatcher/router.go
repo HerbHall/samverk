@@ -23,6 +23,9 @@ var knownAgentTypes = map[models.AgentType]bool{
 	models.AgentTypeHuman:        true,
 }
 
+// complexTitleKeywords are title signals that indicate architectural/heavy work.
+var complexTitleKeywords = []string{"architect", "refactor", "redesign", "spike"}
+
 // classify parses frontmatter from the issue body and validates the agent_type.
 // Returns an error if frontmatter is missing or agent_type is invalid.
 func (d *Dispatcher) classify(_ context.Context, issue *forge.Issue) (models.AgentType, error) {
@@ -83,8 +86,62 @@ func classifyByHeuristic(issue *forge.Issue) models.AgentType {
 	return ""
 }
 
+// selectProviderKey examines issue signals and returns the routing chain key
+// that should be used for provider selection, along with a human-readable reason.
+//
+// Priority (highest first):
+//  1. complex  — critical priority, high complexity, or architectural title keywords
+//  2. local    — boilerplate/scaffold labels, or "chore:" title prefix
+//  3. triage   — low priority label, docs agent type, or short body (< 200 words)
+//  4. default  — everything else
+func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, reason string) {
+	labels := make(map[string]bool, len(issue.Labels))
+	for _, l := range issue.Labels {
+		labels[l] = true
+	}
+	lower := strings.ToLower(issue.Title)
+
+	// Complex: critical priority, high complexity, or architectural title keywords.
+	if labels["priority:critical"] {
+		return "complex", "label priority:critical"
+	}
+	if labels["complexity:high"] {
+		return "complex", "label complexity:high"
+	}
+	for _, kw := range complexTitleKeywords {
+		if strings.Contains(lower, kw) {
+			return "complex", "title keyword " + kw
+		}
+	}
+
+	// Local: boilerplate/scaffold labels or chore title prefix.
+	if labels["type:boilerplate"] {
+		return "local", "label type:boilerplate"
+	}
+	if labels["type:scaffold"] {
+		return "local", "label type:scaffold"
+	}
+	if strings.HasPrefix(lower, "chore:") {
+		return "local", "title prefix chore:"
+	}
+
+	// Triage: low priority, docs agent, or short issue body.
+	if labels["priority:low"] {
+		return "triage", "label priority:low"
+	}
+	if agentType == models.AgentTypeDocs {
+		return "triage", "agent type docs"
+	}
+	if wordCount := len(strings.Fields(issue.Body)); wordCount < 200 {
+		return "triage", fmt.Sprintf("short issue body (%d words)", wordCount)
+	}
+
+	return "default", "default routing"
+}
+
 // route assigns the issue to the agent pool matching agentType.
-// It transitions the issue from queued to claimed and records it in memory.
+// It selects a provider routing chain based on issue signals, logs the selection,
+// and records the claim in memory.
 func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType) error {
 	if err := d.tracker.RemoveLabel(ctx, issue.Number, "status:queued"); err != nil {
 		d.logger.Printf("remove queued label from #%d: %v", issue.Number, err)
@@ -95,6 +152,9 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	if err := d.tracker.Assign(ctx, issue.Number, string(agentType)); err != nil {
 		return fmt.Errorf("assign #%d to %s: %w", issue.Number, agentType, err)
 	}
+
+	providerKey, reason := selectProviderKey(issue, agentType)
+	d.logger.Printf("selected provider=%s reason=%s issue=#%d", providerKey, reason, issue.Number)
 
 	now := time.Now()
 	d.mu.Lock()
@@ -123,9 +183,10 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 			return fmt.Errorf("create session for #%d: %w", issue.Number, err)
 		}
 		task := agent.Task{
-			Issue:     issue,
-			AgentType: agentType,
-			SessionID: sessionID,
+			Issue:       issue,
+			AgentType:   agentType,
+			SessionID:   sessionID,
+			ProviderKey: providerKey,
 		}
 		if err := d.pool.Submit(task); err != nil {
 			return fmt.Errorf("submit agent task for #%d: %w", issue.Number, err)

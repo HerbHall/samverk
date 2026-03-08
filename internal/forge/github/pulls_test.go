@@ -165,3 +165,61 @@ func TestMergePullRequest(t *testing.T) {
 		t.Errorf("merge_method = %q, want %q", gotMethod, "squash")
 	}
 }
+
+func TestListReviewComments(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/owner/repo/pulls/10/comments", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, []*gogithub.PullRequestComment{
+			{
+				ID:        gogithub.Ptr(int64(1)),
+				Body:      gogithub.Ptr("Use constants here"),
+				Path:      gogithub.Ptr("main.go"),
+				Line:      gogithub.Ptr(42),
+				StartLine: gogithub.Ptr(40),
+				User:      &gogithub.User{Login: gogithub.Ptr("copilot")},
+				CreatedAt: &gogithub.Timestamp{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)},
+			},
+			{
+				ID:        gogithub.Ptr(int64(2)),
+				Body:      gogithub.Ptr("Missing error check"),
+				Path:      gogithub.Ptr("handler.go"),
+				Line:      gogithub.Ptr(15),
+				User:      &gogithub.User{Login: gogithub.Ptr("copilot")},
+				CreatedAt: &gogithub.Timestamp{Time: time.Date(2026, 3, 7, 13, 0, 0, 0, time.UTC)},
+			},
+		})
+	})
+
+	c, _ := newTestClient(t, mux)
+
+	comments, err := c.ListReviewComments(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ListReviewComments: %v", err)
+	}
+
+	if len(comments) != 2 {
+		t.Fatalf("len(comments) = %d, want 2", len(comments))
+	}
+
+	// First comment: has StartLine set.
+	if comments[0].Author != "copilot" {
+		t.Errorf("comments[0].Author = %q, want %q", comments[0].Author, "copilot")
+	}
+	if comments[0].Path != "main.go" {
+		t.Errorf("comments[0].Path = %q, want %q", comments[0].Path, "main.go")
+	}
+	if comments[0].StartLine != 40 {
+		t.Errorf("comments[0].StartLine = %d, want 40", comments[0].StartLine)
+	}
+	if comments[0].EndLine != 42 {
+		t.Errorf("comments[0].EndLine = %d, want 42", comments[0].EndLine)
+	}
+
+	// Second comment: no StartLine — should default to EndLine.
+	if comments[1].StartLine != 15 {
+		t.Errorf("comments[1].StartLine = %d, want 15 (should default to EndLine)", comments[1].StartLine)
+	}
+	if comments[1].EndLine != 15 {
+		t.Errorf("comments[1].EndLine = %d, want 15", comments[1].EndLine)
+	}
+}

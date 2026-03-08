@@ -23,6 +23,7 @@ type Config struct {
 type MergeConfig struct {
 	AutoMergeOnCIPass     bool     `yaml:"auto_merge_on_ci_pass"`
 	TrustedAuthors        []string `yaml:"trusted_authors"`
+	TrustedReviewers      []string `yaml:"trusted_reviewers"`
 	RequireAllChecksPass  bool     `yaml:"require_all_checks_pass"`
 	ExcludeLabels         []string `yaml:"exclude_labels"`
 }

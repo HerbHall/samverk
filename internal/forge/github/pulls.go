@@ -120,6 +120,37 @@ func (c *Client) GetPRChecks(ctx context.Context, number int) ([]forge.Check, er
 	return checks, nil
 }
 
+// ListReviewComments returns all review comments on a pull request.
+func (c *Client) ListReviewComments(ctx context.Context, prNumber int) ([]forge.ReviewComment, error) {
+	comments, _, err := c.gh.PullRequests.ListComments(ctx, c.owner, c.repo, prNumber, &gogithub.PullRequestListCommentsOptions{
+		ListOptions: gogithub.ListOptions{PerPage: 100},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("github: list review comments on PR #%d: %w", prNumber, err)
+	}
+
+	result := make([]forge.ReviewComment, 0, len(comments))
+	for _, rc := range comments {
+		comment := forge.ReviewComment{
+			Body:      rc.GetBody(),
+			Path:      rc.GetPath(),
+			EndLine:   rc.GetLine(),
+			CreatedAt: rc.GetCreatedAt().Time,
+		}
+		if rc.User != nil {
+			comment.Author = rc.User.GetLogin()
+		}
+		if rc.StartLine != nil {
+			comment.StartLine = rc.GetStartLine()
+		} else {
+			comment.StartLine = comment.EndLine
+		}
+		result = append(result, comment)
+	}
+
+	return result, nil
+}
+
 // convertPR transforms a GitHub SDK pull request into a forge.PullRequest.
 func convertPR(gh *gogithub.PullRequest) *forge.PullRequest {
 	pr := &forge.PullRequest{

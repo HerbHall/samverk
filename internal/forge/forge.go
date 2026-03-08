@@ -139,6 +139,17 @@ type Check struct {
 	Status CheckStatus `json:"status"`
 }
 
+// ReviewComment represents a review comment on a pull request.
+type ReviewComment struct {
+	Author    string    `json:"author"`
+	Body      string    `json:"body"`
+	Path      string    `json:"path"`
+	StartLine int       `json:"start_line"`
+	EndLine   int       `json:"end_line"`
+	Resolved  bool      `json:"resolved"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // PullRequestManager provides pull request operations on a git forge.
 type PullRequestManager interface {
 	CreatePullRequest(ctx context.Context, req *CreatePRRequest) (*PullRequest, error)
@@ -146,6 +157,7 @@ type PullRequestManager interface {
 	ListPullRequests(ctx context.Context, opts *ListPROptions) ([]*PullRequest, error)
 	MergePullRequest(ctx context.Context, number int, method MergeMethod, commitMsg string) error
 	GetPRChecks(ctx context.Context, number int) ([]Check, error)
+	ListReviewComments(ctx context.Context, prNumber int) ([]ReviewComment, error)
 }
 
 // PullRequest represents a pull request in Samverk's domain.

@@ -28,6 +28,7 @@ Phase 4 complete (2026-03-02): MCP tools, REST API, dispatcher CLI, multi-projec
 - #197: SPA build/embed in CI workflow (PR #212)
 - #198: end-to-end integration tests (PR #213)
 - #210: make redeploy works on Windows, stops services before scp (PR #214)
+- #218: claude-cli provider uses Claude Code auth instead of API credits (PR #219)
 
 ## Queued
 
