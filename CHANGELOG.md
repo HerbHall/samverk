@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.9](https://github.com/HerbHall/samverk/compare/v0.1.8...v0.1.9) (2026-03-08)
+
+
+### Bug Fixes
+
+* **#228:** graceful shutdown ([#229](https://github.com/HerbHall/samverk/issues/229)) ([8f36493](https://github.com/HerbHall/samverk/commit/8f364931b2a48efd792163a9a787b228689af06a))
+* **#231:** use RELEASE_PLEASE_TOKEN so release PRs trigger CI ([#232](https://github.com/HerbHall/samverk/issues/232)) ([24fd69b](https://github.com/HerbHall/samverk/commit/24fd69bd097a3e8104bb783f525d16ac3c77b6cf))
+* **#247:** dispatcher skips issues with terminal status labels and human agent type ([#253](https://github.com/HerbHall/samverk/issues/253)) ([9bfa374](https://github.com/HerbHall/samverk/commit/9bfa374bde1b5c1381fedbe34b6c7c5120011bee))
+* dispatcher fixes — failure counter, 404 suppression, Ollama timeout, heartbeat interval ([#249](https://github.com/HerbHall/samverk/issues/249)) ([b1e3635](https://github.com/HerbHall/samverk/commit/b1e3635fa030212af4b7dc02792ff2d7e38442bc))
+
 ## [0.1.8](https://github.com/HerbHall/samverk/compare/v0.1.7...v0.1.8) (2026-03-08)
 
 
