@@ -1,6 +1,6 @@
 ---
 phase: 5
-updated: 2026-03-08T21:00:00Z
+updated: 2026-03-08T15:30:00Z
 updated_by: claude-code
 ---
 
@@ -20,15 +20,11 @@ Phase 4 complete (2026-03-02): MCP tools, REST API, dispatcher CLI, multi-projec
 
 ## Completed This Session
 
-- #194: specialized system prompts per agent type (PR #208)
-- #203: dispatcher skips PRs, no longer escalates (PR #205)
-- #202: handle issue.assigned events (PR #205)
-- #195: code-gen and test agents open PRs with EDIT blocks (PR #207)
-- #204: PR watcher auto-merges eligible PRs (PR #209)
-- #197: SPA build/embed in CI workflow (PR #212)
-- #198: end-to-end integration tests (PR #213)
-- #210: make redeploy works on Windows, stops services before scp (PR #214)
-- #218: claude-cli provider uses Claude Code auth instead of API credits (PR #219)
+- #233: failure counter preserves across re-queue cycles (PR #249)
+- #237: suppress 404 on RemoveLabel when label not present (PR #249)
+- #239: Ollama NewWithTimeout + wire timeout_seconds config (PR #249)
+- fix: heartbeat interval 10min → 20min for opus session headroom (PR #249)
+- Dispatcher restarted on CT 202, running clean
 
 ## Queued
 
@@ -39,10 +35,11 @@ Phase 4 complete (2026-03-02): MCP tools, REST API, dispatcher CLI, multi-projec
 
 ## Last Session Summary
 
-Completed 8 issues across 7 PRs. Added specialized agent prompts,
-fixed dispatcher PR/issue conflation and unknown event types, enabled
-code-gen agents to open PRs, added PR watcher with auto-merge,
-built SPA in CI, created integration tests, and fixed Windows deploy.
+Applied 4 agent-generated fixes (handoff #3). Fixed the failure counter
+reset bug (#233) that caused infinite re-queue loops, suppressed 404
+false errors on RemoveLabel (#237), added configurable Ollama timeout
+(#239), and increased heartbeat interval to 20min for opus headroom.
+All in PR #249 (auto-merge queued). Dispatcher running clean on CT 202.
 
 ## Start Here (Cold Start Protocol)
 
