@@ -21,6 +21,7 @@ import (
 	"github.com/herbhall/samverk/internal/prwatcher"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/provider/claude"
+	"github.com/herbhall/samverk/internal/provider/claudecli"
 	"github.com/herbhall/samverk/internal/provider/ollama"
 	"github.com/herbhall/samverk/internal/provider/openai"
 	"github.com/herbhall/samverk/internal/server"
@@ -525,6 +526,9 @@ func providerFactory(name string, cfg provider.ProviderConfig) (provider.Provide
 			baseURL = "http://localhost:11434"
 		}
 		return ollama.New(baseURL), nil
+	case "claude-cli":
+		model := cfg.DefaultModel
+		return claudecli.New(model), nil
 	default:
 		return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 	}
