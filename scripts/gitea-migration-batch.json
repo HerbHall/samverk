@@ -1,0 +1,753 @@
+{
+  "metadata": {
+    "project": "HerbHall/samverk",
+    "milestone": "Gitea Migration",
+    "schema_version": "1.0.0",
+    "notes": "Issues use batch-internal refs in depends_on (B01-B28). Replace with actual issue numbers after creation. Tracks A-D are parallelizable. Track E depends on A+B+C. Track F depends on D+E. Track G is the final gate."
+  },
+  "issues": [
+    {
+      "_batch_ref": "B01",
+      "_track": "A: Gitea Adapter — RepoWriter",
+      "title": "Implement Gitea CreateBranch via API",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": [],
+        "estimated_tokens": 3000
+      },
+      "sections": {
+        "summary": "Replace the ErrNotImplemented stub for CreateBranch in internal/forge/gitea/gitea.go with a working implementation using the Gitea SDK.",
+        "context": "The GitHub implementation in internal/forge/github/repo.go uses Git.GetRef to get main's SHA, then Git.CreateRef to create the new branch. The Gitea SDK equivalent is CreateBranch(owner, repo, CreateBranchOption{BranchName, OldBranchName}). Reference: the existing Gitea adapter already has a working gogitea.Client in c.gt. The compile-time check `var _ forge.RepoWriter = (*Client)(nil)` already exists but methods are stubs.",
+        "acceptance_criteria": [
+          "CreateBranch creates a branch from the default branch HEAD on the Gitea repo",
+          "Error wrapping follows existing pattern: fmt.Errorf(\"gitea: create branch %q: %w\", name, err)",
+          "Unit test with httptest mock server verifying the correct API call is made",
+          "go test -race ./internal/forge/gitea/... passes"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B02",
+      "_track": "A: Gitea Adapter — RepoWriter",
+      "title": "Implement Gitea CreateOrUpdateFile via API",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": [],
+        "estimated_tokens": 4000
+      },
+      "sections": {
+        "summary": "Replace the ErrNotImplemented stub for CreateOrUpdateFile in internal/forge/gitea/gitea.go with a working implementation.",
+        "context": "The GitHub implementation checks if the file exists (to get its SHA for updates), then calls Repositories.CreateFile. The Gitea SDK has CreateFile(owner, repo, path, CreateFileOptions) and UpdateFile(owner, repo, path, UpdateFileOptions). The Gitea API requires the file's existing SHA for updates (same as GitHub). Use GetContents to check existence first, then branch to create vs update. The CreateFileOptions needs BranchName, Content (base64), and NewBranchName (optional). Content must be base64-encoded for the Gitea API.",
+        "acceptance_criteria": [
+          "CreateOrUpdateFile creates a new file when it does not exist on the branch",
+          "CreateOrUpdateFile updates an existing file (fetches current SHA first) when it already exists",
+          "Content is properly base64-encoded before sending to the Gitea API",
+          "Error wrapping follows existing pattern",
+          "Unit tests cover both create and update paths with httptest mock server",
+          "go test -race ./internal/forge/gitea/... passes"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B03",
+      "_track": "A: Gitea Adapter — RepoWriter",
+      "title": "Verify: Gitea RepoWriter methods pass integration smoke test",
+      "labels": ["agent:test", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "test",
+        "priority": "high",
+        "depends_on": ["B01", "B02"],
+        "estimated_tokens": 3000
+      },
+      "sections": {
+        "summary": "Write an integration test (build-tagged) that exercises CreateBranch and CreateOrUpdateFile against the real Gitea instance on CT 200.",
+        "context": "The Gitea test instance is at http://192.168.1.160:3000, org samverk, repo samverk-test. API token name is samverk-agent (retrieve from Gitea UI). Use build tag `//go:build integration` so these don't run in CI. The test should create a uniquely-named branch, write a file to it, verify the file exists, then clean up. Reference internal/integration/dispatch_test.go for the existing integration test pattern.",
+        "acceptance_criteria": [
+          "Integration test creates a branch on the Gitea test repo",
+          "Integration test writes a file to the new branch and verifies content via ReadFile (once implemented) or Gitea API directly",
+          "Test cleans up created branch after verification",
+          "Build tag prevents execution in normal CI",
+          "Test passes against http://192.168.1.160:3000"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B04",
+      "_track": "B: Gitea Adapter — PullRequestManager",
+      "title": "Implement Gitea CreatePullRequest via SDK",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": [],
+        "estimated_tokens": 3000
+      },
+      "sections": {
+        "summary": "Replace the ErrNotImplemented stub for CreatePullRequest in internal/forge/gitea/gitea.go with a working implementation.",
+        "context": "The Gitea SDK provides CreatePullRequest(owner, repo, CreatePullRequestOption{Head, Base, Title, Body}). The forge.CreatePRRequest has Title, Body, Head, Base fields that map directly. Return a forge.PullRequest populated from the SDK response. Reference internal/forge/github/pulls.go for the GitHub implementation pattern — it maps gogithub.PullRequest fields to forge.PullRequest. The Gitea equivalent maps gogitea.PullRequest fields.",
+        "acceptance_criteria": [
+          "CreatePullRequest creates a PR from head to base branch on Gitea",
+          "forge.PullRequest is fully populated: Number, Title, Body, State, Head, Base, Author, Mergeable, Draft, Labels, CreatedAt, UpdatedAt",
+          "Error wrapping follows existing gitea adapter pattern",
+          "Unit test with httptest mock server",
+          "go test -race ./internal/forge/gitea/... passes"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B05",
+      "_track": "B: Gitea Adapter — PullRequestManager",
+      "title": "Implement Gitea GetPullRequest and ListPullRequests via SDK",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": [],
+        "estimated_tokens": 4000
+      },
+      "sections": {
+        "summary": "Replace ErrNotImplemented stubs for GetPullRequest and ListPullRequests in internal/forge/gitea/gitea.go.",
+        "context": "Gitea SDK: GetPullRequest(owner, repo, index) and ListRepoPullRequests(owner, repo, ListPullRequestsOptions). The ListPROptions has State, Head, Base, Page, PerPage — map these to Gitea's ListPullRequestsOptions which uses StateType, Head branch name filter, and ListOptions{Page, PageSize}. Create a shared convertPullRequest helper (like convertIssue) to avoid duplication. Reference internal/forge/github/pulls.go for the field mapping pattern.",
+        "acceptance_criteria": [
+          "GetPullRequest returns a fully populated forge.PullRequest for a given PR number",
+          "ListPullRequests returns filtered results matching State, Head, and Base options",
+          "Pagination uses Gitea's PageSize (max 50) consistent with ListIssues",
+          "Shared convertPullRequest helper created to map gogitea.PullRequest to forge.PullRequest",
+          "Unit tests for both methods with httptest mock server",
+          "go test -race ./internal/forge/gitea/... passes"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B06",
+      "_track": "B: Gitea Adapter — PullRequestManager",
+      "title": "Implement Gitea MergePullRequest via SDK",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": [],
+        "estimated_tokens": 3000
+      },
+      "sections": {
+        "summary": "Replace ErrNotImplemented stub for MergePullRequest in internal/forge/gitea/gitea.go.",
+        "context": "Gitea SDK: MergePullRequest(owner, repo, index, MergePullRequestOption{Do, MergeCommitID, MergeMessageField, ...}). The forge.MergeMethod enum (merge, squash, rebase) maps to Gitea's MergeStyle strings. The PR watcher in internal/prwatcher/watcher.go calls MergePullRequest — this is critical path for the auto-merge agent loop. The commit message parameter maps to MergeMessageField in the Gitea option struct.",
+        "acceptance_criteria": [
+          "MergePullRequest merges a PR using the specified merge method (merge, squash, rebase)",
+          "forge.MergeMethod values correctly map to Gitea's MergeStyle strings",
+          "Commit message is passed through to Gitea's MergeMessageField",
+          "Error wrapping follows existing pattern",
+          "Unit test with httptest mock verifying correct API call and merge style mapping",
+          "go test -race ./internal/forge/gitea/... passes"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B07",
+      "_track": "B: Gitea Adapter — PullRequestManager",
+      "title": "Implement Gitea GetPRChecks and ListReviewComments via SDK",
+      "labels": ["agent:code-gen", "type:task", "priority:normal", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "normal",
+        "depends_on": [],
+        "estimated_tokens": 4000
+      },
+      "sections": {
+        "summary": "Replace ErrNotImplemented stubs for GetPRChecks and ListReviewComments in internal/forge/gitea/gitea.go.",
+        "context": "GetPRChecks: Gitea's commit status API is GET /api/v1/repos/{owner}/{repo}/commits/{ref}/statuses. The PR watcher uses GetPRChecks to verify CI passed before auto-merging. Map Gitea's CommitStatus to forge.Check{Name, Status}. Gitea status states: pending, success, error, failure — map to forge.CheckStatus enum.\n\nListReviewComments: Gitea's PR review API is GET /api/v1/repos/{owner}/{repo}/pulls/{index}/reviews, then GET reviews/{id}/comments for individual review comments. Map to forge.ReviewComment{Author, Body, Path, StartLine, EndLine, Resolved, CreatedAt}. This is used by the QC agent to read review feedback.\n\nNote: If Gitea's API doesn't directly support line-level review comments in a single call, document the limitation and implement the best available approximation.",
+        "acceptance_criteria": [
+          "GetPRChecks returns CI check statuses for a PR from Gitea's commit status API",
+          "Gitea status states (pending, success, error, failure) map correctly to forge.CheckStatus",
+          "ListReviewComments returns review comments with file path and line range where available",
+          "Any Gitea API limitations vs GitHub are documented in code comments",
+          "Unit tests for both methods",
+          "go test -race ./internal/forge/gitea/... passes"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B08",
+      "_track": "B: Gitea Adapter — PullRequestManager",
+      "title": "Verify: Gitea PullRequestManager end-to-end smoke test",
+      "labels": ["agent:test", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "test",
+        "priority": "high",
+        "depends_on": ["B01", "B02", "B04", "B05", "B06", "B07"],
+        "estimated_tokens": 4000
+      },
+      "sections": {
+        "summary": "Write an integration test that exercises the full PR lifecycle on the Gitea test instance: create branch → write file → open PR → check status → merge PR.",
+        "context": "This test validates the complete agent code path: the agent runner calls CreateBranch, CreateOrUpdateFile, CreatePullRequest, and the PR watcher calls GetPullRequest, GetPRChecks, MergePullRequest. Use build tag //go:build integration. Target: http://192.168.1.160:3000, org samverk, repo samverk-test. Clean up branches after test. If GetPRChecks returns empty (no CI configured on test repo), that's acceptable — document it.",
+        "acceptance_criteria": [
+          "Integration test creates a branch, writes a file, opens a PR, and merges it on the Gitea test repo",
+          "Each step's return value is validated (PR number > 0, merged state confirmed)",
+          "Test cleans up created branches",
+          "Build tag prevents execution in normal CI",
+          "Test passes against http://192.168.1.160:3000"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B09",
+      "_track": "C: Gitea Adapter — RepoReader",
+      "title": "Implement Gitea RepoReader interface (ListFiles, ReadFile, GetDiff, ListBranches, GetCommitLog, SearchCode)",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": [],
+        "estimated_tokens": 8000
+      },
+      "sections": {
+        "summary": "Implement all six RepoReader methods for the Gitea adapter and add the compile-time interface check.",
+        "context": "The GitHub implementation is in internal/forge/github/repo.go — use it as the reference for field mapping. The Gitea SDK equivalents:\n\n- ListFiles → GetContents(owner, repo, path, ref) returns []*ContentsResponse\n- ReadFile → GetContents(owner, repo, path, ref) returns *ContentsResponse with Content field (base64)\n- GetDiff → GetRepoCompare(owner, repo, base...head) or use raw diff endpoint\n- ListBranches → ListRepoBranches(owner, repo, ListRepoBranchesOptions)\n- GetCommitLog → ListRepoCommits(owner, repo, ListRepoCommitsOption{SHA: branch})\n- SearchCode → Gitea API: GET /api/v1/repos/search?q=... (limited vs GitHub). If Gitea lacks repo-scoped code search, implement as a grep-over-tree fallback or return ErrNotImplemented with a clear comment explaining why.\n\nAdd `var _ forge.RepoReader = (*Client)(nil)` compile-time check at the top of the file alongside the existing IssueTracker and RepoWriter checks.\n\nThese methods are used by MCP tools (tools_repo.go) for the check-in agent to browse code, read files, and inspect branches.",
+        "acceptance_criteria": [
+          "All six RepoReader methods implemented with Gitea SDK calls",
+          "Compile-time check var _ forge.RepoReader = (*Client)(nil) added",
+          "Content decoding handles base64 (Gitea returns base64-encoded file content)",
+          "SearchCode documents any Gitea API limitations vs GitHub in code comments",
+          "Unit tests for each method with httptest mock server",
+          "go test -race ./internal/forge/gitea/... passes"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B10",
+      "_track": "C: Gitea Adapter — RepoReader",
+      "title": "Verify: Gitea RepoReader integration smoke test",
+      "labels": ["agent:test", "type:task", "priority:normal", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "test",
+        "priority": "normal",
+        "depends_on": ["B09"],
+        "estimated_tokens": 3000
+      },
+      "sections": {
+        "summary": "Write an integration test exercising RepoReader methods against the Gitea test instance.",
+        "context": "Target: http://192.168.1.160:3000, org samverk, repo samverk-test. Test ListFiles at root, ReadFile for a known file (README.md or similar), ListBranches, GetCommitLog on main. GetDiff between two known refs if available. SearchCode if supported. Use build tag //go:build integration.",
+        "acceptance_criteria": [
+          "ListFiles returns entries for the repo root",
+          "ReadFile returns content of a known file",
+          "ListBranches returns at least the main branch",
+          "GetCommitLog returns commits on main",
+          "Build tag prevents execution in normal CI",
+          "Test passes against http://192.168.1.160:3000"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B11",
+      "_track": "D: Gitea Instance — Production Repo Setup",
+      "title": "Create samverk production repo on gitea.herbhall.net with labels and webhook",
+      "labels": ["agent:human", "type:task", "priority:high", "complexity:local", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "human",
+        "priority": "high",
+        "depends_on": [],
+        "estimated_tokens": 0
+      },
+      "sections": {
+        "summary": "Create the production samverk repo on Gitea (gitea.herbhall.net) under the samverk org, configure labels from overlay/labels.json, create an API token for the dispatcher, and set up the webhook.",
+        "context": "The test repo (samverk/samverk-test) already exists with 22 labels configured per docs/gitea-setup.md. For production:\n\n1. Create repo: samverk/samverk on Gitea\n2. Push existing code: git remote add gitea http://gitea.herbhall.net/samverk/samverk.git && git push gitea main --tags\n3. Create labels matching overlay/labels.json (or use the Gitea API script)\n4. Create API token: samverk-dispatcher (repo scope)\n5. Configure webhook: POST http://192.168.1.162:8080/webhook (or wherever the dispatcher listens), events: issues, issue_assign, issue_label, issue_comment, pull_request\n6. Enable Gitea Actions runner if not already configured\n\nThis is a human task — requires Gitea admin access on CT 200.",
+        "acceptance_criteria": [
+          "Repo samverk/samverk exists on gitea.herbhall.net",
+          "All code and tags pushed from GitHub mirror",
+          "All 22+ overlay labels created and match overlay/labels.json",
+          "API token created and stored securely (not in repo)",
+          "Webhook configured and delivering test events",
+          "Gitea Actions runner registered and online"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B12",
+      "_track": "D: Gitea Instance — Production Repo Setup",
+      "title": "Verify: Gitea production repo label and webhook health check",
+      "labels": ["agent:qc", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "qc",
+        "priority": "high",
+        "depends_on": ["B11"],
+        "estimated_tokens": 2000
+      },
+      "sections": {
+        "summary": "Automated verification that the Gitea production repo is correctly configured: labels match overlay/labels.json, webhook is delivering, API token has correct permissions.",
+        "context": "Use the Gitea API to verify:\n- GET /api/v1/repos/samverk/samverk — repo exists\n- GET /api/v1/repos/samverk/samverk/labels — compare names against overlay/labels.json\n- POST a test issue, verify webhook delivery in Gitea admin UI\n- Verify token can create/edit/close issues and manage labels\n\nThis can be a Go test file or a shell script. The point is automated verification, not manual spot-checking.",
+        "acceptance_criteria": [
+          "Script or test confirms repo exists and is accessible via API token",
+          "All labels from overlay/labels.json are present with correct names",
+          "Webhook delivery confirmed (test issue triggers webhook to dispatcher endpoint)",
+          "API token has sufficient permissions for all IssueTracker + RepoWriter + PullRequestManager operations"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B13",
+      "_track": "E: CI/CD — Gitea Actions",
+      "title": "Research Gitea Actions runner configuration and workflow compatibility with GitHub Actions",
+      "labels": ["agent:research", "type:research", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "question",
+        "agent_type": "research",
+        "priority": "high",
+        "depends_on": [],
+        "estimated_tokens": 3000
+      },
+      "sections": {
+        "summary": "Document what is needed to run the existing GitHub Actions workflows on Gitea Actions, identifying compatibility gaps and required changes.",
+        "context": "The repo has 6 workflows:\n- ci.yml: go build, test, lint (golangci-lint), markdownlint, SPA build\n- codeql.yml: GitHub CodeQL security scanning\n- nightly.yml: scheduled tasks\n- release-gate.yml: pre-release checks\n- release-please.yml: automated release management\n- copilot-setup-steps.yml: Copilot agent setup\n\nGitea Actions is based on act (nektos/act) and supports most GitHub Actions syntax. Key questions:\n1. Which workflows can run unmodified on Gitea Actions?\n2. Which require changes (e.g., different action references, missing marketplace actions)?\n3. Is CodeQL available on Gitea Actions, or does it need an alternative (e.g., gosec, govulncheck)?\n4. Does release-please have a Gitea-compatible mode?\n5. What runner type is needed (Docker, host, LXC)?\n6. Can the Gitea Actions runner on CT 200 handle Go builds (memory, disk, Go toolchain)?",
+        "acceptance_criteria": [
+          "Compatibility matrix: each of the 6 workflows rated as compatible/needs-changes/not-portable",
+          "For each 'needs-changes' workflow, specific changes documented",
+          "Runner requirements documented (CPU, memory, disk, installed tools)",
+          "Alternative tools identified for any GitHub-only features (CodeQL, release-please)",
+          "Recommendation on runner deployment: Docker container vs host process on CT 200"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B14",
+      "_track": "E: CI/CD — Gitea Actions",
+      "title": "Port ci.yml workflow to Gitea Actions",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": ["B13"],
+        "estimated_tokens": 4000
+      },
+      "sections": {
+        "summary": "Create a Gitea Actions-compatible CI workflow that mirrors the existing ci.yml: build, test, lint, SPA build.",
+        "context": "The existing ci.yml runs on push to main and PRs. Steps: checkout, setup-go, go build, go test -race, golangci-lint via go run, markdownlint, pnpm install + vite build for the React SPA. Gitea Actions uses the same YAML format but some actions may differ (actions/checkout → gitea-compatible equivalent, or use the same if Gitea mirrors them). The workflow file goes in .gitea/workflows/ (not .github/workflows/).",
+        "acceptance_criteria": [
+          "Gitea Actions workflow file created at .gitea/workflows/ci.yml",
+          "Workflow triggers on push to main and pull requests",
+          "All CI steps replicated: go build, go test -race, golangci-lint, markdownlint, SPA build",
+          "Workflow runs successfully on a test push to the Gitea repo",
+          "Any action substitutions documented in comments"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B15",
+      "_track": "E: CI/CD — Gitea Actions",
+      "title": "Port release and security workflows to Gitea Actions (or document alternatives)",
+      "labels": ["agent:code-gen", "type:task", "priority:normal", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "normal",
+        "depends_on": ["B13", "B14"],
+        "estimated_tokens": 5000
+      },
+      "sections": {
+        "summary": "Port or create alternatives for the remaining workflows: nightly, release-gate, release-please, codeql.",
+        "context": "Based on the research from B13, implement the portable workflows and document alternatives for non-portable ones. Priorities:\n- release-please: If not Gitea-compatible, create a manual release workflow using goreleaser directly\n- codeql: Replace with gosec + govulncheck if CodeQL is GitHub-only\n- nightly: Should be straightforward if Gitea Actions supports cron schedules\n- release-gate: Pre-release check — adapt to Gitea's tag/release mechanism\n- copilot-setup-steps: GitHub Copilot-specific, skip for Gitea\n\nAll new workflows go in .gitea/workflows/.",
+        "acceptance_criteria": [
+          "Portable workflows ported to .gitea/workflows/",
+          "Non-portable workflows have documented alternatives or manual procedures",
+          "Security scanning (gosec/govulncheck or equivalent) runs on Gitea",
+          "Release workflow creates tagged releases on Gitea",
+          "All ported workflows tested with a real push"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B16",
+      "_track": "E: CI/CD — Gitea Actions",
+      "title": "Verify: Gitea CI runs green on a test PR",
+      "labels": ["agent:qc", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "qc",
+        "priority": "high",
+        "depends_on": ["B14", "B15"],
+        "estimated_tokens": 2000
+      },
+      "sections": {
+        "summary": "Create a test PR on the Gitea repo and verify that all CI workflows pass end-to-end.",
+        "context": "Create a branch with a trivial change (e.g., add a comment to a test file), open a PR on Gitea, and verify that the CI workflow runs and reports status correctly. Check that the PR watcher can read the CI status via GetPRChecks. This validates the full CI pipeline is operational on Gitea before switching the dispatcher.",
+        "acceptance_criteria": [
+          "Test PR created on Gitea repo",
+          "CI workflow triggers automatically on PR creation",
+          "All CI steps pass (build, test, lint, SPA build)",
+          "CI status is visible on the PR page in Gitea UI",
+          "GetPRChecks returns the CI status programmatically via the Gitea adapter"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B17",
+      "_track": "F: Dual-Forge Dispatcher Configuration",
+      "title": "Update server.yaml to support dual-forge project configuration",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": ["B11"],
+        "estimated_tokens": 4000
+      },
+      "sections": {
+        "summary": "Extend the server configuration to allow a project to be registered on both GitHub and Gitea simultaneously, with the dispatcher watching both.",
+        "context": "Current server.yaml has a projects array with owner/repo pairs but no forge type field. The dispatcher's forge client is initialized at startup based on environment variables (GITHUB_TOKEN, etc.). For dual-forge:\n\n1. Add a `forge` field to the project config (github or gitea)\n2. Add Gitea-specific config: gitea_url, gitea_token\n3. The dispatcher should instantiate the correct forge client per project\n4. A single project can appear twice — once per forge — if the user wants both tracked\n\nReference deploy/config/server.yaml for current format. The dispatcher init code is in internal/dispatcher/config.go and cmd/samverk/main.go.",
+        "acceptance_criteria": [
+          "server.yaml schema supports forge type per project entry (github, gitea)",
+          "Gitea connection config (url, token) can be specified in server.yaml or env vars",
+          "Dispatcher creates the correct forge client (GitHub or Gitea) per project entry",
+          "Samverk project can be listed twice — once for GitHub, once for Gitea",
+          "Existing single-forge configs continue to work (backward compatible)",
+          "Config parsing tested with both single and dual entries"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B18",
+      "_track": "F: Dual-Forge Dispatcher Configuration",
+      "title": "Update create-issues.sh to support Gitea target via forge flag",
+      "labels": ["agent:code-gen", "type:task", "priority:normal", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "normal",
+        "depends_on": ["B11"],
+        "estimated_tokens": 3000
+      },
+      "sections": {
+        "summary": "Extend scripts/create-issues.sh to create issues on Gitea in addition to (or instead of) GitHub.",
+        "context": "The current script uses `gh` CLI exclusively. For Gitea, use curl against the Gitea API (there's no official Gitea CLI with equivalent functionality). Add a --forge flag: `--forge github` (default) or `--forge gitea`. When targeting Gitea, use the API at $GITEA_URL/api/v1/repos/{owner}/{repo}/issues with token auth. Label resolution needs to use label IDs (not names) for Gitea — the script must fetch label IDs first via GET /labels, then map names to IDs before creating issues.\n\nAlternatively, add --forge both to create on both forges sequentially.",
+        "acceptance_criteria": [
+          "create-issues.sh accepts --forge github|gitea|both flag",
+          "Gitea mode creates issues via Gitea REST API with correct auth",
+          "Label names are resolved to Gitea integer IDs before issue creation",
+          "YAML frontmatter in issue body is preserved identically to GitHub mode",
+          "--dry-run works for both forges",
+          "Both forge targets tested with a sample batch"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B19",
+      "_track": "F: Dual-Forge Dispatcher Configuration",
+      "title": "Verify: Dispatcher polls and dispatches from Gitea forge",
+      "labels": ["agent:test", "type:task", "priority:critical", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "test",
+        "priority": "critical",
+        "depends_on": ["B08", "B12", "B17"],
+        "estimated_tokens": 4000
+      },
+      "sections": {
+        "summary": "Integration test verifying the dispatcher can poll the Gitea repo, pick up a queued issue, dispatch to an agent, and handle the full lifecycle.",
+        "context": "This is the critical validation point. The test should:\n1. Configure the dispatcher with the Gitea production repo as a project\n2. Create a simple task issue on Gitea (status:queued, agent:code-gen, complexity:local)\n3. Verify the dispatcher picks it up within one poll cycle (30s)\n4. Verify the dispatcher assigns an agent and updates labels\n5. Let the agent complete (even a trivial task like adding a comment)\n6. Verify the issue reaches status:done\n\nThis can be a manual verification procedure documented as a runbook, or an automated integration test. Either way, the steps and expected results must be documented.",
+        "acceptance_criteria": [
+          "Dispatcher configured with Gitea project in server.yaml",
+          "Test issue created on Gitea with correct labels",
+          "Dispatcher picks up the issue within one poll cycle",
+          "Agent executes the task (creates branch, writes file, opens PR or adds comment)",
+          "Issue lifecycle transitions verified: queued → claimed → in-progress → needs-qc → done",
+          "Results documented with timestamps and issue numbers"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B20",
+      "_track": "G: Issue Migration",
+      "title": "Build issue migration script: GitHub → Gitea",
+      "labels": ["agent:code-gen", "type:task", "priority:normal", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "normal",
+        "depends_on": ["B11"],
+        "estimated_tokens": 5000
+      },
+      "sections": {
+        "summary": "Create a script that exports open issues from GitHub and imports them into the Gitea repo, preserving frontmatter, labels, and comments.",
+        "context": "Open issues on GitHub need to exist on Gitea for the dispatcher to work against both forges. The script should:\n1. Use `gh` CLI to export open issues from HerbHall/samverk (JSON format)\n2. For each issue, resolve label names to Gitea integer IDs\n3. Create the issue on Gitea via API, preserving title, body (with YAML frontmatter), and labels\n4. Migrate comments (in order) for each issue\n5. Log a mapping table: GitHub issue # → Gitea issue # (numbers will differ)\n6. Update depends_on references in frontmatter to use Gitea issue numbers\n\nNote: Issue numbers WILL differ between forges. The depends_on fields in frontmatter reference issue numbers, so the script needs a second pass to update cross-references. This is the trickiest part.\n\nOutput: scripts/migrate-issues.sh (or .py if Python makes the JSON handling easier).",
+        "acceptance_criteria": [
+          "Script exports all open issues from GitHub with body, labels, and comments",
+          "Issues created on Gitea with correct labels (resolved to integer IDs)",
+          "Comments migrated in chronological order",
+          "Mapping table output: GitHub # → Gitea #",
+          "depends_on references in frontmatter updated to Gitea issue numbers (second pass)",
+          "Script is idempotent — running twice doesn't create duplicates (checks for existing title)"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B21",
+      "_track": "G: Issue Migration",
+      "title": "Verify: Migrated issues are correct and dispatcher-compatible on Gitea",
+      "labels": ["agent:qc", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "qc",
+        "priority": "high",
+        "depends_on": ["B20"],
+        "estimated_tokens": 2000
+      },
+      "sections": {
+        "summary": "Verify that migrated issues on Gitea have valid frontmatter, correct labels, and are parseable by the dispatcher.",
+        "context": "The dispatcher's frontmatter parser (pkg/models/frontmatter.go) must be able to parse migrated issues. The dispatcher's heuristic fallback (internal/dispatcher/dispatcher.go) handles issues without frontmatter but the migrated issues should have it. Verify:\n1. Sample of migrated issues have parseable YAML frontmatter\n2. Labels resolve correctly in the Gitea adapter's label cache\n3. depends_on references point to valid Gitea issue numbers\n4. The dispatcher's issue polling returns the migrated issues correctly",
+        "acceptance_criteria": [
+          "At least 5 migrated issues verified for correct frontmatter parsing",
+          "All labels on migrated issues exist in the Gitea label set",
+          "depends_on references validated — all referenced issue numbers exist on Gitea",
+          "Dispatcher's ListIssues returns migrated issues with correct state and labels"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B22",
+      "_track": "H: MCP Dual-Forge Support",
+      "title": "Update MCP tools to support Gitea project context switching",
+      "labels": ["agent:code-gen", "type:task", "priority:high", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "code-gen",
+        "priority": "high",
+        "depends_on": ["B09", "B17"],
+        "estimated_tokens": 5000
+      },
+      "sections": {
+        "summary": "Ensure MCP tools (set_project, list_issues, create_issue, get_digest, etc.) work correctly when the active project is on Gitea.",
+        "context": "The MCP handler in internal/mcp/ uses the forge client from the project registry. When a user calls set_project to switch to a Gitea-hosted project, all subsequent tool calls must use the Gitea adapter. Key files:\n- internal/mcp/tools.go — tool definitions\n- internal/mcp/tools_projects.go — set_project, list_projects\n- internal/mcp/tools_repo.go — list_files, read_file, get_diff, search_code (uses RepoReader)\n- internal/mcp/tools_prs.go — create_pr, list_prs, merge_pr (uses PullRequestManager)\n- internal/mcp/projects.go — project registry and forge client lookup\n\nThe project registry should already handle this if B17 is done correctly, but the MCP tools need testing to confirm they work with the Gitea adapter. Watch for edge cases: Gitea label ID resolution in create_issue, Gitea-specific pagination limits, and any RepoReader methods that behave differently.",
+        "acceptance_criteria": [
+          "MCP set_project switches to a Gitea-hosted project successfully",
+          "list_issues, create_issue, get_issue work against Gitea project",
+          "list_files, read_file work against Gitea project (RepoReader)",
+          "create_pr, list_prs work against Gitea project (PullRequestManager)",
+          "get_digest aggregates data from Gitea project",
+          "No regressions on GitHub-hosted project tools"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B23",
+      "_track": "H: MCP Dual-Forge Support",
+      "title": "Verify: MCP tools work from Claude Desktop against Gitea project",
+      "labels": ["agent:human", "type:task", "priority:high", "complexity:local", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "human",
+        "priority": "high",
+        "depends_on": ["B22"],
+        "estimated_tokens": 0
+      },
+      "sections": {
+        "summary": "Manual verification: open Claude Desktop, connect to Samverk MCP server, switch to the Gitea project, and exercise all MCP tools interactively.",
+        "context": "This is the user-facing validation. From Claude Desktop (or claude.ai with MCP):\n1. Connect to Samverk MCP at http://192.168.1.162:8080/mcp\n2. Call set_project to switch to the Gitea-hosted samverk project\n3. Call list_issues — verify issues from Gitea are returned\n4. Call get_digest — verify it aggregates Gitea data\n5. Call list_files — verify repo contents from Gitea\n6. Create a test issue, verify it appears on Gitea\n7. Switch back to GitHub project, verify it still works\n\nThis validates the conversational check-in workflow (ADR-011) works against Gitea — the core product promise.",
+        "acceptance_criteria": [
+          "Claude Desktop connects to Samverk MCP endpoint",
+          "set_project switches to Gitea project without errors",
+          "list_issues returns Gitea issues with correct labels and frontmatter",
+          "get_digest produces a summary from Gitea project data",
+          "Issue creation from Claude Desktop appears on Gitea",
+          "Switching between GitHub and Gitea projects works without reconnecting"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B24",
+      "_track": "I: Git Mirror Configuration",
+      "title": "Configure bidirectional git push to GitHub and Gitea",
+      "labels": ["agent:human", "type:task", "priority:normal", "complexity:local", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "human",
+        "priority": "normal",
+        "depends_on": ["B11"],
+        "estimated_tokens": 0
+      },
+      "sections": {
+        "summary": "Configure git remotes so pushes to main go to both GitHub and Gitea simultaneously.",
+        "context": "Options:\n1. Git multi-push remote: git remote set-url --add --push origin <gitea-url> (pushes to both on git push)\n2. Gitea mirror: Configure Gitea repo as a mirror of GitHub (pull-only, one direction)\n3. Post-push hook: Script that pushes to the second remote after every push\n\nOption 1 is simplest and works for the primary development workflow. The agent runner's CreateBranch/CreateOrUpdateFile/CreatePullRequest calls already go through the forge adapter, so agent work goes to whichever forge the dispatcher is configured for. This config is specifically for human pushes from the development machine.\n\nConfigure in D:\\devspace\\Samverk on the development PC.",
+        "acceptance_criteria": [
+          "git push from development machine sends to both GitHub and Gitea",
+          "Tags are pushed to both remotes",
+          "Verified with a test commit: appears on both GitHub and Gitea within seconds",
+          "Configuration documented in CLAUDE.md or a new docs/dual-remote.md"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B25",
+      "_track": "J: Documentation",
+      "title": "Write ADR-031: Dual-Forge Operational Model",
+      "labels": ["agent:docs", "type:task", "priority:normal", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "docs",
+        "priority": "normal",
+        "depends_on": ["B17"],
+        "estimated_tokens": 3000
+      },
+      "sections": {
+        "summary": "Document the decision to run Samverk in dual-forge mode (GitHub + Gitea) with the operational model, trade-offs, and sync strategy.",
+        "context": "ADR-013 established the forge abstraction. ADR-019 established self-hosted-first. ADR-023 defined per-project repos. This ADR captures the operational decision:\n- Why dual-forge (dogfooding Gitea adapter, self-hosted sovereignty, GitHub for public visibility)\n- How code sync works (dual-push remote)\n- How issue sync works (migration script, or independent issue sets per forge)\n- How the dispatcher handles both (dual project entries in server.yaml)\n- What happens when issues diverge between forges\n- Trade-offs: operational complexity vs. forge independence validation\n\nFollow the existing ADR format in docs/decisions/.",
+        "acceptance_criteria": [
+          "ADR-031 follows existing format (Status, Context, Decision, Consequences, References)",
+          "Documents the dual-forge operational model clearly",
+          "Addresses issue sync strategy and divergence handling",
+          "References ADR-013, ADR-019, ADR-023",
+          "Added to docs/decisions/README.md index"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B26",
+      "_track": "J: Documentation",
+      "title": "Update CLAUDE.md and status.md with Gitea migration state",
+      "labels": ["agent:docs", "type:task", "priority:normal", "complexity:local", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "docs",
+        "priority": "normal",
+        "depends_on": ["B25"],
+        "estimated_tokens": 2000
+      },
+      "sections": {
+        "summary": "Update CLAUDE.md project structure section, key decisions list, and references to reflect the dual-forge setup. Update status.md with the new operational state.",
+        "context": "CLAUDE.md is the cold-start document for any new session. It needs to reflect that Samverk now operates on both GitHub and Gitea. Key additions:\n- Dual remote configuration in quick start\n- Gitea connection details (URL, org, token env var)\n- New ADR-031 in key decisions list\n- Updated project structure showing .gitea/workflows/\n- status.md phase update reflecting dual-forge operational state",
+        "acceptance_criteria": [
+          "CLAUDE.md documents dual-forge setup in quick start and project structure",
+          "Gitea connection details included (URL, org name, env var for token)",
+          "ADR-031 added to key decisions list",
+          ".gitea/workflows/ documented in project structure",
+          "status.md updated with current operational state"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B27",
+      "_track": "K: Final Validation",
+      "title": "End-to-end validation: full agent loop on Gitea (create issue → agent executes → PR merged → issue closed)",
+      "labels": ["agent:qc", "type:task", "priority:critical", "complexity:cloud", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "qc",
+        "priority": "critical",
+        "depends_on": ["B08", "B10", "B16", "B19", "B21", "B23"],
+        "estimated_tokens": 5000
+      },
+      "sections": {
+        "summary": "Complete end-to-end validation of the Samverk agent loop running entirely on Gitea: from issue creation through agent execution, PR creation, CI validation, PR merge, and issue closure.",
+        "context": "This is the final gate before declaring the Gitea migration operational. The full loop:\n1. Create a real task issue on Gitea with proper frontmatter and labels\n2. Dispatcher (running on CT 202) picks up the issue from Gitea\n3. Agent runner claims the issue, creates a branch on Gitea\n4. Agent writes code/changes to the branch via Gitea adapter\n5. Agent opens a PR on Gitea\n6. Gitea Actions CI runs on the PR\n7. PR watcher detects passing CI via GetPRChecks\n8. PR watcher auto-merges the PR via MergePullRequest\n9. Issue transitions to status:done\n\nEvery step must work against Gitea, not GitHub. This validates the entire forge abstraction layer end-to-end.\n\nDocument results as a timestamped runbook with pass/fail for each step.",
+        "acceptance_criteria": [
+          "Issue created on Gitea with correct frontmatter and labels",
+          "Dispatcher picks up issue within one poll cycle",
+          "Agent creates branch on Gitea repo",
+          "Agent writes file(s) to branch via Gitea CreateOrUpdateFile",
+          "Agent opens PR on Gitea via CreatePullRequest",
+          "Gitea Actions CI runs and passes on the PR",
+          "PR watcher reads CI status via GetPRChecks",
+          "PR watcher auto-merges via MergePullRequest",
+          "Issue reaches status:done",
+          "Timestamped runbook documenting each step's result"
+        ]
+      }
+    },
+    {
+      "_batch_ref": "B28",
+      "_track": "K: Final Validation",
+      "title": "End-to-end validation: conversational check-in via MCP against dual-forge",
+      "labels": ["agent:human", "type:task", "priority:critical", "complexity:local", "status:queued"],
+      "milestone": "Gitea Migration",
+      "frontmatter": {
+        "schema_version": "1.0.0",
+        "type": "task",
+        "agent_type": "human",
+        "priority": "critical",
+        "depends_on": ["B27"],
+        "estimated_tokens": 0
+      },
+      "sections": {
+        "summary": "Final human validation: open a Claude session, connect to Samverk MCP, and perform a complete check-in workflow spanning both GitHub and Gitea projects.",
+        "context": "The product promise from ADR-011: 'You open a chat on any device and ask how's my project doing.' This test validates that promise works with dual-forge.\n\n1. Open Claude (Desktop, mobile, or claude.ai)\n2. Connect to Samverk MCP\n3. Ask 'how's samverk doing?' — should aggregate data from both forges\n4. Create an issue via conversation — should appear on the configured forge\n5. Switch projects between GitHub and Gitea variants\n6. Review the digest — should show status from both\n\nThis is the 'it works from my phone' test. If this passes, the Gitea migration is operational.",
+        "acceptance_criteria": [
+          "Conversational check-in returns status from both GitHub and Gitea",
+          "Issue creation via MCP succeeds on both forges",
+          "Project switching works seamlessly",
+          "Digest aggregates data from dual-forge configuration",
+          "Workflow tested from at least two devices (desktop + mobile)",
+          "Migration declared operational"
+        ]
+      }
+    }
+  ]
+}
