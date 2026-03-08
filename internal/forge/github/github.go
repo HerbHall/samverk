@@ -269,9 +269,10 @@ func (c *Client) diffAndEmit(known map[int]*forge.Issue, current []*forge.Issue,
 
 		if !exists {
 			handler(forge.Event{
-				Type:        forge.EventIssueOpened,
-				IssueNumber: iss.Number,
-				Issue:       iss,
+				Type:          forge.EventIssueOpened,
+				IssueNumber:   iss.Number,
+				Issue:         iss,
+				IsPullRequest: iss.IsPullRequest,
 			})
 			known[iss.Number] = iss
 			continue
@@ -323,12 +324,13 @@ func (c *Client) diffAndEmit(known map[int]*forge.Issue, current []*forge.Issue,
 // convertIssue transforms a GitHub SDK issue into a forge.Issue.
 func convertIssue(gh *gogithub.Issue) *forge.Issue {
 	issue := &forge.Issue{
-		Number:    gh.GetNumber(),
-		Title:     gh.GetTitle(),
-		Body:      gh.GetBody(),
-		State:     forge.State(gh.GetState()),
-		CreatedAt: gh.GetCreatedAt().Time,
-		UpdatedAt: gh.GetUpdatedAt().Time,
+		Number:        gh.GetNumber(),
+		Title:         gh.GetTitle(),
+		Body:          gh.GetBody(),
+		State:         forge.State(gh.GetState()),
+		IsPullRequest: gh.PullRequestLinks != nil,
+		CreatedAt:     gh.GetCreatedAt().Time,
+		UpdatedAt:     gh.GetUpdatedAt().Time,
 	}
 
 	if gh.ClosedAt != nil {

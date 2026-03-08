@@ -330,9 +330,10 @@ func diffAndEmit(known map[int]*forge.Issue, current []*forge.Issue, handler fun
 
 		if !exists {
 			handler(forge.Event{
-				Type:        forge.EventIssueOpened,
-				IssueNumber: iss.Number,
-				Issue:       iss,
+				Type:          forge.EventIssueOpened,
+				IssueNumber:   iss.Number,
+				Issue:         iss,
+				IsPullRequest: iss.IsPullRequest,
 			})
 			known[iss.Number] = iss
 			continue
@@ -436,13 +437,14 @@ func (c *Client) resolveLabelID(name string) (int64, error) {
 // convertIssue transforms a Gitea SDK issue into a forge.Issue.
 func convertIssue(gi *gogitea.Issue) *forge.Issue {
 	issue := &forge.Issue{
-		Number:    int(gi.Index),
-		Title:     gi.Title,
-		Body:      gi.Body,
-		State:     forge.State(gi.State),
-		CreatedAt: gi.Created,
-		UpdatedAt: gi.Updated,
-		ClosedAt:  gi.Closed,
+		Number:        int(gi.Index),
+		Title:         gi.Title,
+		Body:          gi.Body,
+		State:         forge.State(gi.State),
+		IsPullRequest: gi.PullRequest != nil,
+		CreatedAt:     gi.Created,
+		UpdatedAt:     gi.Updated,
+		ClosedAt:      gi.Closed,
 	}
 
 	issue.Labels = make([]string, 0, len(gi.Labels))

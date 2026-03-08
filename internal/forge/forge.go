@@ -59,15 +59,16 @@ type IssueTracker interface {
 
 // Issue represents a forge issue in Samverk's domain.
 type Issue struct {
-	Number    int
-	Title     string
-	Body      string
-	State     State
-	Labels    []string
-	Assignees []string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	ClosedAt  *time.Time
+	Number        int
+	Title         string
+	Body          string
+	State         State
+	Labels        []string
+	Assignees     []string
+	IsPullRequest bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ClosedAt      *time.Time
 }
 
 // Comment represents a single comment on an issue.
@@ -80,12 +81,13 @@ type Comment struct {
 
 // Event represents a change detected on the forge.
 type Event struct {
-	Type        EventType
-	IssueNumber int
-	Issue       *Issue
-	Comment     *Comment
-	Label       string
-	Assignee    string
+	Type          EventType
+	IssueNumber   int
+	Issue         *Issue
+	Comment       *Comment
+	Label         string
+	Assignee      string
+	IsPullRequest bool
 }
 
 // CreateIssueRequest contains the fields needed to create a new issue.
