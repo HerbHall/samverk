@@ -25,12 +25,24 @@ type Client struct {
 }
 
 // New creates a new Ollama client targeting the given base URL
-// (e.g., "http://localhost:11434").
+// (e.g., "http://localhost:11434") with a default 30-second timeout.
 func New(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+// NewWithTimeout creates a new Ollama client targeting the given base URL
+// with a custom HTTP client timeout. Use this when models may be cold
+// (evicted from VRAM) and require extra time to load before responding.
+func NewWithTimeout(baseURL string, timeout time.Duration) *Client {
+	return &Client{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		httpClient: &http.Client{
+			Timeout: timeout,
 		},
 	}
 }
