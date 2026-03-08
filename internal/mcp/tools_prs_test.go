@@ -57,6 +57,10 @@ func (m *mockPRManager) GetPRChecks(_ context.Context, _ int) ([]forge.Check, er
 	return nil, nil
 }
 
+func (m *mockPRManager) ListReviewComments(_ context.Context, _ int) ([]forge.ReviewComment, error) {
+	return nil, nil
+}
+
 // newTestMCPServerWithPR sets up an httptest.Server with a PR manager wired.
 func newTestMCPServerWithPR(t *testing.T, tracker forge.IssueTracker, prm forge.PullRequestManager) *httptest.Server {
 	t.Helper()

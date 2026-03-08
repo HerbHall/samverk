@@ -279,7 +279,7 @@ func dispatchCmd() *cobra.Command {
 
 			// Start PR watcher if auto-merge is enabled.
 			if policyCfg.Merge.AutoMergeOnCIPass {
-				pw := prwatcher.New(ghClient, policyCfg.Merge, time.Duration(pollSeconds)*time.Second)
+				pw := prwatcher.New(ghClient, ghClient, policyCfg.Merge, time.Duration(pollSeconds)*time.Second)
 				g.Go(func() error {
 					return pw.Run(gctx)
 				})
