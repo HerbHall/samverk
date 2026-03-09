@@ -47,7 +47,7 @@ export interface CostSummary {
 
 export interface SystemStatus {
   healthy: boolean
-  github_connected: boolean
+  forge_connected: boolean
   database_connected: boolean
   tool_count: number
 }

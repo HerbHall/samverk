@@ -12,35 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  web:
-    name: Build SPA
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Install and build
-        working-directory: web
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm build
-
-      - name: Copy dist to static
-        run: cp -r web/dist/* internal/server/static/
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: spa-dist
-          path: internal/server/static/
-          retention-days: 1
-
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -66,7 +37,6 @@ jobs:
 
   build:
     name: Build
-    needs: [web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +44,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
       - uses: actions/cache@v4
         with:
@@ -83,16 +61,23 @@ jobs:
           key: ${{ gitea.runner.os }}-go-build-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ gitea.runner.os }}-go-build-
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: spa-dist
-          path: internal/server/static/
+      - name: Build SPA
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
 
-      - run: go build ./cmd/samverk/
+      - name: Copy dist to static
+        run: cp -r web/dist/* internal/server/static/
+
+      - name: Build Go binary
+        run: go build ./cmd/samverk/
 
   test:
     name: Test
-    needs: [web]
+    # Run after build so the shared GOPATH is populated and cache
+    # tar extraction doesn't collide with parallel jobs on host-mode runners.
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,20 +86,27 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: actions/cache@v4
+      - uses: actions/setup-node@v4
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ gitea.runner.os }}-go-test-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ gitea.runner.os }}-go-test-
+          node-version: 22
 
-      - uses: actions/download-artifact@v4
+      - uses: pnpm/action-setup@v4
         with:
-          name: spa-dist
-          path: internal/server/static/
+          version: 9
 
-      - run: go test -race ./...
+      - name: Build SPA
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Copy dist to static
+        run: cp -r web/dist/* internal/server/static/
+
+      # -race requires CGO which is not available in the LXC runner.
+      # Race detection runs in GitHub CI (Ubuntu with CGO).
+      - name: Run tests
+        run: go test ./...
 
   markdown:
     name: Markdown Lint

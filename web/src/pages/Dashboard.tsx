@@ -105,7 +105,7 @@ export function Dashboard() {
           </div>
           <div className="space-y-2">
             <StatusIndicator
-              connected={status.data?.github_connected ?? false}
+              connected={status.data?.forge_connected ?? false}
               label="Git Forge"
             />
             <StatusIndicator
