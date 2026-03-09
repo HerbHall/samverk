@@ -148,6 +148,17 @@ func (c *Client) CreateBranch(_ context.Context, name string) error {
 	return nil
 }
 
+// DeleteTestBranch deletes a branch by name. It is NOT part of the forge
+// interface and exists solely to support integration test cleanup.
+func (c *Client) DeleteTestBranch(_ context.Context, name string) error {
+	_, _, err := c.gt.DeleteRepoBranch(c.owner, c.repo, name)
+	if err != nil {
+		return fmt.Errorf("gitea: delete branch %q: %w", name, err)
+	}
+
+	return nil
+}
+
 // CreateOrUpdateFile creates or updates a file on the given branch.
 // If the file already exists its SHA is fetched first so that the update succeeds.
 func (c *Client) CreateOrUpdateFile(_ context.Context, branch, path, content, message string) error {
