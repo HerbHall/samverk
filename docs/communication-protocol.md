@@ -246,11 +246,13 @@ The base and overlay sets are disjoint — no label appears in both files. A pro
 | `agent:test` | `#fbca04` | Test writing and execution |
 | `agent:docs` | `#c5def5` | Documentation generation |
 | `agent:research` | `#d4c5f9` | Research and analysis tasks |
-| `agent:qc` | `#e99695` | Quality control validation |
+| `agent:qc` | `#e99695` | Static data validation — no live infrastructure |
+| `agent:infra` | `#006b75` | Live infrastructure: SSH to servers, Gitea/GitHub API, deployed services |
+| `agent:pc` | `#e36209` | Runs on dev PC via PowerShell CC agent scripts |
 | `agent:ideation` | `#ff9f1c` | Idea intake, synthesis, intent alignment |
 | `agent:feasibility` | `#2ec4b6` | Technical assessment, effort estimation, risk analysis |
 | `agent:legal` | `#e71d36` | Trademark, licensing, regulatory concerns (external contractor) |
-| `agent:human` | `#b60205` | Requires user input or decision |
+| `agent:human` | `#b60205` | Requires user judgment, GUI interaction, or time-based observation |
 
 ### Status (lifecycle state)
 
@@ -261,7 +263,8 @@ The base and overlay sets are disjoint — no label appears in both files. A pro
 | `status:in-progress` | `#0075ca` | Active work underway |
 | `status:blocked` | `#d93f0b` | Waiting on dependency (see `depends_on`) |
 | `status:needs-qc` | `#fbca04` | Work complete, awaiting QC validation |
-| `status:needs-human` | `#b60205` | Escalated to user for decision or approval |
+| `status:needs-human` | `#d73a4a` | Escalated from automation — requires user decision |
+| `status:human-pending` | `#8b5cf6` | Awaiting human execution — not dispatcher-eligible |
 | `status:done` | `#0e8a16` | Complete and validated |
 
 ### Priority

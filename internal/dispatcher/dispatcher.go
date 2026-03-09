@@ -175,7 +175,7 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 	for _, l := range issue.Labels {
 		labels[l] = true
 	}
-	if labels["status:needs-human"] || labels["status:blocked"] || labels["status:claimed"] || labels["status:in-progress"] {
+	if labels["status:needs-human"] || labels["status:human-pending"] || labels["status:blocked"] || labels["status:claimed"] || labels["status:in-progress"] {
 		d.logger.Debug("skipping issue with terminal status", slog.Int("issue", issue.Number))
 		return nil
 	}
