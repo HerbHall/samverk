@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,13 +49,14 @@ type TaskResult struct {
 const workerQuitBuf = 64
 
 // Pool manages a set of worker goroutines that process agent tasks.
-// Workers may be added or removed at runtime via AddWorkers/RemoveWorkers.
+// Workers may be added or removed at runtime via AddWorkers/RemoveWorkers/Resize.
 type Pool struct {
 	registry   *provider.Registry
 	tracker    forge.IssueTracker
 	store      store.Store
 	costs      *cost.Tracker
 	workers    int        // current target worker count (under mu)
+	maxWorkers int        // upper bound enforced by AddWorkers/Resize; 0 = no limit (under mu)
 	tasks      chan Task
 	wg         sync.WaitGroup
 	logger     *slog.Logger
@@ -67,7 +69,8 @@ type Pool struct {
 }
 
 // NewPool creates a pool with the given number of worker goroutines and starts
-// them immediately. If workers is <= 0, it defaults to 3.
+// them immediately. If workers is <= 0, it defaults to 3. The default maximum
+// is runtime.NumCPU(); call SetMaxWorkers to override before scaling.
 func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.Store, costs *cost.Tracker, workers int) *Pool {
 	if workers <= 0 {
 		workers = defaultWorkers
@@ -79,6 +82,7 @@ func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.S
 		store:      st,
 		costs:      costs,
 		workers:    workers,
+		maxWorkers: runtime.NumCPU(),
 		tasks:      make(chan Task, workers*2),
 		logger:     slog.Default(),
 		done:       make(chan struct{}),
@@ -93,8 +97,22 @@ func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.S
 	return p
 }
 
+// SetMaxWorkers sets the maximum number of workers the pool may hold at any time.
+// A value <= 0 removes the limit. Must be called before scaling; not safe to
+// call concurrently with AddWorkers or Resize.
+func (p *Pool) SetMaxWorkers(limit int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.maxWorkers = limit
+}
+
+// ErrMaxWorkers is returned when AddWorkers or Resize would exceed the
+// configured maximum worker count.
+var ErrMaxWorkers = errors.New("pool: would exceed maximum worker count")
+
 // AddWorkers starts n additional worker goroutines. Returns ErrPoolShutdown if
-// the pool has already been shut down. No-op if n <= 0.
+// the pool has already been shut down, or ErrMaxWorkers if the addition would
+// exceed the configured maximum. No-op if n <= 0.
 func (p *Pool) AddWorkers(n int) error {
 	if n <= 0 {
 		return nil
@@ -104,12 +122,43 @@ func (p *Pool) AddWorkers(n int) error {
 	if p.shutdown {
 		return ErrPoolShutdown
 	}
+	if p.maxWorkers > 0 && p.workers+n > p.maxWorkers {
+		return fmt.Errorf("%w: current=%d add=%d max=%d", ErrMaxWorkers, p.workers, n, p.maxWorkers)
+	}
 	p.workers += n
 	p.wg.Add(n)
 	for range n {
 		go p.worker()
 	}
 	p.logger.Info("agent pool scaled up", slog.Int("added", n), slog.Int("workers", p.workers))
+	return nil
+}
+
+// Resize sets the pool's worker count to target, adding or removing workers as
+// needed. It enforces the same minimum (1) and maximum bounds as AddWorkers and
+// RemoveWorkers. Returns ErrPoolShutdown if the pool has been shut down.
+func (p *Pool) Resize(target int) error {
+	if target < 1 {
+		target = 1
+	}
+	p.mu.Lock()
+	if p.shutdown {
+		p.mu.Unlock()
+		return ErrPoolShutdown
+	}
+	if p.maxWorkers > 0 && target > p.maxWorkers {
+		p.mu.Unlock()
+		return fmt.Errorf("%w: target=%d max=%d", ErrMaxWorkers, target, p.maxWorkers)
+	}
+	delta := target - p.workers
+	p.mu.Unlock()
+
+	switch {
+	case delta > 0:
+		return p.AddWorkers(delta)
+	case delta < 0:
+		p.RemoveWorkers(-delta)
+	}
 	return nil
 }
 

@@ -565,6 +565,160 @@ func TestRemoveWorkers_ClampsToMinimum(t *testing.T) {
 	}
 }
 
+func TestRemoveWorkers_GracefulDuringActiveTask(t *testing.T) {
+	// Verify that a worker finishes its current task before exiting when
+	// a quit signal is pending.
+	var processed atomic.Int32
+	taskStarted := make(chan struct{})
+	releaseTask := make(chan struct{})
+
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			close(taskStarted)
+			<-releaseTask
+			processed.Add(1)
+			return &provider.ChatResponse{
+				Message: provider.Message{Role: provider.RoleAssistant, Content: "done"},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+
+	pool := newTestPool(t, 2, mp)
+
+	// Submit a task and wait for it to start.
+	if err := pool.Submit(Task{
+		Issue:     &forge.Issue{Number: 1, Title: "t", Body: "b"},
+		AgentType: models.AgentTypeCodeGen,
+		SessionID: "sess-1",
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	<-taskStarted
+
+	// Signal one worker to exit. It should not exit mid-task.
+	removed := pool.RemoveWorkers(1)
+	if removed != 1 {
+		t.Fatalf("RemoveWorkers(1) = %d, want 1", removed)
+	}
+
+	// Release the task; the worker finishes, then exits.
+	close(releaseTask)
+	pool.Shutdown()
+
+	if got := processed.Load(); got != 1 {
+		t.Errorf("processed = %d, want 1 (task must finish before worker exits)", got)
+	}
+}
+
+func TestResize_ScalesUp(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 2, mp)
+	pool.SetMaxWorkers(10)
+	defer pool.Shutdown()
+
+	if err := pool.Resize(5); err != nil {
+		t.Fatalf("Resize(5): %v", err)
+	}
+	if got := pool.Workers(); got != 5 {
+		t.Errorf("Workers() = %d, want 5", got)
+	}
+}
+
+func TestResize_ScalesDown(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 5, mp)
+	pool.SetMaxWorkers(10)
+	defer pool.Shutdown()
+
+	if err := pool.Resize(2); err != nil {
+		t.Fatalf("Resize(2): %v", err)
+	}
+	if got := pool.Workers(); got != 2 {
+		t.Errorf("Workers() = %d, want 2", got)
+	}
+}
+
+func TestResize_EnforcesMinimumOne(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 3, mp)
+	defer pool.Shutdown()
+
+	if err := pool.Resize(0); err != nil {
+		t.Fatalf("Resize(0): %v", err)
+	}
+	if got := pool.Workers(); got != 1 {
+		t.Errorf("Workers() = %d, want 1 (minimum enforced)", got)
+	}
+}
+
+func TestResize_RespectsMax(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 2, mp)
+	pool.SetMaxWorkers(4)
+	defer pool.Shutdown()
+
+	if err := pool.Resize(10); !errors.Is(err, ErrMaxWorkers) {
+		t.Fatalf("Resize(10) with max=4: got %v, want ErrMaxWorkers", err)
+	}
+	if got := pool.Workers(); got != 2 {
+		t.Errorf("Workers() = %d, want 2 (unchanged after rejected Resize)", got)
+	}
+}
+
+func TestAddWorkers_RespectsMax(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 2, mp)
+	pool.SetMaxWorkers(3)
+	defer pool.Shutdown()
+
+	// Adding 2 would put us at 4 > max 3.
+	if err := pool.AddWorkers(2); !errors.Is(err, ErrMaxWorkers) {
+		t.Fatalf("AddWorkers(2) with max=3: got %v, want ErrMaxWorkers", err)
+	}
+	if got := pool.Workers(); got != 2 {
+		t.Errorf("Workers() = %d, want 2 (unchanged after rejected add)", got)
+	}
+}
+
+func TestResize_RapidSequential(t *testing.T) {
+	// Rapid Resize calls should not panic or corrupt state.
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 3, mp)
+	pool.SetMaxWorkers(20)
+	defer pool.Shutdown()
+
+	targets := []int{5, 2, 8, 1, 4, 6, 3}
+	for _, target := range targets {
+		if err := pool.Resize(target); err != nil {
+			t.Fatalf("Resize(%d): %v", target, err)
+		}
+	}
+	// Final target was 3; workers should be 3.
+	if got := pool.Workers(); got != 3 {
+		t.Errorf("Workers() = %d, want 3 after rapid resize sequence", got)
+	}
+}
+
 // --- mock types for pool tests ---
 
 type mockProvider struct {
