@@ -61,6 +61,62 @@ func (h *Handler) SetScalingEventReader(r scalingEventReader) {
 	h.scalingEvents = r
 }
 
+// derivePressure computes a pressure level and reasons from raw pool and system
+// snapshots using the same thresholds as internal/api/pressure.go.
+// Both sources may be nil (zero value snapshots contribute no signal).
+func derivePressure(pool poolMetricsSource, sys systemMetricsSource) (level string, reasons []string) {
+	type pLevel int
+	const (
+		pLow      pLevel = iota
+		pModerate pLevel = iota
+		pHigh     pLevel = iota
+		pCritical pLevel = iota
+	)
+	names := []string{"low", "moderate", "high", "critical"}
+	best := pLow
+
+	raise := func(lv pLevel, reason string) {
+		reasons = append(reasons, reason)
+		if lv > best {
+			best = lv
+		}
+	}
+
+	if sys != nil {
+		snap := sys.Collect()
+		if snap.SysBytesTotal > 0 {
+			ratio := float64(snap.HeapAllocBytes) / float64(snap.SysBytesTotal)
+			switch {
+			case ratio > 0.90:
+				raise(pCritical, "memory above 90%")
+			case ratio > 0.80:
+				raise(pHigh, "memory above 80%")
+			case ratio > 0.60:
+				raise(pModerate, "memory above 60%")
+			}
+		}
+	}
+
+	if pool != nil {
+		snap := pool.Snapshot()
+		allBusy := snap.IdleWorkers == 0
+		queued := snap.QueueDepth > 0
+		switch {
+		case allBusy && queued:
+			raise(pHigh, "all workers busy with queued tasks")
+		case allBusy:
+			raise(pModerate, "all workers busy")
+		case queued:
+			raise(pModerate, "tasks queued")
+		}
+	}
+
+	if len(reasons) == 0 {
+		reasons = nil
+	}
+	return names[best], reasons
+}
+
 // formatMetricsSection renders a brief METRICS block appended to the digest text.
 func (h *Handler) formatMetricsSection() string {
 	if h.poolM == nil && h.dispM == nil && h.sysM == nil && h.scalingEvents == nil && h.workersM == nil {
@@ -69,6 +125,16 @@ func (h *Handler) formatMetricsSection() string {
 
 	var b strings.Builder
 	b.WriteString("\n--- RUNTIME METRICS ---\n\n")
+
+	// Pressure indicator (computed from available sources).
+	if h.poolM != nil || h.sysM != nil {
+		level, reasons := derivePressure(h.poolM, h.sysM)
+		if len(reasons) > 0 {
+			fmt.Fprintf(&b, "Pressure: %s (%s)\n", level, strings.Join(reasons, ", "))
+		} else {
+			fmt.Fprintf(&b, "Pressure: %s\n", level)
+		}
+	}
 
 	if h.poolM != nil {
 		snap := h.poolM.Snapshot()
@@ -97,8 +163,12 @@ func (h *Handler) formatMetricsSection() string {
 
 	if h.sysM != nil {
 		snap := h.sysM.Collect()
-		fmt.Fprintf(&b, "System: %d goroutines | heap: %s | GC cycles: %d\n",
-			snap.Goroutines, formatBytes(snap.HeapAllocBytes), snap.GCCycles)
+		memPct := 0.0
+		if snap.SysBytesTotal > 0 {
+			memPct = float64(snap.HeapAllocBytes) / float64(snap.SysBytesTotal) * 100
+		}
+		fmt.Fprintf(&b, "System: %d goroutines | heap: %s (%.0f%% of sys) | GC cycles: %d\n",
+			snap.Goroutines, formatBytes(snap.HeapAllocBytes), memPct, snap.GCCycles)
 	}
 
 	if h.scalingEvents != nil {
