@@ -34,7 +34,7 @@ Can be split into separate binaries later if deployment topology demands it. Sin
 | Ollama (local) | Raw `net/http` | Ollama's REST API is trivial (3 endpoints). No SDK needed. **Implemented.** |
 | Docker mgmt | `docker/docker/client` | Manage local agent containers programmatically *(Phase 2 -- not yet in go.mod)* |
 | Config (YAML) | `gopkg.in/yaml.v3` | Direct YAML parsing for `.samverk/*.yaml`. Viper is overkill -- no env var layering needed since config is file-based. **Implemented.** |
-| Logging | `uber-go/zap` | Structured logging, fast, consistent with SubNetree *(Phase 2 -- not yet in go.mod)* |
+| Logging | `uber-go/zap` | Structured JSON (production), colorized console (development). Dual-mode via env toggle. See [Logging Design](logging-design.md) *(Phase 2 -- not yet in go.mod)* |
 | SQLite | `modernc.org/sqlite` | Pure Go (no CGO required), for local state persistence. **Implemented.** |
 
 ### What NOT to Use
@@ -77,7 +77,7 @@ The React SPA is embedded in the Go binary via `embed.FS`. Single binary deploym
 | System Health | Dispatcher status, agent containers, forge connectivity, model availability |
 | Agent Monitor | Running agents, queue depth, current tasks, container resource usage |
 | Cost Dashboard | Burn rate by provider, per-project spend, budget alerts, historical trends |
-| Logs | Structured log viewer with filtering (agent, severity, task), real-time tail |
+| Logs | Structured log viewer with filtering (agent, severity, task), real-time tail. See [Logging Design](logging-design.md) |
 | Autonomy Config | Edit trust tiers, view pending Tier 3 actions, override history |
 | Project Config | Forge connections, API keys (masked), model priority, polling intervals |
 | Task Timeline | Task execution timeline, dependency graph visualization |
