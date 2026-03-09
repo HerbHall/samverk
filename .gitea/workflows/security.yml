@@ -29,11 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # trivy is available as a standalone binary; install via script.
+      # The Gitea LXC runner may not have curl pre-installed.
+      # Ensure curl is available, then install trivy via the official script.
       - name: Install trivy
         run: |
+          which curl >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq curl)
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
             | sh -s -- -b /usr/local/bin
+          trivy --version
 
       - name: Scan filesystem
         run: trivy fs --exit-code 1 --severity HIGH,CRITICAL .
