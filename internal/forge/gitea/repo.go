@@ -130,9 +130,9 @@ func (c *Client) GetCommitLog(_ context.Context, branch string, limit int) ([]fo
 }
 
 // SearchCode is not supported by the Gitea SDK v0.23.2 at the repo scope.
-// It always returns ErrNotImplemented.
+// It returns forge.ErrNotSupported so callers can surface a friendly message.
 func (c *Client) SearchCode(_ context.Context, _ string) ([]forge.SearchResult, error) {
-	return []forge.SearchResult{}, ErrNotImplemented
+	return []forge.SearchResult{}, errNotImplemented
 }
 
 // CreateBranch creates a new branch from "main" HEAD.

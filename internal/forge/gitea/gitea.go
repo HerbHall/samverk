@@ -485,9 +485,9 @@ func extractAssigneeLogins(users []*gogitea.User) []string {
 	return result
 }
 
-// ErrNotImplemented is returned by Gitea methods that are not yet implemented.
-// Currently used by SearchCode, which has no equivalent in Gitea SDK v0.23.2.
-var ErrNotImplemented = fmt.Errorf("gitea: not implemented")
+// errNotImplemented is an internal alias for forge.ErrNotSupported used by
+// Gitea methods that have no equivalent in Gitea SDK v0.23.2 (e.g. SearchCode).
+var errNotImplemented = forge.ErrNotSupported
 
 // stringSliceEqual reports whether two string slices have the same elements.
 func stringSliceEqual(a, b []string) bool {

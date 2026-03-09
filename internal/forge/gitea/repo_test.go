@@ -12,6 +12,8 @@ import (
 	"time"
 
 	gogitea "code.gitea.io/sdk/gitea"
+
+	"github.com/herbhall/samverk/internal/forge"
 )
 
 func TestCreateBranch(t *testing.T) {
@@ -368,8 +370,8 @@ func TestSearchCode_NotImplemented(t *testing.T) {
 	c, _ := newTestClient(t, handler)
 
 	results, err := c.SearchCode(context.Background(), "some query")
-	if !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("err = %v, want ErrNotImplemented", err)
+	if !errors.Is(err, forge.ErrNotSupported) {
+		t.Errorf("err = %v, want forge.ErrNotSupported", err)
 	}
 	if results == nil {
 		t.Error("expected non-nil empty slice, got nil")
