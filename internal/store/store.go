@@ -99,9 +99,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 	started_at     TEXT NOT NULL,
 	finished_at    TEXT,
 	error          TEXT,
-	partial_output TEXT NOT NULL DEFAULT '',
-	created_at     TEXT NOT NULL,
-	updated_at     TEXT NOT NULL
+	partial_output  TEXT NOT NULL DEFAULT '',
+	checkpoint_hash TEXT NOT NULL DEFAULT '',
+	created_at      TEXT NOT NULL,
+	updated_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cost_records (
@@ -159,6 +160,7 @@ CREATE TABLE IF NOT EXISTS task_profiles (
 	// is not available, so we detect and skip manually.
 	migrations := []string{
 		`ALTER TABLE sessions ADD COLUMN partial_output TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN checkpoint_hash TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		if _, err := s.db.ExecContext(context.Background(), m); err != nil {

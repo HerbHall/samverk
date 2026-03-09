@@ -163,6 +163,60 @@ func TestListSessionsEmpty(t *testing.T) {
 	}
 }
 
+func TestCheckpointHashRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	sess := &models.Session{
+		IssueNumber: 77,
+		AgentType:   "code-gen",
+		Provider:    "claude-cli",
+		Model:       "opus-4",
+		Status:      models.SessionStatusActive,
+		StartedAt:   now,
+	}
+
+	if err := s.CreateSession(ctx, sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Initially empty.
+	got, err := s.GetSession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.CheckpointHash != "" {
+		t.Errorf("initial checkpoint_hash = %q, want empty", got.CheckpointHash)
+	}
+
+	// Update with a checkpoint hash.
+	sess.CheckpointHash = "abc123def456"
+	if err := s.UpdateSession(ctx, sess); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err = s.GetSession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get after update: %v", err)
+	}
+	if got.CheckpointHash != "abc123def456" {
+		t.Errorf("checkpoint_hash = %q, want %q", got.CheckpointHash, "abc123def456")
+	}
+
+	// Verify it appears in list results too.
+	sessions, err := s.ListSessions(ctx, models.SessionStatusActive)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions count = %d, want 1", len(sessions))
+	}
+	if sessions[0].CheckpointHash != "abc123def456" {
+		t.Errorf("list checkpoint_hash = %q, want %q", sessions[0].CheckpointHash, "abc123def456")
+	}
+}
+
 func TestPartialOutputRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
