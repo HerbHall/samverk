@@ -218,6 +218,7 @@ func serveCmd() *cobra.Command {
 			apiHandler := api.New(tracker, st, costs)
 			apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
 			cfg.APIHandler = apiHandler
+			cfg.PressureProvider = apiHandler
 			slog.Info("REST API enabled")
 
 			// Wire worker lister from API into MCP digest so the get_digest tool

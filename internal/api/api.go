@@ -38,6 +38,7 @@ type API struct {
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
 	scalingMax     int
+	history        []historyEntry // ring buffer of recent snapshots; guarded by historyMu
 }
 
 // New creates an API handler with the given dependencies.
@@ -77,6 +78,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/costs", a.handleGetCosts)
 	mux.HandleFunc("GET /api/v1/status", a.handleStatus)
 	mux.HandleFunc("GET /api/v1/metrics", a.handleMetrics)
+	mux.HandleFunc("GET /api/v1/metrics/history", a.handleMetricsHistory)
 	mux.HandleFunc("GET /api/v1/scaling/control", a.handleGetScalingControl)
 	mux.HandleFunc("POST /api/v1/scaling/pause", a.handleScalingPause)
 	mux.HandleFunc("POST /api/v1/scaling/resume", a.handleScalingResume)

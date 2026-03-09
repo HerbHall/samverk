@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -10,22 +11,42 @@ type metricsResponse struct {
 	Pool          *poolMetricsDTO       `json:"pool"`
 	Dispatcher    *dispatcherMetricsDTO `json:"dispatcher"`
 	System        *systemMetricsDTO     `json:"system"`
+	Pressure      pressureDTO           `json:"pressure"`
 	ScalingEvents []scalingEventDTO     `json:"scaling_events"`
 	ScalingConfig *scalingConfigDTO     `json:"scaling_config"`
 	TaskProfiles  []taskProfileDTO      `json:"task_profiles"`
 }
 
+// historyEntry is a single timestamped snapshot stored in the history ring buffer.
+type historyEntry struct {
+	Timestamp  string                `json:"timestamp"`
+	Pool       *poolMetricsDTO       `json:"pool"`
+	Dispatcher *dispatcherMetricsDTO `json:"dispatcher"`
+	System     *systemMetricsDTO     `json:"system"`
+	Pressure   pressureDTO           `json:"pressure"`
+}
+
+// historyResponse is the JSON body returned by GET /api/v1/metrics/history.
+type historyResponse struct {
+	Duration string         `json:"duration"`
+	Entries  []historyEntry `json:"entries"`
+}
+
+// historyMaxEntries is the maximum number of entries kept in the ring buffer.
+// At a 30-second poll interval this covers ~30 minutes of history.
+const historyMaxEntries = 60
+
 // taskProfileDTO is the JSON-serializable form of models.TaskProfile.
 // Duration fields are expressed in milliseconds.
 type taskProfileDTO struct {
-	AgentType   string  `json:"agent_type"`
-	Provider    string  `json:"provider"`
+	AgentType     string  `json:"agent_type"`
+	Provider      string  `json:"provider"`
 	AvgDurationMs float64 `json:"avg_duration_ms"`
 	P50DurationMs float64 `json:"p50_duration_ms"`
 	P90DurationMs float64 `json:"p90_duration_ms"`
-	SampleCount int     `json:"sample_count"`
-	AvgTokens   int     `json:"avg_tokens"`
-	UpdatedAt   string  `json:"updated_at"`
+	SampleCount   int     `json:"sample_count"`
+	AvgTokens     int     `json:"avg_tokens"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 // scalingEventDTO is the JSON-serializable form of a scaling.ScalingEvent.
@@ -81,8 +102,63 @@ type systemMetricsDTO struct {
 	NextGCBytes    uint64 `json:"next_gc_bytes"`
 }
 
+// historyMu guards history.
+var historyMu sync.Mutex
+
+// appendHistory adds a snapshot entry to the API's ring buffer (capacity historyMaxEntries).
+func (a *API) appendHistory(entry historyEntry) {
+	historyMu.Lock()
+	defer historyMu.Unlock()
+	if len(a.history) >= historyMaxEntries {
+		// Shift: drop oldest entry.
+		a.history = append(a.history[1:], entry)
+	} else {
+		a.history = append(a.history, entry)
+	}
+}
+
+// historyBefore returns entries recorded no earlier than cutoff, oldest first.
+func (a *API) historyBefore(cutoff time.Time) []historyEntry {
+	historyMu.Lock()
+	defer historyMu.Unlock()
+	var out []historyEntry
+	for _, e := range a.history {
+		ts, err := time.Parse(time.RFC3339, e.Timestamp)
+		if err != nil {
+			continue
+		}
+		if !ts.Before(cutoff) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// Pressure returns the current pressure level string. It is used by the server's
+// /healthz handler to surface resource pressure without importing the api package.
+func (a *API) Pressure() string {
+	var pool *poolMetricsDTO
+	var sys *systemMetricsDTO
+	if a.pool != nil {
+		snap := a.pool.Snapshot()
+		pool = &poolMetricsDTO{
+			IdleWorkers: snap.IdleWorkers,
+			QueueDepth:  snap.QueueDepth,
+		}
+	}
+	if a.system != nil {
+		snap := a.system.Collect()
+		sys = &systemMetricsDTO{
+			HeapAllocBytes: snap.HeapAllocBytes,
+			SysBytesTotal:  snap.SysBytesTotal,
+		}
+	}
+	return computePressure(pool, sys).Level
+}
+
 // handleMetrics serves GET /api/v1/metrics.
 // Returns 200 with a JSON body. Any source that is nil contributes a null field.
+// Each successful call appends a snapshot to the history ring buffer.
 func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	resp := metricsResponse{}
 
@@ -125,6 +201,8 @@ func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			NextGCBytes:    snap.NextGCBytes,
 		}
 	}
+
+	resp.Pressure = computePressure(resp.Pool, resp.System)
 
 	if a.scalingEnabled && a.store != nil {
 		events, evErr := a.store.ListScalingEvents(r.Context(), 20)
@@ -175,7 +253,39 @@ func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Record snapshot in history ring buffer for /api/v1/metrics/history.
+	a.appendHistory(historyEntry{
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		Pool:       resp.Pool,
+		Dispatcher: resp.Dispatcher,
+		System:     resp.System,
+		Pressure:   resp.Pressure,
+	})
+
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleMetricsHistory serves GET /api/v1/metrics/history?duration=<duration>.
+// duration defaults to 1h if omitted or unparseable.
+// Returns entries from the in-memory ring buffer recorded within the requested window.
+func (a *API) handleMetricsHistory(w http.ResponseWriter, r *http.Request) {
+	d := time.Hour
+	if raw := r.URL.Query().Get("duration"); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
+			d = parsed
+		}
+	}
+
+	cutoff := time.Now().UTC().Add(-d)
+	entries := a.historyBefore(cutoff)
+	if entries == nil {
+		entries = []historyEntry{}
+	}
+
+	writeJSON(w, http.StatusOK, historyResponse{
+		Duration: d.String(),
+		Entries:  entries,
+	})
 }
 
 // durationToMs converts a time.Duration to milliseconds as a float64.

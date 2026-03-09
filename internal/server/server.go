@@ -16,13 +16,20 @@ type APIRegistrar interface {
 	RegisterRoutes(mux *http.ServeMux)
 }
 
+// PressureProvider returns the current resource pressure level string
+// ("low", "moderate", "high", or "critical"). Used by /healthz.
+type PressureProvider interface {
+	Pressure() string
+}
+
 // Config holds server configuration.
 type Config struct {
-	Addr       string         // listen address, e.g. ":8080"
-	AuthToken  string         //nolint:gosec // G117: config field, not a hardcoded secret
-	KeyStore   *KeyStore      // YAML-backed API key store (may be nil)
-	MCPHandler http.Handler   // optional MCP protocol handler; nil keeps the 501 placeholder
-	APIHandler APIRegistrar   // optional REST API handler; nil keeps the 501 placeholder
+	Addr             string          // listen address, e.g. ":8080"
+	AuthToken        string          //nolint:gosec // G117: config field, not a hardcoded secret
+	KeyStore         *KeyStore       // YAML-backed API key store (may be nil)
+	MCPHandler       http.Handler    // optional MCP protocol handler; nil keeps the 501 placeholder
+	APIHandler       APIRegistrar    // optional REST API handler; nil keeps the 501 placeholder
+	PressureProvider PressureProvider // optional; /healthz omits pressure field when nil
 }
 
 // Server is the main HTTP server.
@@ -137,8 +144,10 @@ func (s *Server) registerRoutes() {
 }
 
 // healthResponse is the JSON body returned by /healthz.
+// Pressure is omitted when no PressureProvider is configured.
 type healthResponse struct {
-	Status string `json:"status"`
+	Status   string `json:"status"`
+	Pressure string `json:"pressure,omitempty"`
 }
 
 // errorResponse is the JSON body returned for error responses.
@@ -146,9 +155,13 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// handleHealth returns 200 {"status":"ok"}.
+// handleHealth returns 200 {"status":"ok"} with an optional pressure field.
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
+	resp := healthResponse{Status: "ok"}
+	if s.cfg.PressureProvider != nil {
+		resp.Pressure = s.cfg.PressureProvider.Pressure()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleNotImplemented returns 501 {"error":"not implemented"}.
