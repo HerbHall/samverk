@@ -75,6 +75,9 @@ jobs:
 
   test:
     name: Test
+    # Run after build so the shared GOPATH is populated and cache
+    # tar extraction doesn't collide with parallel jobs on host-mode runners.
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,14 +93,6 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ gitea.runner.os }}-go-test-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ gitea.runner.os }}-go-test-
 
       - name: Build SPA
         working-directory: web
