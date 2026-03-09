@@ -30,13 +30,13 @@ var pressureLevelNames = []string{"low", "moderate", "high", "critical"}
 // "memory ratio" is HeapAllocBytes/SysBytesTotal — a proxy for Go runtime
 // memory pressure. OS-level CPU% requires cgroup/procfs reads not yet wired.
 func computePressure(pool *poolMetricsDTO, sys *systemMetricsDTO) pressureDTO {
-	max := pressureLow
+	maxLevel := pressureLow
 	var reasons []string
 
 	raise := func(level pressureLevel, reason string) {
 		reasons = append(reasons, reason)
-		if level > max {
-			max = level
+		if level > maxLevel {
+			maxLevel = level
 		}
 	}
 
@@ -70,5 +70,5 @@ func computePressure(pool *poolMetricsDTO, sys *systemMetricsDTO) pressureDTO {
 	if len(reasons) == 0 {
 		reasons = nil
 	}
-	return pressureDTO{Level: pressureLevelNames[max], Reasons: reasons}
+	return pressureDTO{Level: pressureLevelNames[maxLevel], Reasons: reasons}
 }
