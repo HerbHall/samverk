@@ -34,6 +34,10 @@ type Store interface {
 	SaveScalingEvent(ctx context.Context, e models.ScalingEvent) error
 	ListScalingEvents(ctx context.Context, limit int) ([]*models.ScalingEvent, error)
 
+	// Scaling control (written by serve/CLI, read by dispatch autoscaler)
+	GetScalingControl(ctx context.Context) (*models.ScalingControl, error)
+	UpsertScalingControl(ctx context.Context, c models.ScalingControl) error
+
 	Close() error
 }
 
@@ -118,6 +122,14 @@ CREATE TABLE IF NOT EXISTS scaling_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scaling_ts ON scaling_events(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS scaling_control (
+	id             INTEGER PRIMARY KEY CHECK (id = 1),
+	paused         INTEGER NOT NULL DEFAULT 0,
+	manual_workers INTEGER NOT NULL DEFAULT 0,
+	set_at         TEXT NOT NULL,
+	note           TEXT NOT NULL DEFAULT ''
+);
 `
 	_, err := s.db.ExecContext(context.Background(), ddl)
 	return err

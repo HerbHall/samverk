@@ -138,6 +138,7 @@ func newMCPServer(h *Handler) *gosdk.Server {
 	registerRepoTools(srv, h)
 	registerProjectTools(srv, h)
 	registerPRTools(srv, h)
+	registerScalingTools(srv, h)
 	return srv
 }
 

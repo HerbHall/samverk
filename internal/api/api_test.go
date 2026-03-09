@@ -138,6 +138,14 @@ func (m *mockStore) ListScalingEvents(_ context.Context, _ int) ([]*models.Scali
 	return nil, nil
 }
 
+func (m *mockStore) GetScalingControl(_ context.Context) (*models.ScalingControl, error) {
+	return &models.ScalingControl{}, nil
+}
+
+func (m *mockStore) UpsertScalingControl(_ context.Context, _ models.ScalingControl) error {
+	return nil
+}
+
 func (m *mockStore) Close() error { return nil }
 
 // Compile-time check: mockStore implements store.Store.
