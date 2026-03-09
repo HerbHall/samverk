@@ -27,12 +27,17 @@ Decisions are recorded as ADR files in this directory.
 | [021](ADR-021-intent-verification.md) | Intent Verification Protocol | Accepted |
 | [022](ADR-022-full-project-lifecycle.md) | Full Project Lifecycle — Idea to Delivery | Accepted |
 | [023](ADR-023-per-project-repos.md) | Per-Project Repos with Coordination Layer | Accepted |
+| [027](ADR-027-failure-recovery.md) | Failure Recovery and State Reconciliation | Proposed |
+| [030](ADR-030-cross-model-qa.md) | Cross-Model QA Validation | Proposed |
+| [031](ADR-031-dual-forge.md) | Dual-Forge Architecture (GitHub + Gitea) | Accepted |
+| [032](ADR-032-adaptive-worker-scaling.md) | Adaptive Worker Scaling | Accepted |
+| [033](ADR-033-pc-agent-worker-node.md) | PC Agent Worker Node with Isolated Workspaces | Accepted |
 
 ## Open Decisions
 
-- Depth calibration -- who decides how deep the agent tree goes?
-- "Good enough" threshold -- when is QC satisfied?
-- Cost management -- token budget tracking and enforcement
-- Licensing -- BSL 1.1 / Apache 2.0 dual or different?
-- Domain selection -- samverk.io vs samverk.ai
-- Server platform selection -- Unraid, Proxmox, or Windows for the project server
+- Depth calibration — who decides how deep the agent tree goes?
+- "Good enough" threshold — when is QC satisfied?
+- Cost management — token budget tracking and enforcement
+- Licensing — BSL 1.1 / Apache 2.0 dual or different?
+- Domain selection — samverk.io vs samverk.ai
+- Server platform selection — Unraid, Proxmox, or Windows for the project server
