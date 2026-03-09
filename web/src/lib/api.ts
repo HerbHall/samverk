@@ -83,8 +83,12 @@ export interface SystemMetrics {
   next_gc_bytes: number
 }
 
+export interface PressureMetrics {
+  level: string
+  reasons: string[] | null
+}
+
 export interface ScalingEvent {
-  id: string
   timestamp: string
   action: string
   from_workers: number
@@ -115,6 +119,7 @@ export interface MetricsResponse {
   pool: PoolMetrics | null
   dispatcher: DispatcherMetrics | null
   system: SystemMetrics | null
+  pressure: PressureMetrics
   scaling_events: ScalingEvent[] | null
   scaling_config: ScalingConfig | null
   task_profiles: TaskProfile[] | null
