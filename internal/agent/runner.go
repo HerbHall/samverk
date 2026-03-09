@@ -108,7 +108,15 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		},
 	}
 
-	// Step 4: Call provider (with heartbeat ticker to keep dispatcher informed).
+	// Step 4: Call provider (with heartbeat and streaming activity detection).
+	//
+	// Two heartbeat mechanisms work together:
+	//   a) Ticker-based: fires every heartbeatPulseInterval as a fallback for
+	//      providers that don't support ActivityNotifier.
+	//   b) Activity-based: if the provider implements provider.ActivityNotifier,
+	//      the callback fires on every chunk of output, resetting the heartbeat
+	//      timer immediately. This prevents false timeout kills during long but
+	//      active streaming sessions.
 	if task.HeartbeatFunc != nil {
 		task.HeartbeatFunc() // fire immediately before blocking call
 		stop := make(chan struct{})
@@ -125,6 +133,17 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 			}
 		}()
 		defer close(stop)
+	}
+
+	// Wire streaming activity detection if the provider supports it.
+	if notifier, ok := r.provider.(provider.ActivityNotifier); ok {
+		notifier.SetOnActivity(func() {
+			if task.HeartbeatFunc != nil {
+				task.HeartbeatFunc()
+			}
+		})
+		// Clear the callback after Chat returns to avoid stale references.
+		defer notifier.SetOnActivity(nil)
 	}
 
 	resp, err := r.provider.Chat(ctx, req)

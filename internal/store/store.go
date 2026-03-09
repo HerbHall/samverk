@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/herbhall/samverk/pkg/models"
@@ -89,17 +90,18 @@ func (s *SQLiteStore) Close() error {
 func (s *SQLiteStore) migrate() error {
 	const ddl = `
 CREATE TABLE IF NOT EXISTS sessions (
-	id          TEXT PRIMARY KEY,
-	issue_number INTEGER NOT NULL,
-	agent_type  TEXT NOT NULL,
-	provider    TEXT NOT NULL,
-	model       TEXT NOT NULL,
-	status      TEXT NOT NULL,
-	started_at  TEXT NOT NULL,
-	finished_at TEXT,
-	error       TEXT,
-	created_at  TEXT NOT NULL,
-	updated_at  TEXT NOT NULL
+	id             TEXT PRIMARY KEY,
+	issue_number   INTEGER NOT NULL,
+	agent_type     TEXT NOT NULL,
+	provider       TEXT NOT NULL,
+	model          TEXT NOT NULL,
+	status         TEXT NOT NULL,
+	started_at     TEXT NOT NULL,
+	finished_at    TEXT,
+	error          TEXT,
+	partial_output TEXT NOT NULL DEFAULT '',
+	created_at     TEXT NOT NULL,
+	updated_at     TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cost_records (
@@ -148,8 +150,25 @@ CREATE TABLE IF NOT EXISTS task_profiles (
 	PRIMARY KEY (agent_type, provider)
 );
 `
-	_, err := s.db.ExecContext(context.Background(), ddl)
-	return err
+	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
+		return err
+	}
+
+	// Incremental migrations for existing databases.
+	// SQLite silently ignores duplicate ADD COLUMN when using IF NOT EXISTS
+	// is not available, so we detect and skip manually.
+	migrations := []string{
+		`ALTER TABLE sessions ADD COLUMN partial_output TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, m := range migrations {
+		if _, err := s.db.ExecContext(context.Background(), m); err != nil {
+			// "duplicate column name" means the column already exists — skip.
+			if !isDuplicateColumn(err) {
+				return fmt.Errorf("migration: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 // generateID produces a random hex-encoded identifier.
@@ -160,4 +179,10 @@ func generateID() string {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b)
+}
+
+// isDuplicateColumn returns true if the error indicates an ALTER TABLE ADD COLUMN
+// failed because the column already exists. SQLite returns "duplicate column name: X".
+func isDuplicateColumn(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }
