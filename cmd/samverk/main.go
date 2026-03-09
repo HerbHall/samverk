@@ -253,6 +253,7 @@ func serveCmd() *cobra.Command {
 
 func dispatchCmd() *cobra.Command {
 	var owner, repo, dbPath, providersConfig, scalingConfig string
+	var forgeName, giteaURL string
 	var pollSeconds, workers, scalingMin, scalingMax int
 	var budget float64
 	var scalingEnabled bool
@@ -264,23 +265,50 @@ func dispatchCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
-			token := os.Getenv("GITHUB_TOKEN")
 			if owner == "" {
 				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
 			}
 			if repo == "" {
 				repo = os.Getenv("SAMVERK_GITHUB_REPO")
 			}
-			if token == "" || owner == "" || repo == "" {
-				return fmt.Errorf("GITHUB_TOKEN, --owner, and --repo are required")
+			if owner == "" || repo == "" {
+				return fmt.Errorf("--owner and --repo are required")
 			}
 
-			ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-			httpClient := oauth2.NewClient(ctx, ts)
-			ghClient := github.New(owner, repo, httpClient)
-
-			if pollSeconds > 0 {
-				ghClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
+			// Build forge client based on --forge flag.
+			var tracker forge.IssueTracker
+			var prMgr forge.PullRequestManager
+			switch forgeName {
+			case "gitea":
+				giteaToken := os.Getenv("GITEA_TOKEN")
+				if giteaToken == "" {
+					return fmt.Errorf("GITEA_TOKEN env var is required for --forge gitea")
+				}
+				if giteaURL == "" {
+					return fmt.Errorf("--gitea-url is required for --forge gitea")
+				}
+				gtClient, gtErr := giteaadapter.New(giteaURL, giteaToken, owner, repo)
+				if gtErr != nil {
+					return fmt.Errorf("creating Gitea client: %w", gtErr)
+				}
+				tracker = gtClient
+				prMgr = gtClient
+				if pollSeconds > 0 {
+					gtClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
+				}
+			default: // "github" or empty
+				token := os.Getenv("GITHUB_TOKEN")
+				if token == "" {
+					return fmt.Errorf("GITHUB_TOKEN env var is required")
+				}
+				ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+				httpClient := oauth2.NewClient(ctx, ts)
+				ghClient := github.New(owner, repo, httpClient)
+				if pollSeconds > 0 {
+					ghClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
+				}
+				tracker = ghClient
+				prMgr = ghClient
 			}
 
 			// Load autonomy policy.
@@ -311,13 +339,13 @@ func dispatchCmd() *cobra.Command {
 					slog.Warn("could not load provider registry, agents disabled", "path", providersConfig, "error", regErr)
 				} else {
 					costs := cost.NewTracker(st, budget, 24)
-					pool = agent.NewPool(registry, ghClient, st, costs, workers)
+					pool = agent.NewPool(registry, tracker, st, costs, workers)
 					defer pool.Shutdown()
 					slog.Info("agent pool started", "workers", workers, "providers", len(registry.List(ctx)))
 				}
 			}
 
-			disp := dispatcher.New(ghClient, policy, st, pool, nil)
+			disp := dispatcher.New(tracker, policy, st, pool, nil)
 			slog.Info("starting dispatcher", "owner", owner, "repo", repo)
 
 			g, gctx := errgroup.WithContext(ctx)
@@ -360,7 +388,7 @@ func dispatchCmd() *cobra.Command {
 
 			// Start PR watcher if auto-merge is enabled.
 			if policyCfg.Merge.AutoMergeOnCIPass {
-				pw := prwatcher.New(ghClient, ghClient, policyCfg.Merge, time.Duration(pollSeconds)*time.Second)
+				pw := prwatcher.New(prMgr, tracker, policyCfg.Merge, time.Duration(pollSeconds)*time.Second)
 				g.Go(func() error {
 					return pw.Run(gctx)
 				})
@@ -373,8 +401,10 @@ func dispatchCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
-	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
+	cmd.Flags().StringVar(&owner, "owner", "", "Repository owner")
+	cmd.Flags().StringVar(&repo, "repo", "", "Repository name")
+	cmd.Flags().StringVar(&forgeName, "forge", "github", "Forge type: github or gitea")
+	cmd.Flags().StringVar(&giteaURL, "gitea-url", "", "Gitea instance URL (required when --forge=gitea)")
 	cmd.Flags().StringVar(&dbPath, "db", ".samverk/samverk.db", "Path to SQLite database")
 	cmd.Flags().StringVar(&providersConfig, "providers-config", ".samverk/providers.yaml", "Path to provider registry YAML config")
 	cmd.Flags().IntVar(&pollSeconds, "poll-interval", 30, "Polling interval in seconds")
