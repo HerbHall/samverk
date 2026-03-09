@@ -46,9 +46,10 @@ samverk/
 │   ├── autonomy-model.md      # Three-tier trust model for agent actions
 │   ├── user-profile.md        # Persistent user preferences across projects
 │   ├── open-questions.md      # Unresolved design and business questions
-│   └── decisions/             # Architecture Decision Records (25 total)
+│   └── decisions/             # Architecture Decision Records (31 total)
 ├── .samverk/                  # Project state (status.md) and runtime config
-├── .github/workflows/         # CI/CD pipelines
+├── .github/workflows/         # GitHub CI/CD pipelines
+├── .gitea/workflows/          # Gitea Actions CI (gitea-ci.yml, security.yml)
 └── Makefile                   # Build and development tasks
 ```
 
@@ -62,7 +63,7 @@ samverk/
 - **Git Forge:** GitHub (primary), Gitea (self-hosted), abstracted behind `IssueTracker` interface
 - **Testing:** Go stdlib + table-driven tests, Vitest + Testing Library (frontend)
 - **Build:** Make + GoReleaser
-- **CI/CD:** GitHub Actions
+- **CI/CD:** GitHub Actions (primary) + Gitea Actions (mirror CI, security.yml)
 - **Linting:** golangci-lint (Go), ESLint + TypeScript (frontend), markdownlint (docs)
 
 For full details including specific libraries, what NOT to use, and project structure rationale, see [docs/tech-stack.md](docs/tech-stack.md).
@@ -125,12 +126,14 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 - Per-project repos with coordination layer ([ADR-023](docs/decisions/ADR-023-per-project-repos.md))
 - Failure recovery strategy ([ADR-027](docs/decisions/ADR-027-failure-recovery.md))
 - Cross-model QA validation ([ADR-030](docs/decisions/ADR-030-cross-model-qa.md))
+- Dual-forge operational model ([ADR-031](docs/decisions/ADR-031-dual-forge-operational-model.md))
 - Unified execution plan -- Q2 2026 ([docs/unified-execution-plan.md](docs/unified-execution-plan.md))
 
 ## Infrastructure
 
 - **Proxmox host:** `root@192.168.1.203` (SSH key auth configured)
 - **Samverk container:** `root@192.168.1.162` CT 202 (SSH key auth configured)
+- **Gitea instance:** CT 200 (`192.168.1.160:3000`, `gitea.herbhall.net`) -- primary runtime forge for dispatcher
 - **Health check:** `curl http://192.168.1.162:8080/healthz`
 - **Deploy command:** `make deploy DEPLOY_HOST=192.168.1.162`
 - **Redeploy shortcut:** `make redeploy` -- cross-compiles, deploys, restarts services, and verifies the health check in one step. Use this after any code change that should reach the live server.
