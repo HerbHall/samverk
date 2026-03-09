@@ -301,6 +301,21 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 	for _, iss := range issues {
 		known[iss.Number] = iss
 	}
+	// Emit events for pre-existing queued issues so the dispatcher
+	// routes them on startup, not only when new issues appear.
+	for _, iss := range issues {
+		for _, label := range iss.Labels {
+			if label == "status:queued" {
+				handler(forge.Event{
+					Type:          forge.EventIssueOpened,
+					IssueNumber:   iss.Number,
+					Issue:         iss,
+					IsPullRequest: iss.IsPullRequest,
+				})
+				break
+			}
+		}
+	}
 	mu.Unlock()
 
 	ticker := time.NewTicker(c.pollInterval)
