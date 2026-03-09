@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"time"
@@ -73,7 +74,7 @@ func (d *Dispatcher) checkTimeouts(ctx context.Context) error {
 
 	for _, num := range timedOut {
 		if err := d.releaseTimedOut(ctx, num); err != nil {
-			d.logger.Printf("release timed out #%d: %v", num, err)
+			d.logger.Warn("release timeout", slog.Int("issue", num), slog.String("error", err.Error()))
 		}
 	}
 	return nil
@@ -101,7 +102,7 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 		time.Now().UTC().Format(time.RFC3339), agentID, lastHB.UTC().Format(time.RFC3339),
 	)
 	if _, err := d.tracker.AddComment(ctx, issueNumber, comment); err != nil {
-		d.logger.Printf("add release comment to #%d: %v", issueNumber, err)
+		d.logger.Warn("add comment", slog.Int("issue", issueNumber), slog.String("context", "timeout-release"), slog.String("error", err.Error()))
 	}
 
 	// Remove in-progress or claimed label.
@@ -109,13 +110,19 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 	_ = d.tracker.RemoveLabel(ctx, issueNumber, "status:claimed")
 
 	if err := d.tracker.AddLabel(ctx, issueNumber, "status:queued"); err != nil {
-		d.logger.Printf("add queued to #%d: %v", issueNumber, err)
+		d.logger.Warn("add label", slog.Int("issue", issueNumber), slog.String("label", "queued"), slog.String("error", err.Error()))
 	}
 	if err := d.tracker.Unassign(ctx, issueNumber, agentID); err != nil {
-		d.logger.Printf("unassign #%d: %v", issueNumber, err)
+		d.logger.Warn("unassign", slog.Int("issue", issueNumber), slog.String("agent", agentID), slog.String("error", err.Error()))
 	}
 
-	d.logger.Printf("released timed out issue #%d (agent=%s, failures=%d)", issueNumber, agentID, failureCount)
+	elapsed := time.Since(lastHB)
+	d.logger.Warn("timeout released",
+		slog.Int("issue", issueNumber),
+		slog.String("agent", agentID),
+		slog.Int("failures", failureCount),
+		slog.Duration("since_heartbeat", elapsed.Truncate(time.Second)),
+	)
 
 	// Escalate after max consecutive failures.
 	if failureCount >= d.config.MaxConsecutiveFailures {
@@ -125,10 +132,10 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 			failureCount, issueNumber, agentID, failureCount,
 		)
 		if err := d.tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
-			d.logger.Printf("add needs-human to #%d: %v", issueNumber, err)
+			d.logger.Error("add label", slog.Int("issue", issueNumber), slog.String("label", "needs-human"), slog.String("error", err.Error()))
 		}
 		if _, err := d.tracker.AddComment(ctx, issueNumber, escalateComment); err != nil {
-			d.logger.Printf("add escalation comment to #%d: %v", issueNumber, err)
+			d.logger.Error("add comment", slog.Int("issue", issueNumber), slog.String("context", "escalate"), slog.String("error", err.Error()))
 		}
 	}
 

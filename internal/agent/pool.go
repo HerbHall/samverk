@@ -285,7 +285,9 @@ func (p *Pool) processTask(task Task) {
 	}
 
 	runner := NewRunner(prov, model, p.tracker, p.store, p.costs)
+	start := time.Now()
 	runErr := runner.Run(ctx, task)
+	duration := time.Since(start)
 
 	// Notify dispatcher of completion (success or failure).
 	result := TaskResult{
@@ -296,9 +298,14 @@ func (p *Pool) processTask(task Task) {
 	}
 	if runErr != nil {
 		result.Error = runErr.Error()
-		logger.Error("runner failed", slog.String("error", runErr.Error()))
+		logger.Error("task failed",
+			slog.String("error", runErr.Error()),
+			slog.Duration("duration", duration.Truncate(time.Millisecond)),
+		)
 	} else {
-		logger.Info("task completed")
+		logger.Info("task done",
+			slog.Duration("duration", duration.Truncate(time.Millisecond)),
+		)
 	}
 
 	if cbPtr := p.onComplete.Load(); cbPtr != nil {
