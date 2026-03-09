@@ -25,6 +25,8 @@ const (
 	AgentTypeResearch     AgentType = "research"
 	AgentTypeQC           AgentType = "qc"
 	AgentTypeHuman        AgentType = "human"
+	AgentTypeInfra        AgentType = "infra"
+	AgentTypePC           AgentType = "pc"
 )
 
 // Priority determines scheduling order.
@@ -46,8 +48,9 @@ const (
 	StatusInProgress Status = "in-progress"
 	StatusBlocked    Status = "blocked"
 	StatusNeedsQC    Status = "needs-qc"
-	StatusNeedsHuman Status = "needs-human"
-	StatusDone       Status = "done"
+	StatusNeedsHuman   Status = "needs-human"
+	StatusHumanPending Status = "human-pending"
+	StatusDone         Status = "done"
 )
 
 // Complexity hints at whether work should run locally or in the cloud.

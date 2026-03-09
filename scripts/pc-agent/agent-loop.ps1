@@ -87,7 +87,8 @@ $script:StopRequested = $false
 $script:CurrentTask   = $null  # Shared with heartbeat thread: issue number or $null
 
 # Trap Ctrl-C so the loop can finish the current task before exiting.
-$null = [Console]::TreatControlCAsInput = $false
+# Guard against non-interactive (no console handle) invocations.
+try { [Console]::TreatControlCAsInput = $false } catch { <# no-op when no console #> }
 Register-EngineEvent -SourceIdentifier 'PowerShell.Exiting' -Action {
     $script:StopRequested = $true
 } | Out-Null

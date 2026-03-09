@@ -21,8 +21,10 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
 # Import dependencies.
-$script:ModuleDir = Split-Path $PSCommandPath -Parent
-Import-Module (Join-Path $script:ModuleDir 'workspace.psm1') -Force
+$script:ModuleDir = $PSScriptRoot
+if (-not (Get-Module workspace)) {
+    Import-Module (Join-Path $script:ModuleDir 'workspace.psm1') -Global
+}
 Import-Module (Join-Path $script:ModuleDir 'formatter.psm1') -Force
 
 # Default timeouts by complexity label.
@@ -121,6 +123,8 @@ function Invoke-CCTask {
         $job = Start-Job -ScriptBlock {
             param($Path, $Prompt, $MaxTurns)
             Set-Location $Path
+            # Unset CLAUDECODE so CC can launch from inside another CC session.
+            Remove-Item Env:CLAUDECODE -ErrorAction SilentlyContinue
             $out = & claude `
                 --print `
                 --dangerously-skip-permissions `

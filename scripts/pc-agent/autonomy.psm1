@@ -31,7 +31,7 @@
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
-$script:ModuleDir = Split-Path $PSCommandPath -Parent
+$script:ModuleDir = $PSScriptRoot
 
 # Default autonomy configuration.
 $script:DefaultAutonomyConfig = @{
@@ -253,7 +253,7 @@ function Test-AutonomyGate {
                         $unresolvedDeps += $depNum
                     }
                 } catch {
-                    Write-Verbose "Could not resolve dependency #$depNum: $_"
+                    Write-Verbose "Could not resolve dependency #${depNum}: ${_}"
                     $unresolvedDeps += $depNum
                 }
             }

@@ -207,8 +207,11 @@ function New-AgentWorktree {
     $slug = $slug.Substring(0, [Math]::Min($slug.Length, 40)).TrimEnd('-')
     $branch = "fix/$IssueNumber-$slug"
 
+    # Fetch latest from origin before creating worktree.
+    $null = & git -C $bareRepo fetch origin main:main --force 2>&1
+
     Write-Host "Creating worktree: slot=$Slot branch=$branch path=$worktreePath"
-    $null = & git -C $bareRepo worktree add $worktreePath -b $branch origin/main 2>&1
+    $null = & git -C $bareRepo worktree add $worktreePath -b $branch main 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "git worktree add failed (exit $LASTEXITCODE). Branch '$branch' may already exist."
     }

@@ -9,9 +9,9 @@
     The active forge is selected by the `forge` key in config.
 
     Label lifecycle:
-        status:queued  → status:active  (claimed by this agent)
-        status:active  → status:done    (task completed successfully)
-        status:active  → status:needs-human  (task failed or blocked)
+        status:queued  → status:claimed     (claimed by this agent)
+        status:claimed → status:needs-qc    (task completed successfully)
+        status:claimed → status:needs-human (task failed or blocked)
 #>
 
 Set-StrictMode -Version 3.0
@@ -207,10 +207,10 @@ function Get-IssueDetails {
 function Claim-Issue {
     <#
     .SYNOPSIS
-        Claims an issue by swapping status:queued for status:active.
+        Claims an issue by swapping status:queued for status:claimed.
     .DESCRIPTION
         Attempts to claim the issue atomically by removing status:queued and
-        adding status:active. If another agent has already claimed it (status:queued
+        adding status:claimed. If another agent has already claimed it (status:queued
         is gone), returns $false and the caller should skip this issue.
     .PARAMETER IssueNumber
         Issue number to claim.
@@ -233,7 +233,7 @@ function Claim-Issue {
     }
 
     Update-IssueStatus -IssueNumber $IssueNumber `
-        -AddLabels @('status:active') `
+        -AddLabels @('status:claimed') `
         -RemoveLabels @('status:queued') `
         -Config $Config
 
