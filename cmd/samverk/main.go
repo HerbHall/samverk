@@ -21,11 +21,11 @@ import (
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/prwatcher"
 	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/scaling"
 	"github.com/herbhall/samverk/internal/provider/claude"
 	"github.com/herbhall/samverk/internal/provider/claudecli"
 	"github.com/herbhall/samverk/internal/provider/ollama"
 	"github.com/herbhall/samverk/internal/provider/openai"
+	"github.com/herbhall/samverk/internal/scaling"
 	"github.com/herbhall/samverk/internal/server"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/internal/version"
@@ -182,7 +182,9 @@ func serveCmd() *cobra.Command {
 			}
 
 			// Wire REST API handler for dashboard.
-			cfg.APIHandler = api.New(tracker, st, costs)
+			apiHandler := api.New(tracker, st, costs)
+			apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+			cfg.APIHandler = apiHandler
 			slog.Info("REST API enabled")
 
 			s := server.New(cfg)
