@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.10](https://github.com/HerbHall/samverk/compare/v0.1.9...v0.1.10) (2026-03-09)
+
+
+### Features
+
+* add resolve-batch-deps.py; fix create-issues.sh for Windows UTF-8 and milestone ([41a636b](https://github.com/HerbHall/samverk/commit/41a636b6067001511959ccdd53b5928ea32c5eee))
+* **gitea:** implement RepoWriter, RepoReader, PullRequestManager + system metrics (B01-B09, W01-W03) ([#319](https://github.com/HerbHall/samverk/issues/319)) ([c4fcd14](https://github.com/HerbHall/samverk/commit/c4fcd144bdd1231d5f18bfa3818cbdecdd289334))
+
+
+### Bug Fixes
+
+* **#318:** add completion callback from agent pool to dispatcher ([#320](https://github.com/HerbHall/samverk/issues/320)) ([da2671b](https://github.com/HerbHall/samverk/commit/da2671bff737b03609f8e7d67cc970fe264e19a0))
+* align status.md phase with Samverk lifecycle naming ([ffbfd9c](https://github.com/HerbHall/samverk/commit/ffbfd9c544e55aeaa96f50875a8e84e34b15dff4))
+
 ## [0.1.9](https://github.com/HerbHall/samverk/compare/v0.1.8...v0.1.9) (2026-03-08)
 
 
