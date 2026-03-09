@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router'
 import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
 import { Issues } from './pages/Issues'
+import { Metrics } from './pages/Metrics'
 
 export function App() {
   return (
@@ -9,6 +10,7 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="issues" element={<Issues />} />
+        <Route path="metrics" element={<Metrics />} />
       </Route>
     </Routes>
   )
