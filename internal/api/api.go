@@ -75,6 +75,10 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/costs", a.handleGetCosts)
 	mux.HandleFunc("GET /api/v1/status", a.handleStatus)
 	mux.HandleFunc("GET /api/v1/metrics", a.handleMetrics)
+	mux.HandleFunc("GET /api/v1/scaling/control", a.handleGetScalingControl)
+	mux.HandleFunc("POST /api/v1/scaling/pause", a.handleScalingPause)
+	mux.HandleFunc("POST /api/v1/scaling/resume", a.handleScalingResume)
+	mux.HandleFunc("POST /api/v1/scaling/set", a.handleScalingSet)
 }
 
 // errorResponse is the JSON body returned for error responses.

@@ -37,6 +37,7 @@ func (m *mockPool) RemoveWorkers(_ int) int {
 	m.snapshot.TotalWorkers--
 	return m.remReturn
 }
+func (m *mockPool) Workers() int { return m.snapshot.TotalWorkers }
 
 type mockCollector struct{}
 

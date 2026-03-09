@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -43,6 +46,7 @@ func main() {
 
 	root.AddCommand(serveCmd())
 	root.AddCommand(dispatchCmd())
+	root.AddCommand(scaleCmd())
 	root.AddCommand(digestCmd())
 	root.AddCommand(keyCmd())
 	root.AddCommand(versionCmd())
@@ -303,6 +307,7 @@ func dispatchCmd() *cobra.Command {
 				autoscaler := scaling.NewAutoscaler(scalingPol, pool, metrics.NewSystemCollector())
 				if st != nil {
 					autoscaler.SetPersister(st)
+				autoscaler.SetControlReader(st)
 				}
 				g.Go(func() error {
 					err := autoscaler.Run(gctx)
@@ -345,6 +350,142 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().IntVar(&scalingMax, "scaling-max", 0, "Override max workers from scaling config (0 = use config value)")
 
 	return cmd
+}
+
+func scaleCmd() *cobra.Command {
+	var serverURL, token string
+
+	cmd := &cobra.Command{
+		Use:   "scale",
+		Short: "Inspect and control adaptive worker scaling",
+		Long:  "Commands for viewing scaling state and issuing manual override commands to a running samverk serve process.",
+	}
+
+	// Shared flags on the parent.
+	cmd.PersistentFlags().StringVar(&serverURL, "server", "http://localhost:8080", "URL of the samverk serve process")
+	cmd.PersistentFlags().StringVar(&token, "token", "", "Bearer token for API authentication (or set SAMVERK_AUTH_TOKEN)")
+
+	// Helper: perform an authenticated HTTP request.
+	doScaleRequest := func(method, path string, body []byte) ([]byte, int, error) {
+		t := token
+		if t == "" {
+			t = os.Getenv("SAMVERK_AUTH_TOKEN")
+		}
+		return doHTTPRequest(method, serverURL+path, t, body)
+	}
+
+	// samverk scale status
+	cmd.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Show current scaling control state",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			data, _, err := doScaleRequest("GET", "/api/v1/scaling/control", nil)
+			if err != nil {
+				return err
+			}
+			fmt.Print(string(data))
+			return nil
+		},
+	})
+
+	// samverk scale pause
+	cmd.AddCommand(&cobra.Command{
+		Use:   "pause",
+		Short: "Pause the autoscaler (keep current worker count)",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			data, _, err := doScaleRequest("POST", "/api/v1/scaling/pause", nil)
+			if err != nil {
+				return err
+			}
+			fmt.Print(string(data))
+			return nil
+		},
+	})
+
+	// samverk scale resume
+	cmd.AddCommand(&cobra.Command{
+		Use:   "resume",
+		Short: "Resume autonomous autoscaling",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			data, _, err := doScaleRequest("POST", "/api/v1/scaling/resume", nil)
+			if err != nil {
+				return err
+			}
+			fmt.Print(string(data))
+			return nil
+		},
+	})
+
+	// samverk scale set N
+	setCmd := &cobra.Command{
+		Use:   "set <workers>",
+		Short: "Force worker count to N and pause the autoscaler",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			n := 0
+			if _, err := fmt.Sscanf(args[0], "%d", &n); err != nil || n < 1 {
+				return fmt.Errorf("workers must be a positive integer, got %q", args[0])
+			}
+			body := []byte(fmt.Sprintf(`{"workers":%d}`, n))
+			data, _, err := doScaleRequest("POST", "/api/v1/scaling/set", body)
+			if err != nil {
+				return err
+			}
+			fmt.Print(string(data))
+			return nil
+		},
+	}
+	cmd.AddCommand(setCmd)
+
+	// samverk scale history
+	cmd.AddCommand(&cobra.Command{
+		Use:   "history",
+		Short: "Show recent scaling events",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			data, _, err := doScaleRequest("GET", "/api/v1/metrics", nil)
+			if err != nil {
+				return err
+			}
+			fmt.Print(string(data))
+			return nil
+		},
+	})
+
+	return cmd
+}
+
+// doHTTPRequest performs an HTTP request and returns the response body and status code.
+func doHTTPRequest(method, url, bearerToken string, body []byte) (data []byte, statusCode int, err error) {
+	var req *http.Request
+	if len(body) > 0 {
+		req, err = http.NewRequestWithContext(context.Background(), method, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, 0, fmt.Errorf("build request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req, err = http.NewRequestWithContext(context.Background(), method, url, http.NoBody)
+		if err != nil {
+			return nil, 0, fmt.Errorf("build request: %w", err)
+		}
+	}
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G107: URL comes from --server flag, not user input
+	if err != nil {
+		return nil, 0, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	data, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return data, resp.StatusCode, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(data))
+	}
+	return data, resp.StatusCode, nil
 }
 
 func digestCmd() *cobra.Command {

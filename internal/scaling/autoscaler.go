@@ -15,6 +15,13 @@ type PoolScaler interface {
 	Snapshot() metrics.PoolSnapshot
 	AddWorkers(n int) error
 	RemoveWorkers(n int) int
+	Workers() int
+}
+
+// ScalingControlReader reads the current manual scaling override.
+// store.Store satisfies this interface.
+type ScalingControlReader interface {
+	GetScalingControl(ctx context.Context) (*models.ScalingControl, error)
 }
 
 // SystemCollector provides runtime system snapshots.
@@ -27,13 +34,14 @@ type SystemCollector interface {
 // policy and applies the resulting decision to the pool.
 // Start it with Run(ctx) and cancel the context to shut it down.
 type Autoscaler struct {
-	policy    *ThresholdPolicy
-	pool      PoolScaler
-	collector SystemCollector
-	interval  time.Duration
-	logger    *slog.Logger
-	events    *EventBuffer
-	persister EventPersister // optional; nil means no durable storage
+	policy        *ThresholdPolicy
+	pool          PoolScaler
+	collector     SystemCollector
+	interval      time.Duration
+	logger        *slog.Logger
+	events        *EventBuffer
+	persister     EventPersister      // optional; nil means no durable storage
+	controlReader ScalingControlReader // optional; nil means no override support
 }
 
 // NewAutoscaler creates an Autoscaler wired to the given policy, pool, and
@@ -60,6 +68,12 @@ func NewAutoscaler(policy *ThresholdPolicy, pool PoolScaler, collector SystemCol
 // survive process restarts and are visible to other processes (e.g. serve).
 func (a *Autoscaler) SetPersister(p EventPersister) {
 	a.persister = p
+}
+
+// SetControlReader attaches an optional store for reading manual scaling overrides.
+// When set, the autoscaler checks for pause/set commands before each evaluation.
+func (a *Autoscaler) SetControlReader(r ScalingControlReader) {
+	a.controlReader = r
 }
 
 // Events returns recent scaling events from the in-memory buffer, newest first.
@@ -92,6 +106,23 @@ func (a *Autoscaler) Run(ctx context.Context) error {
 
 // evaluate runs one policy cycle and applies the decision.
 func (a *Autoscaler) evaluate() {
+	// Check for manual override before running the policy.
+	if a.controlReader != nil {
+		ctrl, ctrlErr := a.controlReader.GetScalingControl(context.Background())
+		if ctrlErr != nil {
+			a.logger.Warn("autoscaler: failed to read scaling control", slog.String("error", ctrlErr.Error()))
+		} else if ctrl != nil {
+			if ctrl.Paused {
+				a.logger.Debug("autoscaler paused via manual override")
+				return
+			}
+			if ctrl.ManualWorkers > 0 {
+				a.applyManualOverride(ctrl.ManualWorkers, ctrl.Note)
+				return
+			}
+		}
+	}
+
 	poolSnap := a.pool.Snapshot()
 	sysSnap := a.collector.Collect()
 	decision := a.policy.Evaluate(poolSnap, sysSnap)
@@ -106,6 +137,43 @@ func (a *Autoscaler) evaluate() {
 
 	oldCount := poolSnap.TotalWorkers
 	a.apply(decision, oldCount)
+}
+
+// applyManualOverride adjusts the pool to the requested worker count.
+func (a *Autoscaler) applyManualOverride(targetWorkers int, note string) {
+	current := a.pool.Workers()
+	if current == targetWorkers {
+		return
+	}
+	delta := targetWorkers - current
+	reason := "manual override"
+	if note != "" {
+		reason = "manual override: " + note
+	}
+	if delta > 0 {
+		if err := a.pool.AddWorkers(delta); err != nil {
+			a.logger.Warn("autoscaler manual override scale-up failed", slog.String("error", err.Error()))
+			return
+		}
+	} else {
+		a.pool.RemoveWorkers(-delta)
+	}
+	newCount := a.pool.Workers()
+	a.logger.Info("autoscaler manual override applied",
+		slog.Int("old_workers", current),
+		slog.Int("new_workers", newCount),
+		slog.String("reason", reason),
+	)
+	e := models.ScalingEvent{
+		Timestamp:   time.Now(),
+		Action:      "manual-override",
+		FromWorkers: current,
+		ToWorkers:   newCount,
+		Reason:      reason,
+		Confidence:  1.0,
+	}
+	a.events.Add(e)
+	a.persist(e)
 }
 
 // persist saves e to the optional durable store. Errors are logged but not fatal.
