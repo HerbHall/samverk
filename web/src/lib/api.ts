@@ -100,12 +100,24 @@ export interface ScalingConfig {
   current_target: number
 }
 
+export interface TaskProfile {
+  agent_type: string
+  provider: string
+  avg_duration_ms: number
+  p50_duration_ms: number
+  p90_duration_ms: number
+  sample_count: number
+  avg_tokens: number
+  updated_at: string
+}
+
 export interface MetricsResponse {
   pool: PoolMetrics | null
   dispatcher: DispatcherMetrics | null
   system: SystemMetrics | null
   scaling_events: ScalingEvent[] | null
   scaling_config: ScalingConfig | null
+  task_profiles: TaskProfile[] | null
 }
 
 export const api = {

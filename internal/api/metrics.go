@@ -12,6 +12,20 @@ type metricsResponse struct {
 	System        *systemMetricsDTO     `json:"system"`
 	ScalingEvents []scalingEventDTO     `json:"scaling_events"`
 	ScalingConfig *scalingConfigDTO     `json:"scaling_config"`
+	TaskProfiles  []taskProfileDTO      `json:"task_profiles"`
+}
+
+// taskProfileDTO is the JSON-serializable form of models.TaskProfile.
+// Duration fields are expressed in milliseconds.
+type taskProfileDTO struct {
+	AgentType   string  `json:"agent_type"`
+	Provider    string  `json:"provider"`
+	AvgDurationMs float64 `json:"avg_duration_ms"`
+	P50DurationMs float64 `json:"p50_duration_ms"`
+	P90DurationMs float64 `json:"p90_duration_ms"`
+	SampleCount int     `json:"sample_count"`
+	AvgTokens   int     `json:"avg_tokens"`
+	UpdatedAt   string  `json:"updated_at"`
 }
 
 // scalingEventDTO is the JSON-serializable form of a scaling.ScalingEvent.
@@ -138,6 +152,26 @@ func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			MinWorkers:    a.scalingMin,
 			MaxWorkers:    a.scalingMax,
 			CurrentTarget: currentTarget,
+		}
+	}
+
+	if a.store != nil {
+		profiles, profErr := a.store.ListTaskProfiles(r.Context())
+		if profErr == nil && len(profiles) > 0 {
+			dtos := make([]taskProfileDTO, 0, len(profiles))
+			for _, p := range profiles {
+				dtos = append(dtos, taskProfileDTO{
+					AgentType:     p.AgentType,
+					Provider:      p.Provider,
+					AvgDurationMs: durationToMs(p.AvgDuration),
+					P50DurationMs: durationToMs(p.P50Duration),
+					P90DurationMs: durationToMs(p.P90Duration),
+					SampleCount:   p.SampleCount,
+					AvgTokens:     p.AvgTokens,
+					UpdatedAt:     p.UpdatedAt.UTC().Format(time.RFC3339),
+				})
+			}
+			resp.TaskProfiles = dtos
 		}
 	}
 

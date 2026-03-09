@@ -119,6 +119,15 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		return fmt.Errorf("complete session: %w", err)
 	}
 
+	// Step 8: Update task profile (non-fatal; best-effort).
+	if profErr := r.store.UpdateTaskProfile(ctx, string(task.AgentType), r.provider.Name()); profErr != nil {
+		r.logger.Warn("failed to update task profile",
+			slog.String("agent_type", string(task.AgentType)),
+			slog.String("provider", r.provider.Name()),
+			slog.String("error", profErr.Error()),
+		)
+	}
+
 	return nil
 }
 

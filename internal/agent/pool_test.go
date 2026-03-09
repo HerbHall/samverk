@@ -658,6 +658,10 @@ func (m *mockStore) GetBudgetStatus(ctx context.Context, dailyBudgetUSD float64)
 	return 0, dailyBudgetUSD, nil
 }
 
+func (m *mockStore) UpdateTaskProfile(_ context.Context, _, _ string) error {
+	return nil
+}
+
 func (m *mockStore) Close() error {
 	return nil
 }

@@ -146,6 +146,18 @@ func (m *mockStore) UpsertScalingControl(_ context.Context, _ models.ScalingCont
 	return nil
 }
 
+func (m *mockStore) UpdateTaskProfile(_ context.Context, _, _ string) error {
+	return nil
+}
+
+func (m *mockStore) ListTaskProfiles(_ context.Context) ([]*models.TaskProfile, error) {
+	return nil, nil
+}
+
+func (m *mockStore) GetTaskProfile(_ context.Context, _, _ string) (*models.TaskProfile, error) {
+	return nil, nil
+}
+
 func (m *mockStore) Close() error { return nil }
 
 // Compile-time check: mockStore implements store.Store.

@@ -38,6 +38,11 @@ type Store interface {
 	GetScalingControl(ctx context.Context) (*models.ScalingControl, error)
 	UpsertScalingControl(ctx context.Context, c models.ScalingControl) error
 
+	// Task profiles (updated after each completed session, read by policy engine and metrics API)
+	UpdateTaskProfile(ctx context.Context, agentType, provider string) error
+	ListTaskProfiles(ctx context.Context) ([]*models.TaskProfile, error)
+	GetTaskProfile(ctx context.Context, agentType, provider string) (*models.TaskProfile, error)
+
 	Close() error
 }
 
@@ -129,6 +134,18 @@ CREATE TABLE IF NOT EXISTS scaling_control (
 	manual_workers INTEGER NOT NULL DEFAULT 0,
 	set_at         TEXT NOT NULL,
 	note           TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS task_profiles (
+	agent_type      TEXT NOT NULL,
+	provider        TEXT NOT NULL,
+	avg_duration_ms INTEGER NOT NULL DEFAULT 0,
+	p50_duration_ms INTEGER NOT NULL DEFAULT 0,
+	p90_duration_ms INTEGER NOT NULL DEFAULT 0,
+	sample_count    INTEGER NOT NULL DEFAULT 0,
+	avg_tokens      INTEGER NOT NULL DEFAULT 0,
+	updated_at      TEXT NOT NULL,
+	PRIMARY KEY (agent_type, provider)
 );
 `
 	_, err := s.db.ExecContext(context.Background(), ddl)
