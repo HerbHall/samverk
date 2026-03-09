@@ -3,10 +3,13 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/herbhall/samverk/internal/forge"
 )
 
 // listFilesInput is the typed input for the list_files tool.
@@ -286,6 +289,13 @@ func (h *Handler) handleSearchCode(
 
 	results, err := h.activeReader().SearchCode(ctx, input.Query)
 	if err != nil {
+		if errors.Is(err, forge.ErrNotSupported) {
+			return &gosdk.CallToolResult{
+				Content: []gosdk.Content{
+					&gosdk.TextContent{Text: "search_code is not available on this forge platform (Gitea does not expose repo-scoped code search via its SDK)"},
+				},
+			}, nil, nil
+		}
 		return nil, nil, fmt.Errorf("searching code: %w", err)
 	}
 

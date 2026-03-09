@@ -14,12 +14,13 @@ import (
 
 // mockRepoReader implements forge.RepoReader for testing.
 type mockRepoReader struct {
-	files    []forge.FileEntry
-	fileData []byte
-	diff     string
-	branches []forge.Branch
-	commits  []forge.Commit
-	search   []forge.SearchResult
+	files     []forge.FileEntry
+	fileData  []byte
+	diff      string
+	branches  []forge.Branch
+	commits   []forge.Commit
+	search    []forge.SearchResult
+	searchErr error // if set, SearchCode returns this error
 }
 
 func (m *mockRepoReader) ListFiles(_ context.Context, _, _ string) ([]forge.FileEntry, error) {
@@ -43,7 +44,7 @@ func (m *mockRepoReader) GetCommitLog(_ context.Context, _ string, _ int) ([]for
 }
 
 func (m *mockRepoReader) SearchCode(_ context.Context, _ string) ([]forge.SearchResult, error) {
-	return m.search, nil
+	return m.search, m.searchErr
 }
 
 // newTestMCPServerWithRepo sets up an httptest.Server with a RepoReader.
@@ -446,6 +447,48 @@ func TestSearchCode_EmptyQuery(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("expected isError=true for empty query")
+	}
+}
+
+func TestSearchCode_NotSupported(t *testing.T) {
+	// When the forge returns ErrNotSupported (e.g. Gitea), search_code should
+	// return a user-friendly message rather than a protocol-level error.
+	repo := &mockRepoReader{searchErr: forge.ErrNotSupported}
+	ts := newTestMCPServerWithRepo(t, &mockTracker{}, repo)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      11,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "search_code",
+			"arguments": map[string]any{
+				"query": "something",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected protocol error: %s", resp.Error)
+	}
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected isError=false (friendly message, not tool error)")
+	}
+	if len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "not available") {
+		t.Errorf("expected 'not available' message, got %q", func() string {
+			if len(result.Content) > 0 {
+				return result.Content[0].Text
+			}
+			return "<empty>"
+		}())
 	}
 }
 

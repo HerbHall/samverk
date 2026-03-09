@@ -8,8 +8,14 @@ package forge
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrNotSupported is returned by forge operations that are not available on
+// the current platform (e.g. code search on Gitea). Callers can check with
+// errors.Is to present a user-friendly "not available on this forge" message.
+var ErrNotSupported = errors.New("forge: operation not supported on this platform")
 
 // State represents the open/closed state of an issue.
 type State string
