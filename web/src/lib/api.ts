@@ -52,6 +52,43 @@ export interface SystemStatus {
   tool_count: number
 }
 
+export interface PoolMetrics {
+  collected_at: string
+  total_workers: number
+  active_workers: number
+  idle_workers: number
+  queue_depth: number
+  tasks_completed: number
+  tasks_failed: number
+  avg_task_duration_ms: number
+  p95_task_duration_ms: number
+}
+
+export interface DispatcherMetrics {
+  collected_at: string
+  claimed_count: number
+  total_routed: number
+  total_requeued: number
+  total_events_processed: number
+  avg_poll_latency_ms: number
+  last_poll_at: string
+}
+
+export interface SystemMetrics {
+  collected_at: string
+  goroutines: number
+  heap_alloc_bytes: number
+  sys_bytes_total: number
+  gc_cycles: number
+  next_gc_bytes: number
+}
+
+export interface MetricsResponse {
+  pool: PoolMetrics | null
+  dispatcher: DispatcherMetrics | null
+  system: SystemMetrics | null
+}
+
 export const api = {
   listIssues: (params?: { state?: string; page?: number }) =>
     fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
@@ -67,4 +104,7 @@ export const api = {
 
   getStatus: () =>
     fetchJSON<SystemStatus>('/status'),
+
+  getMetrics: () =>
+    fetchJSON<MetricsResponse>('/metrics'),
 }
