@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { PoolMetrics, DispatcherMetrics, SystemMetrics, ScalingEvent, ScalingConfig } from '../lib/api'
+import type { PoolMetrics, DispatcherMetrics, SystemMetrics, PressureMetrics, ScalingEvent, ScalingConfig } from '../lib/api'
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`
@@ -42,6 +42,33 @@ function NullSection({ title }: { title: string }) {
         <h3 className="text-sm font-semibold text-gray-400">{title}</h3>
       </div>
       <div className="px-4 py-6 text-center text-sm text-gray-400">Not running</div>
+    </div>
+  )
+}
+
+const pressureColors: Record<string, string> = {
+  low: 'bg-green-50 border-green-200 text-green-800',
+  moderate: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+  high: 'bg-orange-50 border-orange-200 text-orange-800',
+  critical: 'bg-red-50 border-red-200 text-red-800',
+}
+
+function PressureSection({ pressure }: { pressure: PressureMetrics }) {
+  const colors = pressureColors[pressure.level] ?? pressureColors.low
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${colors}`}>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold uppercase tracking-wide">
+          Pressure: {pressure.level}
+        </span>
+      </div>
+      {pressure.reasons != null && pressure.reasons.length > 0 && (
+        <ul className="mt-1 list-disc pl-5 text-xs">
+          {pressure.reasons.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
@@ -126,7 +153,7 @@ function ScalingSection({
           </p>
           <div className="space-y-1">
             {events.map((e) => (
-              <div key={e.id} className="rounded bg-gray-50 px-3 py-2 text-xs">
+              <div key={e.timestamp} className="rounded bg-gray-50 px-3 py-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span
                     className={
@@ -159,14 +186,14 @@ export function Metrics() {
   const metrics = useQuery({
     queryKey: ['metrics'],
     queryFn: api.getMetrics,
-    refetchInterval: 10_000,
+    refetchInterval: 5_000,
   })
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Metrics</h2>
-        <span className="text-xs text-gray-400">Auto-refreshes every 10s</span>
+        <span className="text-xs text-gray-400">Auto-refreshes every 5s</span>
       </div>
 
       {metrics.isLoading && (
@@ -184,6 +211,7 @@ export function Metrics() {
 
       {metrics.data != null && (
         <div className="space-y-6">
+          <PressureSection pressure={metrics.data.pressure} />
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <PoolSection pool={metrics.data.pool} />
             <DispatcherSection dispatcher={metrics.data.dispatcher} />
