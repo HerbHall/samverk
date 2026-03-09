@@ -162,3 +162,57 @@ func TestListSessionsEmpty(t *testing.T) {
 		t.Errorf("sessions count = %d, want 0", len(sessions))
 	}
 }
+
+func TestPartialOutputRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	sess := &models.Session{
+		IssueNumber: 99,
+		AgentType:   "code-gen",
+		Provider:    "claude-cli",
+		Model:       "opus-4",
+		Status:      models.SessionStatusActive,
+		StartedAt:   now,
+	}
+
+	if err := s.CreateSession(ctx, sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Initially empty.
+	got, err := s.GetSession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.PartialOutput != "" {
+		t.Errorf("initial partial_output = %q, want empty", got.PartialOutput)
+	}
+
+	// Update with partial output checkpoint.
+	sess.PartialOutput = "streaming output chunk 1..."
+	if err := s.UpdateSession(ctx, sess); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err = s.GetSession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get after update: %v", err)
+	}
+	if got.PartialOutput != "streaming output chunk 1..." {
+		t.Errorf("partial_output = %q, want %q", got.PartialOutput, "streaming output chunk 1...")
+	}
+
+	// Verify it appears in list results too.
+	sessions, err := s.ListSessions(ctx, models.SessionStatusActive)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions count = %d, want 1", len(sessions))
+	}
+	if sessions[0].PartialOutput != "streaming output chunk 1..." {
+		t.Errorf("list partial_output = %q, want %q", sessions[0].PartialOutput, "streaming output chunk 1...")
+	}
+}

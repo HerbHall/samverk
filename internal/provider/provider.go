@@ -36,6 +36,14 @@ type ChatResponse struct {
 	CompletionTokens int `json:"eval_count,omitempty"`
 }
 
+// ActivityNotifier is an optional interface that providers may implement to
+// support streaming progress detection. When a provider supports this, the
+// runner sets a callback that fires whenever the provider produces output
+// bytes, allowing the dispatcher heartbeat to reset on active output.
+type ActivityNotifier interface {
+	SetOnActivity(fn func())
+}
+
 // Provider is the interface for AI model inference backends.
 // Implementations exist for Ollama (local), Claude, and OpenAI (cloud).
 type Provider interface {

@@ -2,7 +2,9 @@ package claudecli
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/herbhall/samverk/internal/provider"
 )
@@ -99,5 +101,67 @@ func TestChatExecError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Chat() should return error for missing binary")
+	}
+}
+
+// TestActivityNotifierInterface verifies Client implements provider.ActivityNotifier.
+func TestActivityNotifierInterface(t *testing.T) {
+	var _ provider.ActivityNotifier = (*Client)(nil)
+}
+
+// TestSetOnActivity verifies the callback is stored and can be cleared.
+func TestSetOnActivity(t *testing.T) {
+	c := New("")
+	if c.onActivity != nil {
+		t.Fatal("onActivity should be nil initially")
+	}
+
+	called := false
+	c.SetOnActivity(func() { called = true })
+	if c.onActivity == nil {
+		t.Fatal("onActivity should be set after SetOnActivity")
+	}
+	c.onActivity()
+	if !called {
+		t.Error("onActivity callback was not invoked")
+	}
+
+	c.SetOnActivity(nil)
+	if c.onActivity != nil {
+		t.Error("onActivity should be nil after SetOnActivity(nil)")
+	}
+}
+
+// TestChatFiresOnActivity verifies the onActivity callback fires during
+// streaming output from a subprocess. Uses `echo` which produces output
+// that should trigger at least one callback invocation.
+func TestChatFiresOnActivity(t *testing.T) {
+	var calls atomic.Int32
+	c := &Client{
+		claudeBin:  "echo",
+		model:      "",
+		timeout:    10 * time.Second,
+		onActivity: func() { calls.Add(1) },
+	}
+
+	_, err := c.Chat(context.Background(), provider.ChatRequest{
+		Messages: []provider.Message{
+			{Role: provider.RoleUser, Content: "hello world"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if calls.Load() == 0 {
+		t.Error("onActivity was never called during streaming output")
+	}
+}
+
+// TestNewWithTimeout verifies custom timeout is applied.
+func TestNewWithTimeout(t *testing.T) {
+	c := NewWithTimeout("model", 42*time.Second)
+	if c.timeout != 42*time.Second {
+		t.Errorf("timeout = %v, want 42s", c.timeout)
 	}
 }
