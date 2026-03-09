@@ -198,7 +198,7 @@ func (h *Handler) handleGetDigest(
 		return nil, nil, fmt.Errorf("building digest: %w", err)
 	}
 
-	text := digest.FormatDigest(data)
+	text := digest.FormatDigest(data) + h.formatMetricsSection()
 
 	return &gosdk.CallToolResult{
 		Content: []gosdk.Content{

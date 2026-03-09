@@ -25,6 +25,9 @@ type Handler struct {
 	repo      forge.RepoReader            // may be nil (no repo browsing)
 	prManager forge.PullRequestManager    // may be nil (no PR operations)
 	projects  *ProjectRegistry            // may be nil (single-project mode)
+	poolM     poolMetricsSource           // may be nil (pool not running here)
+	dispM     dispatcherMetricsSource     // may be nil (dispatcher not running here)
+	sysM      systemMetricsSource         // may be nil
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
