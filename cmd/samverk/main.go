@@ -12,6 +12,7 @@ import (
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/autonomy"
+	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/dispatcher"
@@ -180,7 +181,9 @@ func serveCmd() *cobra.Command {
 			}
 
 			// Wire REST API handler for dashboard.
-			cfg.APIHandler = api.New(tracker, st, costs)
+			apiHandler := api.New(tracker, st, costs)
+			apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+			cfg.APIHandler = apiHandler
 			slog.Info("REST API enabled")
 
 			s := server.New(cfg)

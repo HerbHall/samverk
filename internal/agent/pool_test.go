@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -322,6 +323,53 @@ func TestPool_OnCompleteCallback_ProviderFailure(t *testing.T) {
 	}
 	if results[0].Error == "" {
 		t.Errorf("expected non-empty Error on provider failure")
+	}
+}
+
+func TestPoolConcurrentSubmitAndShutdown(t *testing.T) {
+	// Regression test for #324: concurrent Submit + Shutdown must not panic
+	// with "send on closed channel". Run with -race to catch data races.
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			time.Sleep(5 * time.Millisecond) // fast enough to avoid slow test, slow enough to create contention
+			return &provider.ChatResponse{
+				Message: provider.Message{Role: provider.RoleAssistant, Content: "ok"},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+
+	pool := newTestPool(t, 2, mp)
+
+	// Submit tasks from multiple goroutines while shutting down concurrently.
+	var wg sync.WaitGroup
+	for i := range 10 {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			_ = pool.Submit(Task{
+				Issue:     &forge.Issue{Number: n, Title: "race test", Body: "body"},
+				AgentType: models.AgentTypeCodeGen,
+				SessionID: fmt.Sprintf("sess-race-%d", n),
+			})
+		}(i)
+	}
+
+	// Shutdown while submits are still in-flight.
+	time.Sleep(2 * time.Millisecond)
+	pool.Shutdown()
+	wg.Wait()
+
+	// If we got here without a panic, the fix works.
+	// After shutdown, all submits must return ErrPoolShutdown.
+	err := pool.Submit(Task{
+		Issue:     &forge.Issue{Number: 999, Title: "post-shutdown", Body: "body"},
+		AgentType: models.AgentTypeCodeGen,
+		SessionID: "sess-post",
+	})
+	if !errors.Is(err, ErrPoolShutdown) {
+		t.Fatalf("expected ErrPoolShutdown after shutdown, got %v", err)
 	}
 }
 

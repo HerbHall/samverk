@@ -84,7 +84,20 @@ func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.S
 
 // Submit enqueues a task for processing. Returns ErrPoolShutdown if the pool
 // has been shut down.
-func (p *Pool) Submit(task Task) error {
+//
+// There is an inherent TOCTOU window between checking p.shutdown and sending
+// on p.tasks: Shutdown can close the channel in between. We cannot hold the
+// mutex across the send because workers also acquire it (for the onComplete
+// callback), which would deadlock when the channel buffer is full. Instead
+// we recover from the resulting "send on closed channel" panic and convert
+// it to ErrPoolShutdown.
+func (p *Pool) Submit(task Task) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = ErrPoolShutdown
+		}
+	}()
+
 	p.mu.Lock()
 	if p.shutdown {
 		p.mu.Unlock()
