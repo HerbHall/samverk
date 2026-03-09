@@ -3,7 +3,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"regexp"
 	"strconv"
 	"time"
@@ -74,7 +74,7 @@ func (d *Dispatcher) checkTimeouts(ctx context.Context) error {
 
 	for _, num := range timedOut {
 		if err := d.releaseTimedOut(ctx, num); err != nil {
-			d.logger.Warn("release timeout", slog.Int("issue", num), slog.String("error", err.Error()))
+			d.logger.Warn("release timeout", zap.Int("issue", num), zap.String("error", err.Error()))
 		}
 	}
 	return nil
@@ -102,7 +102,7 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 		time.Now().UTC().Format(time.RFC3339), agentID, lastHB.UTC().Format(time.RFC3339),
 	)
 	if _, err := d.tracker.AddComment(ctx, issueNumber, comment); err != nil {
-		d.logger.Warn("add comment", slog.Int("issue", issueNumber), slog.String("context", "timeout-release"), slog.String("error", err.Error()))
+		d.logger.Warn("add comment", zap.Int("issue", issueNumber), zap.String("context", "timeout-release"), zap.String("error", err.Error()))
 	}
 
 	// Remove in-progress or claimed label.
@@ -110,18 +110,18 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 	_ = d.tracker.RemoveLabel(ctx, issueNumber, "status:claimed")
 
 	if err := d.tracker.AddLabel(ctx, issueNumber, "status:queued"); err != nil {
-		d.logger.Warn("add label", slog.Int("issue", issueNumber), slog.String("label", "queued"), slog.String("error", err.Error()))
+		d.logger.Warn("add label", zap.Int("issue", issueNumber), zap.String("label", "queued"), zap.String("error", err.Error()))
 	}
 	if err := d.tracker.Unassign(ctx, issueNumber, agentID); err != nil {
-		d.logger.Warn("unassign", slog.Int("issue", issueNumber), slog.String("agent", agentID), slog.String("error", err.Error()))
+		d.logger.Warn("unassign", zap.Int("issue", issueNumber), zap.String("agent", agentID), zap.String("error", err.Error()))
 	}
 
 	elapsed := time.Since(lastHB)
 	d.logger.Warn("timeout released",
-		slog.Int("issue", issueNumber),
-		slog.String("agent", agentID),
-		slog.Int("failures", failureCount),
-		slog.Duration("since_heartbeat", elapsed.Truncate(time.Second)),
+		zap.Int("issue", issueNumber),
+		zap.String("agent", agentID),
+		zap.Int("failures", failureCount),
+		zap.Duration("since_heartbeat", elapsed.Truncate(time.Second)),
 	)
 
 	// Escalate after max consecutive failures.
@@ -132,10 +132,10 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 			failureCount, issueNumber, agentID, failureCount,
 		)
 		if err := d.tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
-			d.logger.Error("add label", slog.Int("issue", issueNumber), slog.String("label", "needs-human"), slog.String("error", err.Error()))
+			d.logger.Error("add label", zap.Int("issue", issueNumber), zap.String("label", "needs-human"), zap.String("error", err.Error()))
 		}
 		if _, err := d.tracker.AddComment(ctx, issueNumber, escalateComment); err != nil {
-			d.logger.Error("add comment", slog.Int("issue", issueNumber), slog.String("context", "escalate"), slog.String("error", err.Error()))
+			d.logger.Error("add comment", zap.Int("issue", issueNumber), zap.String("context", "escalate"), zap.String("error", err.Error()))
 		}
 	}
 

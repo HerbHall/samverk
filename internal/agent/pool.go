@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -59,7 +59,7 @@ type Pool struct {
 	maxWorkers int        // upper bound enforced by AddWorkers/Resize; 0 = no limit (under mu)
 	tasks      chan Task
 	wg         sync.WaitGroup
-	logger     *slog.Logger
+	logger     *zap.Logger
 	done       chan struct{}
 	mu         sync.Mutex
 	shutdown   bool
@@ -71,9 +71,12 @@ type Pool struct {
 // NewPool creates a pool with the given number of worker goroutines and starts
 // them immediately. If workers is <= 0, it defaults to 3. The default maximum
 // is runtime.NumCPU(); call SetMaxWorkers to override before scaling.
-func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.Store, costs *cost.Tracker, workers int) *Pool {
+func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.Store, costs *cost.Tracker, workers int, logger *zap.Logger) *Pool {
 	if workers <= 0 {
 		workers = defaultWorkers
+	}
+	if logger == nil {
+		logger = zap.NewNop()
 	}
 
 	p := &Pool{
@@ -84,7 +87,7 @@ func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.S
 		workers:    workers,
 		maxWorkers: runtime.NumCPU(),
 		tasks:      make(chan Task, workers*2),
-		logger:     slog.Default(),
+		logger:     logger,
 		done:       make(chan struct{}),
 		workerQuit: make(chan struct{}, workerQuitBuf),
 	}
@@ -130,7 +133,7 @@ func (p *Pool) AddWorkers(n int) error {
 	for range n {
 		go p.worker()
 	}
-	p.logger.Info("agent pool scaled up", slog.Int("added", n), slog.Int("workers", p.workers))
+	p.logger.Info("agent pool scaled up", zap.Int("added", n), zap.Int("workers", p.workers))
 	return nil
 }
 
@@ -197,7 +200,7 @@ sendLoop:
 		}
 	}
 	if sent > 0 {
-		p.logger.Info("agent pool scaled down", slog.Int("removed", sent), slog.Int("workers", p.Workers()))
+		p.logger.Info("agent pool scaled down", zap.Int("removed", sent), zap.Int("workers", p.Workers()))
 	}
 	return sent
 }
@@ -257,7 +260,7 @@ func (p *Pool) Shutdown() {
 	p.shutdown = true
 	p.mu.Unlock()
 
-	p.logger.Info("agent pool draining", slog.Int("queued", len(p.tasks)))
+	p.logger.Info("agent pool draining", zap.Int("queued", len(p.tasks)))
 	close(p.tasks)
 	p.wg.Wait()
 	p.logger.Info("agent pool drained")
@@ -299,9 +302,9 @@ func (p *Pool) processTask(task Task) {
 
 	ctx := context.Background()
 	logger := p.logger.With(
-		slog.String("session_id", task.SessionID),
-		slog.Int("issue", task.Issue.Number),
-		slog.String("agent_type", string(task.AgentType)),
+		zap.String("session_id", task.SessionID),
+		zap.Int("issue", task.Issue.Number),
+		zap.String("agent_type", string(task.AgentType)),
 	)
 
 	routingKey := task.ProviderKey
@@ -313,13 +316,13 @@ func (p *Pool) processTask(task Task) {
 	if err != nil && routingKey != "default" {
 		// Selected provider chain is unhealthy; fall back to the default chain.
 		logger.Warn("selected provider chain unhealthy, falling back to default",
-			slog.String("provider_key", routingKey),
-			slog.String("error", err.Error()),
+			zap.String("provider_key", routingKey),
+			zap.String("error", err.Error()),
 		)
 		prov, model, err = p.registry.Get(ctx, "default")
 	}
 	if err != nil {
-		logger.Error("no healthy provider", slog.String("error", err.Error()))
+		logger.Error("no healthy provider", zap.String("error", err.Error()))
 		p.failSession(ctx, task.SessionID, fmt.Sprintf("no healthy provider: %v", err))
 		// Notify dispatcher even on provider failure.
 		if cbPtr := p.onComplete.Load(); cbPtr != nil {
@@ -334,7 +337,7 @@ func (p *Pool) processTask(task Task) {
 		return
 	}
 
-	runner := NewRunner(prov, model, p.tracker, p.store, p.costs)
+	runner := NewRunner(prov, model, p.tracker, p.store, p.costs, p.logger)
 	start := time.Now()
 	runErr := runner.Run(ctx, task)
 	duration := time.Since(start)
@@ -349,12 +352,12 @@ func (p *Pool) processTask(task Task) {
 	if runErr != nil {
 		result.Error = runErr.Error()
 		logger.Error("task failed",
-			slog.String("error", runErr.Error()),
-			slog.Duration("duration", duration.Truncate(time.Millisecond)),
+			zap.String("error", runErr.Error()),
+			zap.Duration("duration", duration.Truncate(time.Millisecond)),
 		)
 	} else {
 		logger.Info("task done",
-			slog.Duration("duration", duration.Truncate(time.Millisecond)),
+			zap.Duration("duration", duration.Truncate(time.Millisecond)),
 		)
 	}
 
@@ -368,8 +371,8 @@ func (p *Pool) failSession(ctx context.Context, sessionID, errMsg string) {
 	session, err := p.store.GetSession(ctx, sessionID)
 	if err != nil {
 		p.logger.Error("failed to get session for failure update",
-			slog.String("session_id", sessionID),
-			slog.String("error", err.Error()),
+			zap.String("session_id", sessionID),
+			zap.String("error", err.Error()),
 		)
 		return
 	}
@@ -382,8 +385,8 @@ func (p *Pool) failSession(ctx context.Context, sessionID, errMsg string) {
 
 	if err = p.store.UpdateSession(ctx, session); err != nil {
 		p.logger.Error("failed to update session status",
-			slog.String("session_id", sessionID),
-			slog.String("error", err.Error()),
+			zap.String("session_id", sessionID),
+			zap.String("error", err.Error()),
 		)
 	}
 }

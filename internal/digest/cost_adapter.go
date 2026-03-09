@@ -2,7 +2,7 @@ package digest
 
 import (
 	"context"
-	"log/slog"
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/store"
@@ -27,7 +27,7 @@ func NewStoreCostSource(s store.Store, dailyBudget float64) *StoreCostSource {
 func (s *StoreCostSource) ComputeCostSince(ctx context.Context, since time.Time) CostSummary {
 	summary, err := s.store.ComputeCostSince(ctx, since)
 	if err != nil {
-		slog.Error("cost adapter: failed to compute cost", "error", err)
+		zap.L().Error("cost adapter: failed to compute cost", zap.Error(err))
 		return CostSummary{}
 	}
 

@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
+	"go.uber.org/zap"
+
+	"github.com/herbhall/samverk/internal/logging"
 	"net/http"
 	"os"
 	"os/signal"
@@ -38,7 +40,21 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var logger *zap.Logger
+
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
+	var err error
+	logger, err = logging.New()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
+		return 1
+	}
+	defer func() { _ = logger.Sync() }()
+
 	root := &cobra.Command{
 		Use:   "samverk",
 		Short: "Async background development engine",
@@ -53,8 +69,9 @@ func main() {
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func serveCmd() *cobra.Command {
@@ -73,7 +90,7 @@ func serveCmd() *cobra.Command {
 			// Wire Bearer token auth for MCP endpoint.
 			cfg.AuthToken = os.Getenv("SAMVERK_AUTH_TOKEN")
 			if cfg.AuthToken != "" {
-				slog.Info("MCP authentication enabled (env token)")
+				logger.Info("MCP authentication enabled (env token)")
 			}
 
 			// Load YAML-backed API key store if the file exists.
@@ -81,10 +98,10 @@ func serveCmd() *cobra.Command {
 				if _, statErr := os.Stat(authKeysPath); statErr == nil {
 					ks, ksErr := server.NewKeyStore(authKeysPath)
 					if ksErr != nil {
-						slog.Warn("could not load API key store", "path", authKeysPath, "error", ksErr)
+						logger.Warn("could not load API key store", zap.String("path", authKeysPath), zap.Error(ksErr))
 					} else {
 						cfg.KeyStore = ks
-						slog.Info("API key authentication enabled", "keys", len(ks.List()), "path", authKeysPath)
+						logger.Info("API key authentication enabled", zap.Int("keys", len(ks.List())), zap.String("path", authKeysPath))
 					}
 				}
 			}
@@ -95,12 +112,12 @@ func serveCmd() *cobra.Command {
 			if dbPath != "" {
 				s, err := store.New(dbPath)
 				if err != nil {
-					slog.Warn("could not open database", "path", dbPath, "error", err)
+					logger.Warn("could not open database", zap.String("path", dbPath), zap.Error(err))
 				} else {
 					st = s
 					costs = digest.NewStoreCostSource(s, budget)
 					defer func() { _ = s.Close() }()
-					slog.Info("database opened", "path", dbPath)
+					logger.Info("database opened", zap.String("path", dbPath))
 				}
 			}
 
@@ -123,7 +140,7 @@ func serveCmd() *cobra.Command {
 				// Load autonomy policy for tier enforcement.
 				policyCfg, policyErr := autonomy.LoadOrDefault(".")
 				if policyErr != nil {
-					slog.Warn("could not load autonomy config, using defaults", "error", policyErr)
+					logger.Warn("could not load autonomy config, using defaults", zap.Error(policyErr))
 					policyCfg = autonomy.DefaultConfig()
 				}
 				policy := autonomy.NewPolicy(policyCfg)
@@ -146,7 +163,7 @@ func serveCmd() *cobra.Command {
 					PRManager: ghClient,
 				}
 				if regErr := registry.Register(defaultProject); regErr != nil {
-					slog.Warn("could not register default project", "error", regErr)
+					logger.Warn("could not register default project", zap.Error(regErr))
 				}
 
 				// Load additional projects from config file if it exists.
@@ -167,8 +184,8 @@ func serveCmd() *cobra.Command {
 								}
 								gtClient, gtErr := giteaadapter.New(pc.GiteaURL, giteaToken, pc.Owner, pc.Repo)
 								if gtErr != nil {
-									slog.Warn("could not create Gitea client for project",
-										"name", pc.Name, "error", gtErr)
+									logger.Warn("could not create Gitea client for project",
+										zap.String("name", pc.Name), zap.Error(gtErr))
 									continue
 								}
 								p = &internalmcp.Project{
@@ -179,8 +196,8 @@ func serveCmd() *cobra.Command {
 									Reader:    gtClient,
 									PRManager: gtClient,
 								}
-								slog.Info("registered Gitea project from config",
-									"name", pc.Name, "owner", pc.Owner, "repo", pc.Repo, "url", pc.GiteaURL)
+								logger.Info("registered Gitea project from config",
+									zap.String("name", pc.Name), zap.String("owner", pc.Owner), zap.String("repo", pc.Repo), zap.String("url", pc.GiteaURL))
 							} else {
 								// Default: GitHub project.
 								ghExtra := github.New(pc.Owner, pc.Repo, httpClient)
@@ -192,18 +209,18 @@ func serveCmd() *cobra.Command {
 									Reader:    ghExtra,
 									PRManager: ghExtra,
 								}
-								slog.Info("registered GitHub project from config",
-									"name", pc.Name, "owner", pc.Owner, "repo", pc.Repo)
+								logger.Info("registered GitHub project from config",
+									zap.String("name", pc.Name), zap.String("owner", pc.Owner), zap.String("repo", pc.Repo))
 							}
 
 							if regErr := registry.Register(p); regErr != nil {
-								slog.Warn("could not register project from config",
-									"name", pc.Name, "error", regErr)
+								logger.Warn("could not register project from config",
+									zap.String("name", pc.Name), zap.Error(regErr))
 							}
 						}
 					} else if !os.IsNotExist(loadErr) {
-						slog.Warn("could not load projects config",
-							"path", projectsConfig, "error", loadErr)
+						logger.Warn("could not load projects config",
+							zap.String("path", projectsConfig), zap.Error(loadErr))
 					}
 				}
 
@@ -215,24 +232,24 @@ func serveCmd() *cobra.Command {
 			}
 
 			// Wire REST API handler for dashboard.
-			apiHandler := api.New(tracker, st, costs)
+			apiHandler := api.New(tracker, st, costs, logger)
 			apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
 			cfg.APIHandler = apiHandler
 			cfg.PressureProvider = apiHandler
-			slog.Info("REST API enabled")
+			logger.Info("REST API enabled")
 
 			// Wire worker lister from API into MCP digest so the get_digest tool
 			// shows registered PC agent workers in the RUNTIME METRICS section.
 			if mcpHandler != nil {
 				mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
 				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
-				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
+				logger.Info("MCP handler enabled", zap.String("owner", owner), zap.String("repo", repo))
 			} else {
-				slog.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
+				logger.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
 			}
 
-			s := server.New(cfg)
-			slog.Info("starting samverk server", "addr", addr)
+			s := server.New(cfg, logger)
+			logger.Info("starting samverk server", zap.String("addr", addr))
 
 			if err := s.Start(ctx); err != nil {
 				return fmt.Errorf("server error: %w", err)
@@ -314,7 +331,7 @@ func dispatchCmd() *cobra.Command {
 			// Load autonomy policy.
 			policyCfg, policyErr := autonomy.LoadOrDefault(".")
 			if policyErr != nil {
-				slog.Warn("could not load autonomy config, using defaults", "error", policyErr)
+				logger.Warn("could not load autonomy config, using defaults", zap.Error(policyErr))
 				policyCfg = autonomy.DefaultConfig()
 			}
 			policy := autonomy.NewPolicy(policyCfg)
@@ -324,7 +341,7 @@ func dispatchCmd() *cobra.Command {
 			if dbPath != "" {
 				s, err := store.New(dbPath)
 				if err != nil {
-					slog.Warn("could not open database", "path", dbPath, "error", err)
+					logger.Warn("could not open database", zap.String("path", dbPath), zap.Error(err))
 				} else {
 					st = s
 					defer func() { _ = s.Close() }()
@@ -336,17 +353,17 @@ func dispatchCmd() *cobra.Command {
 			if providersConfig != "" {
 				registry, regErr := provider.LoadRegistry(providersConfig, providerFactory)
 				if regErr != nil {
-					slog.Warn("could not load provider registry, agents disabled", "path", providersConfig, "error", regErr)
+					logger.Warn("could not load provider registry, agents disabled", zap.String("path", providersConfig), zap.Error(regErr))
 				} else {
 					costs := cost.NewTracker(st, budget, 24)
-					pool = agent.NewPool(registry, tracker, st, costs, workers)
+					pool = agent.NewPool(registry, tracker, st, costs, workers, logger)
 					defer pool.Shutdown()
-					slog.Info("agent pool started", "workers", workers, "providers", len(registry.List(ctx)))
+					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(registry.List(ctx))))
 				}
 			}
 
-			disp := dispatcher.New(tracker, policy, st, pool, nil)
-			slog.Info("starting dispatcher", "owner", owner, "repo", repo)
+			disp := dispatcher.New(tracker, policy, st, pool, nil, logger)
+			logger.Info("starting dispatcher", zap.String("owner", owner), zap.String("repo", repo))
 
 			g, gctx := errgroup.WithContext(ctx)
 
@@ -358,7 +375,7 @@ func dispatchCmd() *cobra.Command {
 			if pool != nil && scalingEnabled {
 				policyCfgS, cfgErr := scaling.LoadConfigFile(scalingConfig)
 				if cfgErr != nil {
-					slog.Warn("could not load scaling config, using defaults", "error", cfgErr)
+					logger.Warn("could not load scaling config, using defaults", zap.Error(cfgErr))
 					policyCfgS = scaling.DefaultPolicyConfig()
 				}
 				if scalingMin > 0 {
@@ -371,7 +388,7 @@ func dispatchCmd() *cobra.Command {
 				// AddWorkers/Resize does not reject scale-up events.
 				pool.SetMaxWorkers(policyCfgS.MaxWorkers)
 				scalingPol := scaling.NewThresholdPolicy(policyCfgS)
-				autoscaler := scaling.NewAutoscaler(scalingPol, pool, metrics.NewSystemCollector())
+				autoscaler := scaling.NewAutoscaler(scalingPol, pool, metrics.NewSystemCollector(), logger)
 				if st != nil {
 					autoscaler.SetPersister(st)
 				autoscaler.SetControlReader(st)
@@ -383,15 +400,15 @@ func dispatchCmd() *cobra.Command {
 					}
 					return err
 				})
-				slog.Info("autoscaler started",
-					"min_workers", policyCfgS.MinWorkers,
-					"max_workers", policyCfgS.MaxWorkers,
+				logger.Info("autoscaler started",
+					zap.Int("min_workers", policyCfgS.MinWorkers),
+					zap.Int("max_workers", policyCfgS.MaxWorkers),
 				)
 			}
 
 			// Start PR watcher if auto-merge is enabled.
 			if policyCfg.Merge.AutoMergeOnCIPass {
-				pw := prwatcher.New(prMgr, tracker, policyCfg.Merge, time.Duration(pollSeconds)*time.Second)
+				pw := prwatcher.New(prMgr, tracker, policyCfg.Merge, time.Duration(pollSeconds)*time.Second, logger)
 				g.Go(func() error {
 					return pw.Run(gctx)
 				})
@@ -597,7 +614,7 @@ func digestCmd() *cobra.Command {
 			if dbPath != "" {
 				s, storeErr := store.New(dbPath)
 				if storeErr != nil {
-					slog.Warn("could not open cost database, continuing without cost data", "path", dbPath, "error", storeErr)
+					logger.Warn("could not open cost database, continuing without cost data", zap.String("path", dbPath), zap.Error(storeErr))
 				} else {
 					defer func() { _ = s.Close() }()
 					costs = digest.NewStoreCostSource(s, budget)

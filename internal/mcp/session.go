@@ -2,7 +2,7 @@ package mcp
 
 import (
 	"context"
-	"log/slog"
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/store"
@@ -11,7 +11,8 @@ import (
 
 // sessionRecorder wraps tool calls with session/cost recording.
 type sessionRecorder struct {
-	store store.Store
+	store  store.Store
+	logger *zap.Logger
 }
 
 // recordToolCall creates a session and cost record for an MCP tool invocation.
@@ -37,7 +38,7 @@ func (r *sessionRecorder) recordToolCall(ctx context.Context, toolName string, i
 	}
 
 	if err := r.store.CreateSession(ctx, sess); err != nil {
-		slog.Warn("session recorder: failed to create session", "tool", toolName, "error", err)
+		r.logger.Warn("session recorder: failed to create session", zap.String("tool", toolName), zap.Error(err))
 		return
 	}
 
@@ -49,6 +50,6 @@ func (r *sessionRecorder) recordToolCall(ctx context.Context, toolName string, i
 		Model:     toolName,
 	}
 	if err := r.store.RecordCost(ctx, cost); err != nil {
-		slog.Warn("session recorder: failed to record cost", "tool", toolName, "error", err)
+		r.logger.Warn("session recorder: failed to record cost", zap.String("tool", toolName), zap.Error(err))
 	}
 }

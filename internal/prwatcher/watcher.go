@@ -11,7 +11,7 @@ package prwatcher
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"strings"
 	"time"
 
@@ -25,19 +25,22 @@ type Watcher struct {
 	issueTracker forge.IssueTracker
 	mergeCfg     autonomy.MergeConfig
 	interval     time.Duration
-	logger       *slog.Logger
+	logger       *zap.Logger
 }
 
 // New creates a Watcher with the given PR manager, issue tracker, and merge policy.
 // The issue tracker is used to create remediation issues for PRs with blocking
 // review comments. It may be nil to disable remediation.
-func New(pm forge.PullRequestManager, issues forge.IssueTracker, cfg autonomy.MergeConfig, interval time.Duration) *Watcher {
+func New(pm forge.PullRequestManager, issues forge.IssueTracker, cfg autonomy.MergeConfig, interval time.Duration, logger *zap.Logger) *Watcher {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Watcher{
 		prManager:    pm,
 		issueTracker: issues,
 		mergeCfg:     cfg,
 		interval:     interval,
-		logger:       slog.Default(),
+		logger:       logger,
 	}
 }
 
@@ -48,7 +51,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		return nil
 	}
 
-	w.logger.Info("pr-watcher: starting", "interval", w.interval)
+	w.logger.Info("pr-watcher: starting", zap.Duration("interval", w.interval))
 
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
@@ -59,7 +62,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := w.poll(ctx); err != nil {
-				w.logger.Error("pr-watcher: poll error", "error", err)
+				w.logger.Error("pr-watcher: poll error", zap.Error(err))
 			}
 		}
 	}
@@ -93,7 +96,7 @@ func (w *Watcher) poll(ctx context.Context) error {
 		if w.issueTracker != nil {
 			hasBlocking, checkErr := w.checkReviewComments(ctx, pr)
 			if checkErr != nil {
-				w.logger.Error("pr-watcher: check review comments", "pr", pr.Number, "error", checkErr)
+				w.logger.Error("pr-watcher: check review comments", zap.Int("pr", pr.Number), zap.Error(checkErr))
 			}
 			if hasBlocking {
 				continue
@@ -102,7 +105,7 @@ func (w *Watcher) poll(ctx context.Context) error {
 
 		checks, checkErr := w.prManager.GetPRChecks(ctx, pr.Number)
 		if checkErr != nil {
-			w.logger.Error("pr-watcher: get checks", "pr", pr.Number, "error", checkErr)
+			w.logger.Error("pr-watcher: get checks", zap.Int("pr", pr.Number), zap.Error(checkErr))
 			continue
 		}
 
@@ -121,7 +124,7 @@ func (w *Watcher) poll(ctx context.Context) error {
 			// Merge only after the configured delay.
 			if time.Since(pr.UpdatedAt) < tier2Delay {
 				w.logger.Debug("pr-watcher: tier-2 delay not elapsed",
-					"pr", pr.Number, "age", time.Since(pr.UpdatedAt).Truncate(time.Minute))
+					zap.Int("pr", pr.Number), zap.Duration("age", time.Since(pr.UpdatedAt).Truncate(time.Minute)))
 				continue
 			}
 		case PRTier1:
@@ -135,10 +138,10 @@ func (w *Watcher) poll(ctx context.Context) error {
 			}
 		}
 
-		w.logger.Info("pr-watcher: merging", "pr", pr.Number, "title", pr.Title, "tier", tier.String())
+		w.logger.Info("pr-watcher: merging", zap.Int("pr", pr.Number), zap.String("title", pr.Title), zap.String("tier", tier.String()))
 		commitMsg := fmt.Sprintf("auto-merge: %s (#%d)", pr.Title, pr.Number)
 		if mergeErr := w.prManager.MergePullRequest(ctx, pr.Number, forge.MergeMethodSquash, commitMsg); mergeErr != nil {
-			w.logger.Error("pr-watcher: merge failed", "pr", pr.Number, "error", mergeErr)
+			w.logger.Error("pr-watcher: merge failed", zap.Int("pr", pr.Number), zap.Error(mergeErr))
 		}
 	}
 
@@ -154,7 +157,7 @@ func (w *Watcher) labelTier3(ctx context.Context, pr *forge.PullRequest) {
 	}
 	if w.issueTracker != nil {
 		if err := w.issueTracker.AddLabel(ctx, pr.Number, "status:needs-human"); err != nil {
-			w.logger.Error("pr-watcher: label tier-3 PR", "pr", pr.Number, "error", err)
+			w.logger.Error("pr-watcher: label tier-3 PR", zap.Int("pr", pr.Number), zap.Error(err))
 		}
 	}
 }
@@ -215,17 +218,17 @@ func (w *Watcher) checkReviewComments(ctx context.Context, pr *forge.PullRequest
 		return true, fmt.Errorf("create remediation issue for PR #%d: %w", pr.Number, err)
 	}
 
-	w.log().Info("pr-watcher: created remediation issue", "pr", pr.Number, "comments", len(blocking))
+	w.log().Info("pr-watcher: created remediation issue", zap.Int("pr", pr.Number), zap.Int("comments", len(blocking)))
 	return true, nil
 }
 
-// log returns the watcher's logger, falling back to slog.Default() if nil.
+// log returns the watcher's logger, falling back to zap.NewNop() if nil.
 // Allows direct struct construction in tests without setting a logger.
-func (w *Watcher) log() *slog.Logger {
+func (w *Watcher) log() *zap.Logger {
 	if w.logger != nil {
 		return w.logger
 	}
-	return slog.Default()
+	return zap.NewNop()
 }
 
 // isTrustedReviewer checks if the author is in the trusted reviewers list.

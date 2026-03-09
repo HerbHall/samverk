@@ -2,7 +2,7 @@ package scaling
 
 import (
 	"context"
-	"log/slog"
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/metrics"
@@ -44,7 +44,7 @@ type Autoscaler struct {
 	pool          PoolScaler
 	collector     SystemCollector
 	interval      time.Duration
-	logger        *slog.Logger
+	logger        *zap.Logger
 	events        *EventBuffer
 	persister     EventPersister      // optional; nil means no durable storage
 	controlReader ScalingControlReader // optional; nil means no override support
@@ -54,7 +54,10 @@ type Autoscaler struct {
 // system collector. Scaling events are stored in an internal rolling buffer
 // (capacity 100) accessible via Events(). Call SetPersister to additionally
 // write events to durable storage.
-func NewAutoscaler(policy *ThresholdPolicy, pool PoolScaler, collector SystemCollector) *Autoscaler {
+func NewAutoscaler(policy *ThresholdPolicy, pool PoolScaler, collector SystemCollector, logger *zap.Logger) *Autoscaler {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	interval := policy.config.EvaluationInterval
 	if interval <= 0 {
 		interval = 30 * time.Second
@@ -64,7 +67,7 @@ func NewAutoscaler(policy *ThresholdPolicy, pool PoolScaler, collector SystemCol
 		pool:      pool,
 		collector: collector,
 		interval:  interval,
-		logger:    slog.Default(),
+		logger:    logger,
 		events:    NewEventBuffer(100),
 	}
 }
@@ -96,7 +99,7 @@ func (a *Autoscaler) PolicyConfig() PolicyConfig {
 // ctx.Err(). The loop evaluates the policy at the configured interval and applies
 // any non-Hold decision to the pool.
 func (a *Autoscaler) Run(ctx context.Context) error {
-	a.logger.Info("autoscaler started", slog.Duration("interval", a.interval))
+	a.logger.Info("autoscaler started", zap.Duration("interval", a.interval))
 	ticker := time.NewTicker(a.interval)
 	defer ticker.Stop()
 	for {
@@ -116,7 +119,7 @@ func (a *Autoscaler) evaluate() {
 	if a.controlReader != nil {
 		ctrl, ctrlErr := a.controlReader.GetScalingControl(context.Background())
 		if ctrlErr != nil {
-			a.logger.Warn("autoscaler: failed to read scaling control", slog.String("error", ctrlErr.Error()))
+			a.logger.Warn("autoscaler: failed to read scaling control", zap.String("error", ctrlErr.Error()))
 		} else if ctrl != nil {
 			if ctrl.Paused {
 				a.logger.Debug("autoscaler paused via manual override")
@@ -135,8 +138,8 @@ func (a *Autoscaler) evaluate() {
 
 	if decision.Action == Hold {
 		a.logger.Debug("autoscaler hold",
-			slog.String("reason", decision.Reason),
-			slog.Float64("confidence", decision.Confidence),
+			zap.String("reason", decision.Reason),
+			zap.Float64("confidence", decision.Confidence),
 		)
 		return
 	}
@@ -158,7 +161,7 @@ func (a *Autoscaler) applyManualOverride(targetWorkers int, note string) {
 	}
 	if delta > 0 {
 		if err := a.pool.AddWorkers(delta); err != nil {
-			a.logger.Warn("autoscaler manual override scale-up failed", slog.String("error", err.Error()))
+			a.logger.Warn("autoscaler manual override scale-up failed", zap.String("error", err.Error()))
 			return
 		}
 	} else {
@@ -166,9 +169,9 @@ func (a *Autoscaler) applyManualOverride(targetWorkers int, note string) {
 	}
 	newCount := a.pool.Workers()
 	a.logger.Info("autoscaler manual override applied",
-		slog.Int("old_workers", current),
-		slog.Int("new_workers", newCount),
-		slog.String("reason", reason),
+		zap.Int("old_workers", current),
+		zap.Int("new_workers", newCount),
+		zap.String("reason", reason),
 	)
 	e := models.ScalingEvent{
 		Timestamp:   time.Now(),
@@ -188,7 +191,7 @@ func (a *Autoscaler) persist(e models.ScalingEvent) {
 		return
 	}
 	if err := a.persister.SaveScalingEvent(context.Background(), e); err != nil {
-		a.logger.Warn("autoscaler: failed to persist scaling event", slog.String("error", err.Error()))
+		a.logger.Warn("autoscaler: failed to persist scaling event", zap.String("error", err.Error()))
 	}
 }
 
@@ -200,18 +203,18 @@ func (a *Autoscaler) apply(d Decision, oldCount int) {
 	case ScaleUp:
 		if err := a.pool.AddWorkers(d.Delta); err != nil {
 			a.logger.Warn("autoscaler scale-up failed",
-				slog.String("reason", d.Reason),
-				slog.String("error", err.Error()),
+				zap.String("reason", d.Reason),
+				zap.String("error", err.Error()),
 			)
 			return
 		}
 		newCount := a.pool.Snapshot().TotalWorkers
 		a.logger.Info("autoscaler scaled up",
-			slog.Int("old_workers", oldCount),
-			slog.Int("new_workers", newCount),
-			slog.Int("delta", d.Delta),
-			slog.String("reason", d.Reason),
-			slog.Float64("confidence", d.Confidence),
+			zap.Int("old_workers", oldCount),
+			zap.Int("new_workers", newCount),
+			zap.Int("delta", d.Delta),
+			zap.String("reason", d.Reason),
+			zap.Float64("confidence", d.Confidence),
 		)
 		e := models.ScalingEvent{
 			Timestamp:   time.Now(),
@@ -229,17 +232,17 @@ func (a *Autoscaler) apply(d Decision, oldCount int) {
 		sent := a.pool.RemoveWorkers(d.Delta)
 		if sent == 0 {
 			a.logger.Warn("autoscaler scale-down had no effect (at minimum workers)",
-				slog.String("reason", d.Reason),
+				zap.String("reason", d.Reason),
 			)
 			return
 		}
 		newCount := a.pool.Snapshot().TotalWorkers
 		a.logger.Info("autoscaler scaled down",
-			slog.Int("old_workers", oldCount),
-			slog.Int("new_workers", newCount),
-			slog.Int("delta", sent),
-			slog.String("reason", d.Reason),
-			slog.Float64("confidence", d.Confidence),
+			zap.Int("old_workers", oldCount),
+			zap.Int("new_workers", newCount),
+			zap.Int("delta", sent),
+			zap.String("reason", d.Reason),
+			zap.Float64("confidence", d.Confidence),
 		)
 		e := models.ScalingEvent{
 			Timestamp:   time.Now(),

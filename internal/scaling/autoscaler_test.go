@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/metrics"
@@ -66,7 +68,7 @@ func fastPolicy() *ThresholdPolicy {
 func TestAutoscaler_Run_CancelStops(t *testing.T) {
 	pool := &mockPool{snapshot: makePool(2, 1, 1, 0)}
 	p := fastPolicy()
-	a := NewAutoscaler(p, pool, &mockCollector{})
+	a := NewAutoscaler(p, pool, &mockCollector{}, zap.NewNop())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -98,7 +100,7 @@ func TestAutoscaler_Run_ScalesUp(t *testing.T) {
 	pool.snapshot.TotalWorkers = 2
 
 	p := fastPolicy()
-	a := NewAutoscaler(p, pool, &mockCollector{})
+	a := NewAutoscaler(p, pool, &mockCollector{}, zap.NewNop())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -123,7 +125,7 @@ func TestAutoscaler_Run_ScalesDown(t *testing.T) {
 	}
 
 	p := fastPolicy()
-	a := NewAutoscaler(p, pool, &mockCollector{})
+	a := NewAutoscaler(p, pool, &mockCollector{}, zap.NewNop())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -141,7 +143,7 @@ func TestAutoscaler_ScaleUp_PoolError(t *testing.T) {
 		addErr:   errors.New("pool error"),
 	}
 	p := fastPolicy()
-	a := NewAutoscaler(p, pool, &mockCollector{})
+	a := NewAutoscaler(p, pool, &mockCollector{}, zap.NewNop())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -160,7 +162,7 @@ func TestAutoscaler_ScaleDown_PoolReturnsZero(t *testing.T) {
 		remReturn: 0,
 	}
 	p := fastPolicy()
-	a := NewAutoscaler(p, pool, &mockCollector{})
+	a := NewAutoscaler(p, pool, &mockCollector{}, zap.NewNop())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -179,7 +181,7 @@ func TestAutoscaler_Disabled_NoScaling(t *testing.T) {
 	cfg.Enabled = false
 	cfg.EvaluationInterval = 5 * time.Millisecond
 	p := NewThresholdPolicy(cfg)
-	a := NewAutoscaler(p, pool, &mockCollector{})
+	a := NewAutoscaler(p, pool, &mockCollector{}, zap.NewNop())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -195,7 +197,7 @@ func TestNewAutoscaler_DefaultInterval(t *testing.T) {
 	cfg.EvaluationInterval = 0 // zero should default to 30s
 	p := NewThresholdPolicy(cfg)
 	pool := &mockPool{snapshot: makePool(2, 1, 1, 0)}
-	a := NewAutoscaler(p, pool, &mockCollector{})
+	a := NewAutoscaler(p, pool, &mockCollector{}, zap.NewNop())
 	if a.interval != 30*time.Second {
 		t.Errorf("interval = %s, want 30s", a.interval)
 	}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.uber.org/zap"
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/digest"
@@ -37,7 +38,7 @@ type Handler struct {
 func NewHandler(tracker forge.IssueTracker, costs digest.CostSource, s store.Store, policy autonomy.AutonomyPolicy, repo forge.RepoReader) *Handler {
 	var rec *sessionRecorder
 	if s != nil {
-		rec = &sessionRecorder{store: s}
+		rec = &sessionRecorder{store: s, logger: zap.L()}
 	}
 	return &Handler{
 		tracker:  tracker,

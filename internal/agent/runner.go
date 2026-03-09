@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"regexp"
 	"strings"
 	"time"
@@ -32,20 +32,23 @@ type Runner struct {
 	prManager  forge.PullRequestManager
 	store      store.Store
 	costs      *cost.Tracker
-	logger     *slog.Logger
+	logger     *zap.Logger
 }
 
 // NewRunner creates a runner bound to a specific provider and model.
 // The repoWriter and prManager are optional; when nil, code-gen/test agents
 // fall back to posting comments instead of opening PRs.
-func NewRunner(p provider.Provider, model string, tracker forge.IssueTracker, st store.Store, costs *cost.Tracker) *Runner {
+func NewRunner(p provider.Provider, model string, tracker forge.IssueTracker, st store.Store, costs *cost.Tracker, logger *zap.Logger) *Runner {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Runner{
 		provider: p,
 		model:    model,
 		tracker:  tracker,
 		store:    st,
 		costs:    costs,
-		logger:   slog.Default(),
+		logger:   logger,
 	}
 }
 
@@ -73,10 +76,10 @@ func (r *Runner) SetPRManager(pm forge.PullRequestManager) {
 // On any error, the session is marked "failed" and an error comment is posted.
 func (r *Runner) Run(ctx context.Context, task Task) error {
 	r.logger.Info("task start",
-		slog.Int("issue", task.Issue.Number),
-		slog.String("session", task.SessionID),
-		slog.String("agent", string(task.AgentType)),
-		slog.String("provider", task.ProviderKey),
+		zap.Int("issue", task.Issue.Number),
+		zap.String("session", task.SessionID),
+		zap.String("agent", string(task.AgentType)),
+		zap.String("provider", task.ProviderKey),
 	)
 
 	// Step 1: Mark session active.
@@ -133,8 +136,8 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	// Step 5: Record cost.
 	if err = r.costs.RecordUsage(ctx, task.SessionID, r.provider.Name(), r.model, resp); err != nil {
 		r.logger.Error("failed to record cost",
-			slog.String("session_id", task.SessionID),
-			slog.String("error", err.Error()),
+			zap.String("session_id", task.SessionID),
+			zap.String("error", err.Error()),
 		)
 		// Non-fatal: continue even if cost recording fails.
 	}
@@ -153,9 +156,9 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	// Step 8: Update task profile (non-fatal; best-effort).
 	if profErr := r.store.UpdateTaskProfile(ctx, string(task.AgentType), r.provider.Name()); profErr != nil {
 		r.logger.Warn("failed to update task profile",
-			slog.String("agent_type", string(task.AgentType)),
-			slog.String("provider", r.provider.Name()),
-			slog.String("error", profErr.Error()),
+			zap.String("agent_type", string(task.AgentType)),
+			zap.String("provider", r.provider.Name()),
+			zap.String("error", profErr.Error()),
 		)
 	}
 
@@ -227,9 +230,9 @@ func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) e
 	comment := fmt.Sprintf("PR opened: #%d", pr.Number)
 	if _, err = r.tracker.AddComment(ctx, task.Issue.Number, comment); err != nil {
 		r.logger.Error("failed to post PR link comment",
-			slog.String("session_id", task.SessionID),
-			slog.Int("issue", task.Issue.Number),
-			slog.String("error", err.Error()),
+			zap.String("session_id", task.SessionID),
+			zap.Int("issue", task.Issue.Number),
+			zap.String("error", err.Error()),
 		)
 	}
 
@@ -297,17 +300,17 @@ func (r *Runner) completeSession(ctx context.Context, sessionID string) error {
 func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
 	if err := r.updateSessionStatus(ctx, task.SessionID, models.SessionStatusFailed, errMsg); err != nil {
 		r.logger.Error("failed to update session on error",
-			slog.String("session_id", task.SessionID),
-			slog.String("error", err.Error()),
+			zap.String("session_id", task.SessionID),
+			zap.String("error", err.Error()),
 		)
 	}
 
 	comment := fmt.Sprintf("Agent error: %s", errMsg)
 	if _, err := r.tracker.AddComment(ctx, task.Issue.Number, comment); err != nil {
 		r.logger.Error("failed to post error comment",
-			slog.String("session_id", task.SessionID),
-			slog.Int("issue", task.Issue.Number),
-			slog.String("error", err.Error()),
+			zap.String("session_id", task.SessionID),
+			zap.Int("issue", task.Issue.Number),
+			zap.String("error", err.Error()),
 		)
 	}
 }

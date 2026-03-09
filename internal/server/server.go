@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"net"
 	"net/http"
 	"sync"
@@ -37,16 +37,21 @@ type Server struct {
 	cfg    Config
 	mux    *http.ServeMux
 	server *http.Server
+	logger *zap.Logger
 
 	mu         sync.Mutex
 	listenAddr string
 }
 
 // New creates a new Server with routes registered.
-func New(cfg Config) *Server {
+func New(cfg Config, logger *zap.Logger) *Server {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	s := &Server{
 		cfg:        cfg,
 		mux:        http.NewServeMux(),
+		logger:     logger,
 		listenAddr: cfg.Addr,
 	}
 
@@ -89,7 +94,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.listenAddr = actual
 	s.mu.Unlock()
 
-	slog.Info("server listening", "addr", actual)
+	s.logger.Info("server listening", zap.String("addr", actual))
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -115,7 +120,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 // Shutdown gracefully stops the server.
 func (s *Server) Shutdown(ctx context.Context) error {
-	slog.Info("server shutting down")
+	s.logger.Info("server shutting down")
 	return s.server.Shutdown(ctx)
 }
 
@@ -174,6 +179,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("failed to encode JSON response", "err", err)
+		zap.L().Error("failed to encode JSON response", zap.Error(err))
 	}
 }

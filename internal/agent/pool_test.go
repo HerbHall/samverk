@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/cost"
@@ -46,7 +48,7 @@ func newTestPool(t *testing.T, workers int, mp *mockProvider) *Pool {
 	})
 
 	costs := cost.NewTracker(ms, 0, 24)
-	return NewPool(reg, &mockTracker{}, ms, costs, workers)
+	return NewPool(reg, &mockTracker{}, ms, costs, workers, zap.NewNop())
 }
 
 func TestPoolSubmitAndProcess(t *testing.T) {

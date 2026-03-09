@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/metrics"
 )
@@ -22,7 +24,7 @@ func makeMetricsServer(t *testing.T, a *api.API) *httptest.Server {
 
 func TestHandleMetrics_AllNil(t *testing.T) {
 	// Do not call SetMetrics -- all three sources are nil interfaces by default.
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	ts := makeMetricsServer(t, a)
 
 	resp := doGet(t, ts.URL+"/api/v1/metrics")
@@ -54,7 +56,7 @@ func TestHandleMetrics_Pool(t *testing.T) {
 	pm.WorkerStarted()
 	pm.WorkerFinished(50_000_000, metrics.TaskResultSuccess) // 50ms
 
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	a.SetMetrics(pm, nil, nil) // nil literals are untyped: safe nil interfaces
 	ts := makeMetricsServer(t, a)
 
@@ -123,7 +125,7 @@ func TestHandleMetrics_Dispatcher(t *testing.T) {
 	dm.EventProcessed()
 	dm.PollCompleted(10_000_000) // 10ms
 
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	a.SetMetrics(nil, dm, nil) // nil literals are untyped: safe nil interfaces
 	ts := makeMetricsServer(t, a)
 
@@ -177,7 +179,7 @@ func TestHandleMetrics_Dispatcher(t *testing.T) {
 func TestHandleMetrics_System(t *testing.T) {
 	sc := metrics.NewSystemCollector()
 
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	a.SetMetrics(nil, nil, sc) // nil literals are untyped: safe nil interfaces
 	ts := makeMetricsServer(t, a)
 
@@ -230,7 +232,7 @@ func TestHandleMetrics_AllSources(t *testing.T) {
 	dm := metrics.NewDispatcherMetrics()
 	sc := metrics.NewSystemCollector()
 
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	a.SetMetrics(pm, dm, sc)
 	ts := makeMetricsServer(t, a)
 
@@ -263,7 +265,7 @@ func TestHandleMetrics_AllSources(t *testing.T) {
 
 func TestHandleMetrics_PressureField(t *testing.T) {
 	// With no pool or system source, pressure must be "low" with no reasons.
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	ts := makeMetricsServer(t, a)
 
 	resp := doGet(t, ts.URL+"/api/v1/metrics")
@@ -292,7 +294,7 @@ func TestHandleMetrics_PressureField(t *testing.T) {
 
 func TestHandleMetricsHistory_Empty(t *testing.T) {
 	// No prior calls to /api/v1/metrics → history is empty.
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	ts := makeMetricsServer(t, a)
 
 	resp := doGet(t, ts.URL+"/api/v1/metrics/history?duration=1h")
@@ -320,7 +322,7 @@ func TestHandleMetricsHistory_Empty(t *testing.T) {
 func TestHandleMetricsHistory_PopulatedByMetricsCall(t *testing.T) {
 	// Each GET /api/v1/metrics appends to the ring buffer.
 	pm := metrics.NewPoolMetrics(2)
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	a.SetMetrics(pm, nil, nil)
 	ts := makeMetricsServer(t, a)
 
@@ -358,7 +360,7 @@ func TestHandleMetricsHistory_PopulatedByMetricsCall(t *testing.T) {
 
 func TestHandleMetricsHistory_DefaultDuration(t *testing.T) {
 	// No duration param → defaults to 1h (non-empty duration in response).
-	a := api.New(nil, nil, nil)
+	a := api.New(nil, nil, nil, zap.NewNop())
 	ts := makeMetricsServer(t, a)
 
 	resp := doGet(t, ts.URL+"/api/v1/metrics/history")

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/api"
@@ -175,7 +177,7 @@ func (m *mockCosts) ComputeCostSince(_ context.Context, _ time.Time) digest.Cost
 // newTestAPI creates an API with all mocks wired and returns an httptest.Server.
 func newTestAPI(t *testing.T, tracker forge.IssueTracker, s store.Store, costs digest.CostSource) *httptest.Server {
 	t.Helper()
-	a := api.New(tracker, s, costs)
+	a := api.New(tracker, s, costs, zap.NewNop())
 	mux := http.NewServeMux()
 	a.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)

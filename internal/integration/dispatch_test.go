@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/agent"
@@ -185,7 +187,7 @@ func TestResearchAgentHappyPath(t *testing.T) {
 	}
 
 	costs := cost.NewTracker(ms, 0, 24)
-	runner := agent.NewRunner(mp, "test-model", mt, ms, costs)
+	runner := agent.NewRunner(mp, "test-model", mt, ms, costs, zap.NewNop())
 
 	task := agent.Task{
 		Issue: &forge.Issue{
@@ -249,7 +251,7 @@ func TestCodeGenAgentOpensPR(t *testing.T) {
 	}
 
 	costs := cost.NewTracker(ms, 0, 24)
-	runner := agent.NewRunner(mp, "test-model", mt, ms, costs)
+	runner := agent.NewRunner(mp, "test-model", mt, ms, costs, zap.NewNop())
 	runner.SetRepoWriter(rw)
 	runner.SetPRManager(pm)
 
@@ -334,7 +336,7 @@ func TestBudgetExceeded(t *testing.T) {
 	}
 
 	costs := cost.NewTracker(budgetStore, 5.0, 24)
-	runner := agent.NewRunner(mp, "test-model", mt, budgetStore, costs)
+	runner := agent.NewRunner(mp, "test-model", mt, budgetStore, costs, zap.NewNop())
 
 	task := agent.Task{
 		Issue: &forge.Issue{
@@ -388,7 +390,7 @@ func TestProviderError(t *testing.T) {
 	}
 
 	costs := cost.NewTracker(ms, 0, 24)
-	runner := agent.NewRunner(mp, "test-model", mt, ms, costs)
+	runner := agent.NewRunner(mp, "test-model", mt, ms, costs, zap.NewNop())
 
 	task := agent.Task{
 		Issue: &forge.Issue{

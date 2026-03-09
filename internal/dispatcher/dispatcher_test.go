@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/agent"
@@ -256,14 +258,14 @@ func newTestDispatcher(tracker *mockTracker) *Dispatcher {
 	// Use short intervals for tests.
 	cfg.HeartbeatInterval = 100 * time.Millisecond
 	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
-	return New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg)
+	return New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
 }
 
 // --- Tests ---
 
 func TestNewDispatcher(t *testing.T) {
 	tracker := newMockTracker()
-	d := New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, nil)
+	d := New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, nil, zap.NewNop())
 	if d == nil {
 		t.Fatal("expected non-nil dispatcher")
 	}
