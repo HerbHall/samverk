@@ -67,11 +67,12 @@ func (r *Runner) SetPRManager(pm forge.PullRequestManager) {
 // Steps:
 //  1. Update session status to "active"
 //  2. Check budget -- if exceeded, mark "failed" and return
-//  3. Build system prompt and chat request
-//  4. Call provider.Chat
-//  5. Record cost via cost tracker
-//  6. Post response as issue comment
-//  7. Mark session "completed"
+//  3. Detect prior checkpoint for resume
+//  4. Build system prompt and chat request (with resume context if available)
+//  5. Call provider.Chat
+//  6. Record cost via cost tracker
+//  7. Post response as issue comment (dedup edits against checkpoint)
+//  8. Mark session "completed"
 //
 // On any error, the session is marked "failed" and an error comment is posted.
 func (r *Runner) Run(ctx context.Context, task Task) error {
@@ -97,18 +98,38 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		return fmt.Errorf("check budget: %w", err)
 	}
 
-	// Step 3: Build chat request.
-	fileContext := r.extractFileContext(task.Issue.Body)
-	systemPrompt := BuildSystemPrompt(task, fileContext)
-	req := provider.ChatRequest{
-		Model: r.model,
-		Messages: []provider.Message{
-			{Role: provider.RoleSystem, Content: systemPrompt},
-			{Role: provider.RoleUser, Content: task.Issue.Body},
-		},
+	// Step 3: Detect prior checkpoint for resume.
+	var resumePrompt string
+	comments, listErr := r.tracker.ListComments(ctx, task.Issue.Number)
+	if listErr != nil {
+		r.logger.Warn("failed to list comments for checkpoint detection",
+			zap.Int("issue", task.Issue.Number),
+			zap.Error(listErr),
+		)
+	} else if checkpoint := FindLatestCheckpoint(comments); checkpoint != "" {
+		resumePrompt = BuildResumePrompt(checkpoint)
+		r.logger.Info("resuming from checkpoint",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("session", task.SessionID),
+		)
 	}
 
-	// Step 4: Call provider (with heartbeat and streaming activity detection).
+	// Step 4: Build chat request.
+	fileContext := r.extractFileContext(task.Issue.Body)
+	systemPrompt := BuildSystemPrompt(task, fileContext)
+	messages := []provider.Message{
+		{Role: provider.RoleSystem, Content: systemPrompt},
+	}
+	if resumePrompt != "" {
+		messages = append(messages, provider.Message{Role: provider.RoleSystem, Content: resumePrompt})
+	}
+	messages = append(messages, provider.Message{Role: provider.RoleUser, Content: task.Issue.Body})
+	req := provider.ChatRequest{
+		Model:    r.model,
+		Messages: messages,
+	}
+
+	// Step 5: Call provider (with heartbeat and streaming activity detection).
 	//
 	// Two heartbeat mechanisms work together:
 	//   a) Ticker-based: fires every heartbeatPulseInterval as a fallback for
@@ -152,7 +173,7 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		return fmt.Errorf("provider chat: %w", err)
 	}
 
-	// Step 5: Record cost.
+	// Step 6: Record cost.
 	if err = r.costs.RecordUsage(ctx, task.SessionID, r.provider.Name(), r.model, resp); err != nil {
 		r.logger.Error("failed to record cost",
 			zap.String("session_id", task.SessionID),
@@ -161,18 +182,18 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		// Non-fatal: continue even if cost recording fails.
 	}
 
-	// Step 6: Post-process response based on agent type.
+	// Step 7: Post-process response based on agent type.
 	if err = r.postProcess(ctx, task, resp.Message.Content); err != nil {
 		r.failTask(ctx, task, fmt.Sprintf("post-process error: %v", err))
 		return fmt.Errorf("post-process: %w", err)
 	}
 
-	// Step 7: Mark session completed.
+	// Step 8: Mark session completed.
 	if err = r.completeSession(ctx, task.SessionID); err != nil {
 		return fmt.Errorf("complete session: %w", err)
 	}
 
-	// Step 8: Update task profile (non-fatal; best-effort).
+	// Step 9: Update task profile (non-fatal; best-effort).
 	if profErr := r.store.UpdateTaskProfile(ctx, string(task.AgentType), r.provider.Name()); profErr != nil {
 		r.logger.Warn("failed to update task profile",
 			zap.String("agent_type", string(task.AgentType)),
@@ -192,6 +213,11 @@ func (r *Runner) postProcess(ctx context.Context, task Task, response string) er
 	case models.AgentTypeCodeGen, models.AgentTypeTest:
 		if r.repoWriter != nil && r.prManager != nil {
 			parsed := ParseEditBlocks(response)
+			// Dedup edits against any prior checkpoint to avoid rewriting
+			// files that were already committed in a previous attempt.
+			if checkpoint := r.latestCheckpoint(ctx, task.Issue.Number); checkpoint != "" {
+				parsed.Edits = DeduplicateEdits(parsed.Edits, checkpoint)
+			}
 			if len(parsed.Edits) > 0 {
 				return r.openPR(ctx, task, parsed)
 			}
@@ -286,6 +312,20 @@ func (r *Runner) extractFileContext(body string) map[string]string {
 	return result
 }
 
+// latestCheckpoint fetches issue comments and returns the most recent
+// checkpoint content, or empty string if none exists.
+func (r *Runner) latestCheckpoint(ctx context.Context, issueNumber int) string {
+	comments, err := r.tracker.ListComments(ctx, issueNumber)
+	if err != nil {
+		r.logger.Warn("failed to list comments for checkpoint dedup",
+			zap.Int("issue", issueNumber),
+			zap.Error(err),
+		)
+		return ""
+	}
+	return FindLatestCheckpoint(comments)
+}
+
 // updateSessionStatus fetches and updates a session's status in the store.
 func (r *Runner) updateSessionStatus(ctx context.Context, sessionID string, status models.SessionStatus, errMsg string) error {
 	session, err := r.store.GetSession(ctx, sessionID)
@@ -316,7 +356,12 @@ func (r *Runner) completeSession(ctx context.Context, sessionID string) error {
 }
 
 // failTask marks the session as failed and posts an error comment on the issue.
+// If the session has partial output, a CHECKPOINT comment is posted first so
+// that a retry can resume from where the previous attempt left off.
 func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
+	// Attempt to save checkpoint from partial output.
+	r.saveCheckpoint(ctx, task)
+
 	if err := r.updateSessionStatus(ctx, task.SessionID, models.SessionStatusFailed, errMsg); err != nil {
 		r.logger.Error("failed to update session on error",
 			zap.String("session_id", task.SessionID),
@@ -330,6 +375,48 @@ func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
 			zap.String("session_id", task.SessionID),
 			zap.Int("issue", task.Issue.Number),
 			zap.String("error", err.Error()),
+		)
+	}
+}
+
+// saveCheckpoint posts a CHECKPOINT comment on the issue if the session has
+// non-empty partial output and the checkpoint hash differs from the previous one.
+func (r *Runner) saveCheckpoint(ctx context.Context, task Task) {
+	session, err := r.store.GetSession(ctx, task.SessionID)
+	if err != nil {
+		r.logger.Error("checkpoint: failed to get session",
+			zap.String("session_id", task.SessionID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	if session.PartialOutput == "" {
+		return
+	}
+
+	hash := HashCheckpoint(session.PartialOutput)
+	if hash == session.CheckpointHash {
+		// Same content as the last checkpoint — skip posting a duplicate.
+		return
+	}
+
+	comment := FormatCheckpoint(task.SessionID, session.PartialOutput)
+	if _, err = r.tracker.AddComment(ctx, task.Issue.Number, comment); err != nil {
+		r.logger.Error("checkpoint: failed to post comment",
+			zap.String("session_id", task.SessionID),
+			zap.Int("issue", task.Issue.Number),
+			zap.Error(err),
+		)
+		return
+	}
+
+	// Persist the hash so future retries can detect duplicates.
+	session.CheckpointHash = hash
+	if err = r.store.UpdateSession(ctx, session); err != nil {
+		r.logger.Error("checkpoint: failed to update session hash",
+			zap.String("session_id", task.SessionID),
+			zap.Error(err),
 		)
 	}
 }

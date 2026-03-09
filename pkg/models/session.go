@@ -24,7 +24,8 @@ type Session struct {
 	StartedAt     time.Time     `json:"started_at"`
 	FinishedAt    *time.Time    `json:"finished_at,omitempty"`
 	Error         string        `json:"error,omitempty"`
-	PartialOutput string        `json:"partial_output,omitempty"` // last checkpoint of streaming output
-	CreatedAt     time.Time     `json:"created_at"`
+	PartialOutput  string        `json:"partial_output,omitempty"`  // last checkpoint of streaming output
+	CheckpointHash string        `json:"checkpoint_hash,omitempty"` // SHA-256 of posted checkpoint for dedup
+	CreatedAt      time.Time     `json:"created_at"`
 	UpdatedAt     time.Time     `json:"updated_at"`
 }

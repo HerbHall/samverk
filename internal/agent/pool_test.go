@@ -753,7 +753,8 @@ func (m *mockProvider) Name() string {
 
 type mockTracker struct {
 	forge.IssueTracker
-	addCommentFn func(ctx context.Context, number int, body string) (*forge.Comment, error)
+	addCommentFn   func(ctx context.Context, number int, body string) (*forge.Comment, error)
+	listCommentsFn func(ctx context.Context, number int) ([]*forge.Comment, error)
 }
 
 func (m *mockTracker) AddComment(ctx context.Context, number int, body string) (*forge.Comment, error) {
@@ -761,6 +762,13 @@ func (m *mockTracker) AddComment(ctx context.Context, number int, body string) (
 		return m.addCommentFn(ctx, number, body)
 	}
 	return &forge.Comment{ID: 1, Body: body}, nil
+}
+
+func (m *mockTracker) ListComments(ctx context.Context, number int) ([]*forge.Comment, error) {
+	if m.listCommentsFn != nil {
+		return m.listCommentsFn(ctx, number)
+	}
+	return nil, nil
 }
 
 type mockStore struct {

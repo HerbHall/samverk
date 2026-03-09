@@ -353,5 +353,182 @@ func TestRunnerHeartbeatNil(t *testing.T) {
 	}
 }
 
+func TestRunnerResumeFromCheckpoint(t *testing.T) {
+	// When a prior CHECKPOINT comment exists, the runner should inject a
+	// resume prompt into the messages sent to the provider.
+	var capturedMessages []provider.Message
+
+	ms := newDefaultMockStore()
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
+			capturedMessages = req.Messages
+			return &provider.ChatResponse{
+				Message: provider.Message{
+					Role:    provider.RoleAssistant,
+					Content: "Continued from checkpoint.",
+				},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test-provider" },
+	}
+
+	checkpointBody := FormatCheckpoint("sess-old", "EDIT main.go\npackage main\nEND_EDIT")
+	mt := &mockTracker{
+		addCommentFn: func(_ context.Context, _ int, _ string) (*forge.Comment, error) {
+			return &forge.Comment{ID: 1}, nil
+		},
+		listCommentsFn: func(_ context.Context, _ int) ([]*forge.Comment, error) {
+			return []*forge.Comment{
+				{Body: checkpointBody},
+			}, nil
+		},
+	}
+
+	runner := newTestRunner(mp, mt, ms)
+	task := newDefaultTask()
+
+	err := runner.Run(context.Background(), task)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	// Should have 3 messages: system prompt, resume prompt, user message.
+	if len(capturedMessages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(capturedMessages))
+	}
+	if capturedMessages[1].Role != provider.RoleSystem {
+		t.Errorf("resume message role = %q, want %q", capturedMessages[1].Role, provider.RoleSystem)
+	}
+	if !searchString(capturedMessages[1].Content, "<prior-work>") {
+		t.Error("resume message should contain <prior-work> tags")
+	}
+}
+
+func TestRunnerNoCheckpoint(t *testing.T) {
+	// When no checkpoint exists, messages should be the standard 2 (system + user).
+	var capturedMessages []provider.Message
+
+	ms := newDefaultMockStore()
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
+			capturedMessages = req.Messages
+			return &provider.ChatResponse{
+				Message: provider.Message{
+					Role:    provider.RoleAssistant,
+					Content: "Fresh start.",
+				},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test-provider" },
+	}
+
+	mt := &mockTracker{
+		addCommentFn: func(_ context.Context, _ int, _ string) (*forge.Comment, error) {
+			return &forge.Comment{ID: 1}, nil
+		},
+		listCommentsFn: func(_ context.Context, _ int) ([]*forge.Comment, error) {
+			return nil, nil // no comments
+		},
+	}
+
+	runner := newTestRunner(mp, mt, ms)
+	task := newDefaultTask()
+
+	err := runner.Run(context.Background(), task)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if len(capturedMessages) != 2 {
+		t.Errorf("expected 2 messages (no checkpoint), got %d", len(capturedMessages))
+	}
+}
+
+func TestFailTaskPostsCheckpoint(t *testing.T) {
+	var postedComments []string
+
+	ms := newDefaultMockStore()
+	ms.getSessionFn = func(_ context.Context, id string) (*models.Session, error) {
+		return &models.Session{
+			ID:            id,
+			Status:        models.SessionStatusActive,
+			PartialOutput: "some partial work",
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+		}, nil
+	}
+
+	mt := &mockTracker{
+		addCommentFn: func(_ context.Context, _ int, body string) (*forge.Comment, error) {
+			postedComments = append(postedComments, body)
+			return &forge.Comment{ID: 1, Body: body}, nil
+		},
+	}
+
+	runner := newTestRunner(&mockProvider{
+		nameFn: func() string { return "test" },
+	}, mt, ms)
+	task := newDefaultTask()
+
+	runner.failTask(context.Background(), task, "provider timeout")
+
+	// Should post 2 comments: checkpoint + error.
+	if len(postedComments) != 2 {
+		t.Fatalf("expected 2 comments (checkpoint + error), got %d", len(postedComments))
+	}
+
+	// First comment should be the checkpoint.
+	if !searchString(postedComments[0], "CHECKPOINT [") {
+		t.Errorf("first comment should be CHECKPOINT, got: %s", postedComments[0])
+	}
+	if !searchString(postedComments[0], "some partial work") {
+		t.Error("checkpoint should contain partial output")
+	}
+
+	// Second comment should be the error.
+	if !searchString(postedComments[1], "Agent error:") {
+		t.Errorf("second comment should be error, got: %s", postedComments[1])
+	}
+}
+
+func TestFailTaskSkipsCheckpointWhenEmpty(t *testing.T) {
+	var postedComments []string
+
+	ms := newDefaultMockStore()
+	ms.getSessionFn = func(_ context.Context, id string) (*models.Session, error) {
+		return &models.Session{
+			ID:            id,
+			Status:        models.SessionStatusActive,
+			PartialOutput: "", // no partial output
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+		}, nil
+	}
+
+	mt := &mockTracker{
+		addCommentFn: func(_ context.Context, _ int, body string) (*forge.Comment, error) {
+			postedComments = append(postedComments, body)
+			return &forge.Comment{ID: 1, Body: body}, nil
+		},
+	}
+
+	runner := newTestRunner(&mockProvider{
+		nameFn: func() string { return "test" },
+	}, mt, ms)
+	task := newDefaultTask()
+
+	runner.failTask(context.Background(), task, "some error")
+
+	// Should post only 1 comment: the error (no checkpoint).
+	if len(postedComments) != 1 {
+		t.Fatalf("expected 1 comment (error only), got %d", len(postedComments))
+	}
+	if !searchString(postedComments[0], "Agent error:") {
+		t.Errorf("comment should be error, got: %s", postedComments[0])
+	}
+}
+
 // Old buildSystemPrompt tests removed — replaced by prompts_test.go
 // which covers BuildSystemPrompt with per-agent-type verification.
