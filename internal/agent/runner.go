@@ -66,6 +66,13 @@ func (r *Runner) SetPRManager(pm forge.PullRequestManager) {
 //
 // On any error, the session is marked "failed" and an error comment is posted.
 func (r *Runner) Run(ctx context.Context, task Task) error {
+	r.logger.Info("task start",
+		slog.Int("issue", task.Issue.Number),
+		slog.String("session", task.SessionID),
+		slog.String("agent", string(task.AgentType)),
+		slog.String("provider", task.ProviderKey),
+	)
+
 	// Step 1: Mark session active.
 	if err := r.updateSessionStatus(ctx, task.SessionID, models.SessionStatusActive, ""); err != nil {
 		return fmt.Errorf("activate session: %w", err)

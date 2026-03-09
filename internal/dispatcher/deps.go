@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
@@ -150,7 +151,7 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 		// Check if ALL dependencies are now satisfied.
 		blocked, _, depErr := d.checkDependencies(ctx, result.Frontmatter)
 		if depErr != nil {
-			d.logger.Printf("check deps for #%d: %v", issue.Number, depErr)
+			d.logger.Warn("check deps", slog.Int("issue", issue.Number), slog.String("error", depErr.Error()))
 			continue
 		}
 		if blocked {
@@ -159,10 +160,10 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 
 		// Unblock: transition from blocked to queued.
 		if removeErr := d.tracker.RemoveLabel(ctx, issue.Number, "status:blocked"); removeErr != nil {
-			d.logger.Printf("remove blocked from #%d: %v", issue.Number, removeErr)
+			d.logger.Warn("remove label", slog.Int("issue", issue.Number), slog.String("label", "blocked"), slog.String("error", removeErr.Error()))
 		}
 		if addErr := d.tracker.AddLabel(ctx, issue.Number, "status:queued"); addErr != nil {
-			d.logger.Printf("add queued to #%d: %v", issue.Number, addErr)
+			d.logger.Warn("add label", slog.Int("issue", issue.Number), slog.String("label", "queued"), slog.String("error", addErr.Error()))
 		}
 
 		comment := fmt.Sprintf(
@@ -170,10 +171,10 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 			time.Now().UTC().Format(time.RFC3339), closedIssueNumber,
 		)
 		if _, commentErr := d.tracker.AddComment(ctx, issue.Number, comment); commentErr != nil {
-			d.logger.Printf("add unblock comment to #%d: %v", issue.Number, commentErr)
+			d.logger.Warn("add comment", slog.Int("issue", issue.Number), slog.String("context", "unblock"), slog.String("error", commentErr.Error()))
 		}
 
-		d.logger.Printf("unblocked issue #%d after #%d closed", issue.Number, closedIssueNumber)
+		d.logger.Info("unblocked", slog.Int("issue", issue.Number), slog.Int("closed_dep", closedIssueNumber))
 	}
 
 	return nil

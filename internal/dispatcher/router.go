@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -146,15 +147,15 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType) error {
 	// Human-typed issues are tracked but never submitted to the agent pool.
 	if agentType == models.AgentTypeHuman {
-		d.logger.Printf("issue #%d classified as human — not dispatching to agent pool", issue.Number)
+		d.logger.Info("issue classified as human", slog.Int("issue", issue.Number))
 		if err := d.tracker.AddLabel(ctx, issue.Number, "status:needs-human"); err != nil {
-			d.logger.Printf("add needs-human to #%d: %v", issue.Number, err)
+			d.logger.Error("add label", slog.Int("issue", issue.Number), slog.String("label", "needs-human"), slog.String("error", err.Error()))
 		}
 		return nil
 	}
 
 	if err := d.tracker.RemoveLabel(ctx, issue.Number, "status:queued"); err != nil {
-		d.logger.Printf("remove queued label from #%d: %v", issue.Number, err)
+		d.logger.Debug("remove queued label", slog.Int("issue", issue.Number), slog.String("error", err.Error()))
 	}
 	if err := d.tracker.AddLabel(ctx, issue.Number, "status:claimed"); err != nil {
 		return fmt.Errorf("add claimed label to #%d: %w", issue.Number, err)
@@ -164,7 +165,6 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	}
 
 	providerKey, reason := selectProviderKey(issue, agentType)
-	d.logger.Printf("selected provider=%s reason=%s issue=#%d", providerKey, reason, issue.Number)
 
 	now := time.Now()
 	d.mu.Lock()
@@ -177,7 +177,13 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	}
 	d.mu.Unlock()
 
-	d.logger.Printf("routed issue #%d to %s", issue.Number, agentType)
+	d.logger.Info("routed",
+		slog.Int("issue", issue.Number),
+		slog.String("agent", string(agentType)),
+		slog.String("provider", providerKey),
+		slog.String("reason", reason),
+		slog.Int("attempt", priorFailures+1),
+	)
 
 	// Submit to agent pool if available.
 	if d.pool != nil && d.store != nil {
