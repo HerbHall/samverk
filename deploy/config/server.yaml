@@ -5,3 +5,29 @@ projects: []
   # - name: another-project
   #   owner: herbhall
   #   repo: another-project
+
+# Adaptive worker scaling configuration.
+# All fields are optional; omitted fields use the defaults shown below.
+# Enable scaling via --scaling flag on dispatch, or set enabled: true here.
+scaling:
+  enabled: false
+  min_workers: 1
+  max_workers: 8
+  # How often the autoscaler evaluates pool state.
+  evaluation_interval: 30s
+  # Minimum time between scale events (prevents flapping).
+  cooldown_after_scale: 2m
+
+  scale_up:
+    # Scale up when memory usage (heap/sys) exceeds this percentage.
+    memory_threshold: 80
+    # Scale up when the task queue depth reaches this value.
+    queue_depth_trigger: 2
+    # Scale up when every worker is actively processing a task.
+    all_workers_busy: true
+
+  scale_down:
+    # Scale down when at least this many workers are idle simultaneously.
+    idle_worker_threshold: 2
+    # How long the idle condition must persist before scaling down.
+    idle_duration: 2m

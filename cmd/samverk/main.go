@@ -206,8 +206,8 @@ func serveCmd() *cobra.Command {
 }
 
 func dispatchCmd() *cobra.Command {
-	var owner, repo, dbPath, providersConfig string
-	var pollSeconds, workers int
+	var owner, repo, dbPath, providersConfig, scalingConfig string
+	var pollSeconds, workers, scalingMin, scalingMax int
 	var budget float64
 	var scalingEnabled bool
 
@@ -280,9 +280,26 @@ func dispatchCmd() *cobra.Command {
 				return disp.Run(gctx)
 			})
 
+			// Load scaling policy from config file, then apply CLI overrides.
+			scalingCfg, scalingCfgErr := scaling.LoadConfigFile(scalingConfig)
+			if scalingCfgErr != nil {
+				slog.Warn("could not load scaling config, using defaults",
+					"path", scalingConfig, "error", scalingCfgErr)
+				scalingCfg = scaling.DefaultPolicyConfig()
+			}
+			if scalingEnabled {
+				scalingCfg.Enabled = true
+			}
+			if scalingMin > 0 {
+				scalingCfg.MinWorkers = scalingMin
+			}
+			if scalingMax > 0 {
+				scalingCfg.MaxWorkers = scalingMax
+			}
+
 			// Start autoscaler if pool is active and scaling is enabled.
-			if pool != nil && scalingEnabled {
-				scalingPolicy := scaling.NewThresholdPolicy(scaling.DefaultPolicyConfig())
+			if pool != nil && scalingCfg.Enabled {
+				scalingPolicy := scaling.NewThresholdPolicy(scalingCfg)
 				autoscaler := scaling.NewAutoscaler(scalingPolicy, pool, metrics.NewSystemCollector())
 				g.Go(func() error {
 					err := autoscaler.Run(gctx)
@@ -291,7 +308,9 @@ func dispatchCmd() *cobra.Command {
 					}
 					return err
 				})
-				slog.Info("autoscaler started")
+				slog.Info("autoscaler started",
+					"min_workers", scalingCfg.MinWorkers,
+					"max_workers", scalingCfg.MaxWorkers)
 			}
 
 			// Start PR watcher if auto-merge is enabled.
@@ -316,7 +335,10 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().IntVar(&pollSeconds, "poll-interval", 30, "Polling interval in seconds")
 	cmd.Flags().IntVar(&workers, "workers", 3, "Number of agent worker goroutines")
 	cmd.Flags().Float64Var(&budget, "budget", 0, "Daily budget in USD (0 = unlimited)")
-	cmd.Flags().BoolVar(&scalingEnabled, "scaling", false, "Enable adaptive worker scaling (default: disabled)")
+	cmd.Flags().StringVar(&scalingConfig, "scaling-config", ".samverk/server.yaml", "Path to YAML file containing scaling: section")
+	cmd.Flags().BoolVar(&scalingEnabled, "scaling", false, "Enable adaptive worker scaling (overrides config file)")
+	cmd.Flags().IntVar(&scalingMin, "scaling-min", 0, "Minimum worker count override (0 = use config)")
+	cmd.Flags().IntVar(&scalingMax, "scaling-max", 0, "Maximum worker count override (0 = use config)")
 
 	return cmd
 }

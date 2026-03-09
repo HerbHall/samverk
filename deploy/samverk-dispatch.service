@@ -17,8 +17,13 @@ ExecStartPre=/bin/sleep 2
 ExecStart=/usr/local/bin/samverk dispatch \
   --db /var/lib/samverk/.samverk/samverk.db \
   --providers-config /var/lib/samverk/.samverk/providers.yaml \
+  --scaling-config /var/lib/samverk/.samverk/server.yaml \
   --poll-interval 30 \
   --workers 3
+  # Uncomment to enable adaptive scaling (can also set enabled: true in server.yaml):
+  # --scaling
+  # --scaling-min 1
+  # --scaling-max 8
 EnvironmentFile=/var/lib/samverk/.samverk/samverk.env
 Restart=on-failure
 RestartSec=10
