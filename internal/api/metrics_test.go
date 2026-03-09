@@ -260,3 +260,121 @@ func TestHandleMetrics_AllSources(t *testing.T) {
 		t.Error("system = null, want non-null")
 	}
 }
+
+func TestHandleMetrics_PressureField(t *testing.T) {
+	// With no pool or system source, pressure must be "low" with no reasons.
+	a := api.New(nil, nil, nil)
+	ts := makeMetricsServer(t, a)
+
+	resp := doGet(t, ts.URL+"/api/v1/metrics")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body struct {
+		Pressure struct {
+			Level   string   `json:"level"`
+			Reasons []string `json:"reasons"`
+		} `json:"pressure"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Pressure.Level != "low" {
+		t.Errorf("pressure.level = %q, want low", body.Pressure.Level)
+	}
+	if len(body.Pressure.Reasons) != 0 {
+		t.Errorf("pressure.reasons = %v, want nil/empty", body.Pressure.Reasons)
+	}
+}
+
+func TestHandleMetricsHistory_Empty(t *testing.T) {
+	// No prior calls to /api/v1/metrics → history is empty.
+	a := api.New(nil, nil, nil)
+	ts := makeMetricsServer(t, a)
+
+	resp := doGet(t, ts.URL+"/api/v1/metrics/history?duration=1h")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body struct {
+		Duration string            `json:"duration"`
+		Entries  []json.RawMessage `json:"entries"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Duration == "" {
+		t.Error("duration is empty")
+	}
+	if len(body.Entries) != 0 {
+		t.Errorf("entries = %d, want 0", len(body.Entries))
+	}
+}
+
+func TestHandleMetricsHistory_PopulatedByMetricsCall(t *testing.T) {
+	// Each GET /api/v1/metrics appends to the ring buffer.
+	pm := metrics.NewPoolMetrics(2)
+	a := api.New(nil, nil, nil)
+	a.SetMetrics(pm, nil, nil)
+	ts := makeMetricsServer(t, a)
+
+	// Trigger two snapshots.
+	for range 2 {
+		resp := doGet(t, ts.URL+"/api/v1/metrics")
+		_ = resp.Body.Close()
+	}
+
+	resp := doGet(t, ts.URL+"/api/v1/metrics/history?duration=1h")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body struct {
+		Entries []struct {
+			Timestamp string          `json:"timestamp"`
+			Pressure  json.RawMessage `json:"pressure"`
+		} `json:"entries"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Entries) != 2 {
+		t.Errorf("entries = %d, want 2", len(body.Entries))
+	}
+	for i, e := range body.Entries {
+		if e.Timestamp == "" {
+			t.Errorf("entries[%d].timestamp is empty", i)
+		}
+	}
+}
+
+func TestHandleMetricsHistory_DefaultDuration(t *testing.T) {
+	// No duration param → defaults to 1h (non-empty duration in response).
+	a := api.New(nil, nil, nil)
+	ts := makeMetricsServer(t, a)
+
+	resp := doGet(t, ts.URL+"/api/v1/metrics/history")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body struct {
+		Duration string `json:"duration"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Duration != "1h0m0s" {
+		t.Errorf("duration = %q, want 1h0m0s", body.Duration)
+	}
+}
