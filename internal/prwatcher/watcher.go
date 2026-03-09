@@ -65,7 +65,11 @@ func (w *Watcher) Run(ctx context.Context) error {
 	}
 }
 
-// poll lists open PRs and attempts to merge eligible ones.
+// poll lists open PRs and attempts to merge eligible ones based on tier policy.
+//
+// Tier 1 (docs, config): merge immediately on CI green.
+// Tier 2 (features, fixes): merge after delay (Tier2DelayMinutes, default 60).
+// Tier 3 (architecture, breaking): never auto-merge; label needs-human.
 func (w *Watcher) poll(ctx context.Context) error {
 	prs, err := w.prManager.ListPullRequests(ctx, &forge.ListPROptions{
 		State:   forge.StateOpen,
@@ -73,6 +77,11 @@ func (w *Watcher) poll(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("list open PRs: %w", err)
+	}
+
+	tier2Delay := time.Duration(w.mergeCfg.Tier2DelayMinutes) * time.Minute
+	if tier2Delay <= 0 {
+		tier2Delay = 60 * time.Minute // default 1 hour
 	}
 
 	for _, pr := range prs {
@@ -91,24 +100,63 @@ func (w *Watcher) poll(ctx context.Context) error {
 			}
 		}
 
-		checks, err := w.prManager.GetPRChecks(ctx, pr.Number)
-		if err != nil {
-			w.logger.Error("pr-watcher: get checks", "pr", pr.Number, "error", err)
+		checks, checkErr := w.prManager.GetPRChecks(ctx, pr.Number)
+		if checkErr != nil {
+			w.logger.Error("pr-watcher: get checks", "pr", pr.Number, "error", checkErr)
 			continue
 		}
 
-		if !w.allChecksPassed(checks) {
+		ciPassed := w.allChecksPassed(checks)
+		tier := ClassifyPRTier(pr, nil)
+
+		switch tier {
+		case PRTier3:
+			// Never auto-merge. Label if not already labeled.
+			w.labelTier3(ctx, pr)
 			continue
+		case PRTier2:
+			if !ciPassed {
+				continue
+			}
+			// Merge only after the configured delay.
+			if time.Since(pr.UpdatedAt) < tier2Delay {
+				w.logger.Debug("pr-watcher: tier-2 delay not elapsed",
+					"pr", pr.Number, "age", time.Since(pr.UpdatedAt).Truncate(time.Minute))
+				continue
+			}
+		case PRTier1:
+			if !ciPassed {
+				continue
+			}
+			// Merge immediately.
+		default:
+			if !ciPassed {
+				continue
+			}
 		}
 
-		w.logger.Info("pr-watcher: merging", "pr", pr.Number, "title", pr.Title)
+		w.logger.Info("pr-watcher: merging", "pr", pr.Number, "title", pr.Title, "tier", tier.String())
 		commitMsg := fmt.Sprintf("auto-merge: %s (#%d)", pr.Title, pr.Number)
-		if err := w.prManager.MergePullRequest(ctx, pr.Number, forge.MergeMethodSquash, commitMsg); err != nil {
-			w.logger.Error("pr-watcher: merge failed", "pr", pr.Number, "error", err)
+		if mergeErr := w.prManager.MergePullRequest(ctx, pr.Number, forge.MergeMethodSquash, commitMsg); mergeErr != nil {
+			w.logger.Error("pr-watcher: merge failed", "pr", pr.Number, "error", mergeErr)
 		}
 	}
 
 	return nil
+}
+
+// labelTier3 adds the status:needs-human label to a Tier 3 PR if not already present.
+func (w *Watcher) labelTier3(ctx context.Context, pr *forge.PullRequest) {
+	for _, l := range pr.Labels {
+		if l == "status:needs-human" {
+			return
+		}
+	}
+	if w.issueTracker != nil {
+		if err := w.issueTracker.AddLabel(ctx, pr.Number, "status:needs-human"); err != nil {
+			w.logger.Error("pr-watcher: label tier-3 PR", "pr", pr.Number, "error", err)
+		}
+	}
 }
 
 // checkReviewComments checks for unresolved review comments from trusted reviewers.

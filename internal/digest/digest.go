@@ -23,6 +23,8 @@ type DigestData struct {
 	PendingActions   []PendingAction
 	CompletedActions []CompletedAction
 	ActiveWork       []ActiveWork
+	PRsAwaiting      []PRAwaitingReview
+	AutoMergedCount  int
 	QueuedCount      int
 	BlockedCount     int
 	Cost             CostSummary
@@ -57,6 +59,18 @@ type ActiveWork struct {
 	Title       string
 	AgentType   models.AgentType
 	ClaimedAt   time.Time
+}
+
+// PRAwaitingReview is an open PR shown in the digest's PR section.
+type PRAwaitingReview struct {
+	Project  string
+	Number   int
+	Title    string
+	Author   string
+	Tier     string
+	TierDesc string
+	CIStatus string
+	Age      string
 }
 
 // CostSummary aggregates token spend since the last check-in.
