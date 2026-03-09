@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.12](https://github.com/HerbHall/samverk/compare/v0.1.11...v0.1.12) (2026-03-09)
+
+
+### Features
+
+* **#389:** Gitea AI code review with Claude/Ollama ([#393](https://github.com/HerbHall/samverk/issues/393)) ([ed50f4b](https://github.com/HerbHall/samverk/commit/ed50f4b3ef61344c152c25e79fb63ae2e57e462e))
+* **logging:** migrate from slog to zap with dual-mode output ([#397](https://github.com/HerbHall/samverk/issues/397)) ([1a7d4dc](https://github.com/HerbHall/samverk/commit/1a7d4dc4774ea503b30e2fb89a3277bd7d9e27e8)), closes [#390](https://github.com/HerbHall/samverk/issues/390)
+
+
+### Bug Fixes
+
+* **ci:** ensure curl is installed before trivy install on Gitea runner ([aadc45f](https://github.com/HerbHall/samverk/commit/aadc45f3acdd625f72e8079713ea073e811fe9cf))
+* **ci:** inline SPA build in Gitea CI ([#400](https://github.com/HerbHall/samverk/issues/400)) ([3350fa9](https://github.com/HerbHall/samverk/commit/3350fa98b46303e804d43e6133867fc89302dfc7))
+* **ci:** skip node_modules in trivy scan and fix disk space on runner ([705c904](https://github.com/HerbHall/samverk/commit/705c9049290834c14b1dac78479882b3fb22213c))
+* **forge:** add pagination to label cache, issue listing, and comments ([#398](https://github.com/HerbHall/samverk/issues/398)) ([8b998cb](https://github.com/HerbHall/samverk/commit/8b998cb4a62ed3b0bd6195bb9262305c94563318)), closes [#394](https://github.com/HerbHall/samverk/issues/394)
+
 ## [0.1.11](https://github.com/HerbHall/samverk/compare/v0.1.10...v0.1.11) (2026-03-09)
 
 
