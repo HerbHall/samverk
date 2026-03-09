@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { PoolMetrics, DispatcherMetrics, SystemMetrics } from '../lib/api'
+import type { PoolMetrics, DispatcherMetrics, SystemMetrics, ScalingEvent, ScalingConfig } from '../lib/api'
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`
@@ -104,6 +104,57 @@ function SystemSection({ system }: { system: SystemMetrics | null }) {
   )
 }
 
+function ScalingSection({
+  events,
+  config,
+}: {
+  events: ScalingEvent[] | null
+  config: ScalingConfig | null
+}) {
+  if (config == null) return <NullSection title="Adaptive Scaling" />
+
+  return (
+    <SectionCard title="Adaptive Scaling">
+      <MetricRow label="Status" value={config.enabled ? 'Enabled' : 'Disabled'} />
+      <MetricRow label="Min Workers" value={config.min_workers.toString()} />
+      <MetricRow label="Max Workers" value={config.max_workers.toString()} />
+      <MetricRow label="Current Target" value={config.current_target.toString()} />
+      {events != null && events.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Recent Events
+          </p>
+          <div className="space-y-1">
+            {events.map((e) => (
+              <div key={e.id} className="rounded bg-gray-50 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span
+                    className={
+                      e.action === 'scale-up'
+                        ? 'font-semibold text-green-700'
+                        : 'font-semibold text-amber-700'
+                    }
+                  >
+                    {e.action === 'scale-up' ? '▲' : '▼'} {e.from_workers}→{e.to_workers} workers
+                  </span>
+                  <span className="text-gray-400">
+                    {Math.round(e.confidence * 100)}% conf
+                  </span>
+                </div>
+                <p className="mt-0.5 text-gray-500 truncate">{e.reason}</p>
+                <p className="text-gray-400">{new Date(e.timestamp).toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {(events == null || events.length === 0) && (
+        <div className="py-4 text-center text-xs text-gray-400">No scaling events yet</div>
+      )}
+    </SectionCard>
+  )
+}
+
 export function Metrics() {
   const metrics = useQuery({
     queryKey: ['metrics'],
@@ -132,10 +183,16 @@ export function Metrics() {
       )}
 
       {metrics.data != null && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <PoolSection pool={metrics.data.pool} />
-          <DispatcherSection dispatcher={metrics.data.dispatcher} />
-          <SystemSection system={metrics.data.system} />
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <PoolSection pool={metrics.data.pool} />
+            <DispatcherSection dispatcher={metrics.data.dispatcher} />
+            <SystemSection system={metrics.data.system} />
+          </div>
+          <ScalingSection
+            events={metrics.data.scaling_events}
+            config={metrics.data.scaling_config}
+          />
         </div>
       )}
     </div>

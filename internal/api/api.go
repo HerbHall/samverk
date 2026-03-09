@@ -7,14 +7,36 @@ import (
 
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/store"
 )
 
+// poolMetricsSource provides a snapshot of the agent pool.
+type poolMetricsSource interface {
+	Snapshot() metrics.PoolSnapshot
+}
+
+// dispatcherMetricsSource provides a snapshot of the dispatcher.
+type dispatcherMetricsSource interface {
+	Snapshot() metrics.DispatcherSnapshot
+}
+
+// systemMetricsSource provides a system-level metrics snapshot.
+type systemMetricsSource interface {
+	Collect() metrics.SystemSnapshot
+}
+
 // API provides REST endpoints for the web dashboard.
 type API struct {
-	tracker forge.IssueTracker // may be nil if no forge credentials
-	store   store.Store        // may be nil if no database
-	costs   digest.CostSource  // may be nil if no cost tracking
+	tracker        forge.IssueTracker      // may be nil if no forge credentials
+	store          store.Store             // may be nil if no database
+	costs          digest.CostSource       // may be nil if no cost tracking
+	pool           poolMetricsSource       // may be nil if pool not yet started
+	dispatcher     dispatcherMetricsSource // may be nil if dispatcher not started
+	system         systemMetricsSource     // may be nil; created via SetMetrics
+	scalingEnabled bool                    // true when autoscaler was configured
+	scalingMin     int
+	scalingMax     int
 }
 
 // New creates an API handler with the given dependencies.
@@ -28,6 +50,22 @@ func New(tracker forge.IssueTracker, s store.Store, costs digest.CostSource) *AP
 	}
 }
 
+// SetMetrics attaches metrics sources to the API handler. Call before serving.
+func (a *API) SetMetrics(pool poolMetricsSource, disp dispatcherMetricsSource, sys systemMetricsSource) {
+	a.pool = pool
+	a.dispatcher = disp
+	a.system = sys
+}
+
+// SetScalingConfig records the active scaling policy limits so the metrics endpoint
+// can expose them alongside events read from the store. Call before serving.
+// If not called, scaling_events and scaling_config in /api/v1/metrics will be null.
+func (a *API) SetScalingConfig(enabled bool, minW, maxW int) {
+	a.scalingEnabled = enabled
+	a.scalingMin = minW
+	a.scalingMax = maxW
+}
+
 // RegisterRoutes registers all API endpoints on the given mux.
 // Routes use Go 1.22+ method+path patterns.
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
@@ -36,6 +74,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/sessions", a.handleListSessions)
 	mux.HandleFunc("GET /api/v1/costs", a.handleGetCosts)
 	mux.HandleFunc("GET /api/v1/status", a.handleStatus)
+	mux.HandleFunc("GET /api/v1/metrics", a.handleMetrics)
 }
 
 // errorResponse is the JSON body returned for error responses.

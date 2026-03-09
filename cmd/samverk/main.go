@@ -21,11 +21,11 @@ import (
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/prwatcher"
 	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/scaling"
 	"github.com/herbhall/samverk/internal/provider/claude"
 	"github.com/herbhall/samverk/internal/provider/claudecli"
 	"github.com/herbhall/samverk/internal/provider/ollama"
 	"github.com/herbhall/samverk/internal/provider/openai"
+	"github.com/herbhall/samverk/internal/scaling"
 	"github.com/herbhall/samverk/internal/server"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/internal/version"
@@ -175,6 +175,10 @@ func serveCmd() *cobra.Command {
 				}
 
 				mcpHandler.SetProjects(registry)
+				mcpHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+				if st != nil {
+					mcpHandler.SetScalingEventReader(st)
+				}
 				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
 				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
 			} else {
@@ -182,7 +186,9 @@ func serveCmd() *cobra.Command {
 			}
 
 			// Wire REST API handler for dashboard.
-			cfg.APIHandler = api.New(tracker, st, costs)
+			apiHandler := api.New(tracker, st, costs)
+			apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+			cfg.APIHandler = apiHandler
 			slog.Info("REST API enabled")
 
 			s := server.New(cfg)
@@ -206,8 +212,8 @@ func serveCmd() *cobra.Command {
 }
 
 func dispatchCmd() *cobra.Command {
-	var owner, repo, dbPath, providersConfig string
-	var pollSeconds, workers int
+	var owner, repo, dbPath, providersConfig, scalingConfig string
+	var pollSeconds, workers, scalingMin, scalingMax int
 	var budget float64
 	var scalingEnabled bool
 
@@ -282,8 +288,22 @@ func dispatchCmd() *cobra.Command {
 
 			// Start autoscaler if pool is active and scaling is enabled.
 			if pool != nil && scalingEnabled {
-				scalingPolicy := scaling.NewThresholdPolicy(scaling.DefaultPolicyConfig())
-				autoscaler := scaling.NewAutoscaler(scalingPolicy, pool, metrics.NewSystemCollector())
+				policyCfgS, cfgErr := scaling.LoadConfigFile(scalingConfig)
+				if cfgErr != nil {
+					slog.Warn("could not load scaling config, using defaults", "error", cfgErr)
+					policyCfgS = scaling.DefaultPolicyConfig()
+				}
+				if scalingMin > 0 {
+					policyCfgS.MinWorkers = scalingMin
+				}
+				if scalingMax > 0 {
+					policyCfgS.MaxWorkers = scalingMax
+				}
+				scalingPol := scaling.NewThresholdPolicy(policyCfgS)
+				autoscaler := scaling.NewAutoscaler(scalingPol, pool, metrics.NewSystemCollector())
+				if st != nil {
+					autoscaler.SetPersister(st)
+				}
 				g.Go(func() error {
 					err := autoscaler.Run(gctx)
 					if err == context.Canceled {
@@ -291,7 +311,10 @@ func dispatchCmd() *cobra.Command {
 					}
 					return err
 				})
-				slog.Info("autoscaler started")
+				slog.Info("autoscaler started",
+					"min_workers", policyCfgS.MinWorkers,
+					"max_workers", policyCfgS.MaxWorkers,
+				)
 			}
 
 			// Start PR watcher if auto-merge is enabled.
@@ -317,6 +340,9 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().IntVar(&workers, "workers", 3, "Number of agent worker goroutines")
 	cmd.Flags().Float64Var(&budget, "budget", 0, "Daily budget in USD (0 = unlimited)")
 	cmd.Flags().BoolVar(&scalingEnabled, "scaling", false, "Enable adaptive worker scaling (default: disabled)")
+	cmd.Flags().StringVar(&scalingConfig, "scaling-config", "", "Path to scaling policy YAML config (optional)")
+	cmd.Flags().IntVar(&scalingMin, "scaling-min", 0, "Override min workers from scaling config (0 = use config value)")
+	cmd.Flags().IntVar(&scalingMax, "scaling-max", 0, "Override max workers from scaling config (0 = use config value)")
 
 	return cmd
 }
