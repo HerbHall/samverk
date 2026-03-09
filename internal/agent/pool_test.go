@@ -410,6 +410,7 @@ func TestAddWorkers(t *testing.T) {
 		nameFn:    func() string { return "test" },
 	}
 	pool := newTestPool(t, 2, mp)
+	pool.SetMaxWorkers(10)
 	defer pool.Shutdown()
 
 	if err := pool.AddWorkers(3); err != nil {
