@@ -1,13 +1,13 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    PC Agent runner loop — polls for claimable issues, provisions worktrees,
+    PC Agent runner loop -- polls for claimable issues, provisions worktrees,
     runs Claude Code, and cleans up. Ties together all pc-agent modules.
 
 .DESCRIPTION
     Orchestrates the full PC agent lifecycle for a single worker slot:
 
-        poll -> claim -> Invoke-CCTask -> Invoke-PostTask -> sleep -> repeat
+        poll -> autonomy gate -> claim -> Invoke-CCTask -> Invoke-PostTask -> sleep -> repeat
 
     Modes:
         --SingleRun   Process at most one issue, then exit. Useful for testing
@@ -39,7 +39,7 @@
 
 .PARAMETER InitWorkspace
     Run Initialize-AgentWorkspace before the loop (one-time setup).
-    Safe to pass on every invocation — the function is idempotent.
+    Safe to pass on every invocation -- the function is idempotent.
 
 .EXAMPLE
     # One-off test: process a single issue and exit.
@@ -76,6 +76,7 @@ Import-Module (Join-Path $script:ModuleDir 'workspace.psm1')  -Force
 Import-Module (Join-Path $script:ModuleDir 'forge.psm1')      -Force
 Import-Module (Join-Path $script:ModuleDir 'launcher.psm1')   -Force
 Import-Module (Join-Path $script:ModuleDir 'post-task.psm1')  -Force
+Import-Module (Join-Path $script:ModuleDir 'autonomy.psm1')   -Force
 
 # ---------------------------------------------------------------------------
 # Graceful shutdown
@@ -103,19 +104,20 @@ function Invoke-PollCycle {
     <#
     .SYNOPSIS
         One full poll-claim-execute cycle. Returns $true if an issue was processed,
-        $false if the queue was empty.
+        $false if the queue was empty or all issues were gated.
     #>
     [CmdletBinding()]
     param(
         [hashtable]$ForgeConfig,
         [hashtable]$WorkspaceConfig,
+        [hashtable]$AutonomyConfig = @{},
         [switch]$PreserveOnFailure
     )
 
     # 1. Check for available worker slot.
     $slot = Get-AvailableWorkerSlot -Config $WorkspaceConfig
     if (-not $slot) {
-        Write-AgentLog 'All worker slots occupied — skipping poll.' 'WARN'
+        Write-AgentLog 'All worker slots occupied -- skipping poll.' 'WARN'
         return $false
     }
 
@@ -127,14 +129,40 @@ function Invoke-PollCycle {
         return $false
     }
 
-    # 3. Pick the first issue.
-    $issue = $issues[0]
-    Write-AgentLog "Found issue #$($issue.Number): $($issue.Title)"
+    # 3. Evaluate each issue through the autonomy gate; pick the first that passes.
+    $issue = $null
+    foreach ($candidate in $issues) {
+        Write-AgentLog "Evaluating issue #$($candidate.Number): $($candidate.Title)"
+        $gate = Test-AutonomyGate -Issue $candidate -Config $AutonomyConfig `
+            -ForgeConfig $ForgeConfig -SkipDependencyCheck
+        if ($gate.Allowed) {
+            $issue = $candidate
+            Write-AgentLog "Autonomy gate passed (Tier $($gate.Tier)) for issue #$($candidate.Number)."
+            break
+        } else {
+            Write-AgentLog "Skipping issue #$($candidate.Number): $($gate.Reason)" 'WARN'
+            # For Tier 3 issues, post an informational comment so the author knows why.
+            if ($gate.Tier -ge 3) {
+                $gateComment = "**[PC Agent] Autonomy gate: skipping**`n`n" +
+                    "This issue requires human review ($($gate.Reason)). Leaving queued."
+                try {
+                    Add-IssueComment -IssueNumber $candidate.Number -Body $gateComment -Config $ForgeConfig
+                } catch {
+                    Write-AgentLog "Could not post gate comment on #$($candidate.Number): $_" 'WARN'
+                }
+            }
+        }
+    }
 
-    # 4. Claim the issue (race-safe — another agent may beat us).
+    if (-not $issue) {
+        Write-AgentLog 'No issues passed the autonomy gate in this poll cycle.'
+        return $false
+    }
+
+    # 4. Claim the issue (race-safe -- another agent may beat us).
     $claimed = Claim-Issue -IssueNumber $issue.Number -Config $ForgeConfig
     if (-not $claimed) {
-        Write-AgentLog "Issue #$($issue.Number) was claimed by another agent — skipping." 'WARN'
+        Write-AgentLog "Issue #$($issue.Number) was claimed by another agent -- skipping." 'WARN'
         return $false
     }
     Write-AgentLog "Claimed issue #$($issue.Number)."
@@ -183,7 +211,8 @@ if (-not (Test-Path $bareRepoPath)) {
     exit 1
 }
 
-$forgeConfig = Get-ForgeConfig
+$autonomyConfig = @{}
+$forgeConfig    = Get-ForgeConfig
 
 # ---------------------------------------------------------------------------
 # Main loop
@@ -199,6 +228,7 @@ while (-not $script:StopRequested) {
         $didWork = Invoke-PollCycle `
             -ForgeConfig     $forgeConfig `
             -WorkspaceConfig $wsConfig `
+            -AutonomyConfig  $autonomyConfig `
             -PreserveOnFailure:$PreserveOnFailure
     } catch {
         Write-AgentLog "Unhandled error in poll cycle: $($_.Exception.Message)" 'ERROR'
@@ -221,5 +251,5 @@ while (-not $script:StopRequested) {
     }
 }
 
-Write-AgentLog 'Stop requested — exiting cleanly.'
+Write-AgentLog 'Stop requested -- exiting cleanly.'
 exit 0
