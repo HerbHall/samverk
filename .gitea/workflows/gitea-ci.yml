@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Gitea Actions uses the same concurrency syntax; context prefix is gitea.
+concurrency:
+  group: ci-${{ gitea.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Build SPA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install and build
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Copy dist to static
+        run: cp -r web/dist/* internal/server/static/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/static/
+          retention-days: 1
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # golangci-lint-action is not mirrored on Gitea; use go run instead.
+      # Cache Go modules manually since golangci-lint-action no longer provides it.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ gitea.runner.os }}-go-lint-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ gitea.runner.os }}-go-lint-
+
+      - name: golangci-lint
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6 run ./...
+
+  build:
+    name: Build
+    needs: [web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ gitea.runner.os }}-go-build-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ gitea.runner.os }}-go-build-
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/static/
+
+      - run: go build ./cmd/samverk/
+
+  test:
+    name: Test
+    needs: [web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ gitea.runner.os }}-go-test-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ gitea.runner.os }}-go-test-
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/static/
+
+      - run: go test -race ./...
+
+  markdown:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # DavidAnson/markdownlint-cli2-action may not be mirrored on Gitea; use npx.
+      - name: markdownlint
+        run: >
+          npx --yes markdownlint-cli2
+          "**/*.md"
+          "!CHANGELOG.md"
+          "!node_modules"
+          "!web/node_modules"
