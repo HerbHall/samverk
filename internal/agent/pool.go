@@ -27,10 +27,11 @@ const defaultWorkers = 3
 
 // Task represents a unit of work to be processed by the agent pool.
 type Task struct {
-	Issue       *forge.Issue
-	AgentType   models.AgentType
-	SessionID   string
-	ProviderKey string // routing chain key; defaults to string(AgentType) when empty
+	Issue         *forge.Issue
+	AgentType     models.AgentType
+	SessionID     string
+	ProviderKey   string // routing chain key; defaults to string(AgentType) when empty
+	HeartbeatFunc func() // called periodically while running; signals dispatcher that work is in progress; may be nil
 }
 
 // TaskResult reports the outcome of a pool task back to the dispatcher.

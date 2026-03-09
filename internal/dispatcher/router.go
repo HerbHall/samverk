@@ -200,11 +200,19 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 		if err := d.store.CreateSession(ctx, session); err != nil {
 			return fmt.Errorf("create session for #%d: %w", issue.Number, err)
 		}
+		issueNum := issue.Number
 		task := agent.Task{
 			Issue:       issue,
 			AgentType:   agentType,
 			SessionID:   sessionID,
 			ProviderKey: providerKey,
+			HeartbeatFunc: func() {
+				d.mu.Lock()
+				if c, ok := d.claimed[issueNum]; ok {
+					c.LastHeartbeat = time.Now()
+				}
+				d.mu.Unlock()
+			},
 		}
 		if err := d.pool.Submit(task); err != nil {
 			return fmt.Errorf("submit agent task for #%d: %w", issue.Number, err)

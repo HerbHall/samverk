@@ -16,6 +16,12 @@ import (
 	"github.com/herbhall/samverk/pkg/models"
 )
 
+// heartbeatPulseInterval is how often the runner calls task.HeartbeatFunc
+// during the blocking provider.Chat() call to prevent the dispatcher from
+// treating the session as hung. Must be well below the dispatcher timeout
+// (HeartbeatInterval × HeartbeatTimeoutMultiplier, default 30 min).
+const heartbeatPulseInterval = 5 * time.Minute
+
 // Runner executes a single agent task: sends the issue to an AI provider,
 // records cost, and posts the response as an issue comment or opens a PR.
 type Runner struct {
@@ -99,7 +105,25 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		},
 	}
 
-	// Step 4: Call provider.
+	// Step 4: Call provider (with heartbeat ticker to keep dispatcher informed).
+	if task.HeartbeatFunc != nil {
+		task.HeartbeatFunc() // fire immediately before blocking call
+		stop := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(heartbeatPulseInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					task.HeartbeatFunc()
+				case <-stop:
+					return
+				}
+			}
+		}()
+		defer close(stop)
+	}
+
 	resp, err := r.provider.Chat(ctx, req)
 	if err != nil {
 		r.failTask(ctx, task, fmt.Sprintf("provider error: %v", err))
