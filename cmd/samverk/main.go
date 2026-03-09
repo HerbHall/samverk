@@ -19,6 +19,7 @@ import (
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/dispatcher"
 	"github.com/herbhall/samverk/internal/forge"
+	giteaadapter "github.com/herbhall/samverk/internal/forge/gitea"
 	"github.com/herbhall/samverk/internal/forge/github"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
 	"github.com/herbhall/samverk/internal/metrics"
@@ -156,21 +157,48 @@ func serveCmd() *cobra.Command {
 							if pc.Name == repo && pc.Owner == owner && pc.Repo == repo {
 								continue
 							}
-							ghExtra := github.New(pc.Owner, pc.Repo, httpClient)
-							p := &internalmcp.Project{
-								Name:    pc.Name,
-								Owner:   pc.Owner,
-								Repo:    pc.Repo,
-								Tracker:   ghExtra,
-								Reader:    ghExtra,
-								PRManager: ghExtra,
+
+							var p *internalmcp.Project
+							if pc.Forge == "gitea" {
+								// Resolve token: config field takes precedence, then env var.
+								giteaToken := pc.GiteaToken
+								if giteaToken == "" {
+									giteaToken = os.Getenv("GITEA_TOKEN")
+								}
+								gtClient, gtErr := giteaadapter.New(pc.GiteaURL, giteaToken, pc.Owner, pc.Repo)
+								if gtErr != nil {
+									slog.Warn("could not create Gitea client for project",
+										"name", pc.Name, "error", gtErr)
+									continue
+								}
+								p = &internalmcp.Project{
+									Name:      pc.Name,
+									Owner:     pc.Owner,
+									Repo:      pc.Repo,
+									Tracker:   gtClient,
+									Reader:    gtClient,
+									PRManager: gtClient,
+								}
+								slog.Info("registered Gitea project from config",
+									"name", pc.Name, "owner", pc.Owner, "repo", pc.Repo, "url", pc.GiteaURL)
+							} else {
+								// Default: GitHub project.
+								ghExtra := github.New(pc.Owner, pc.Repo, httpClient)
+								p = &internalmcp.Project{
+									Name:      pc.Name,
+									Owner:     pc.Owner,
+									Repo:      pc.Repo,
+									Tracker:   ghExtra,
+									Reader:    ghExtra,
+									PRManager: ghExtra,
+								}
+								slog.Info("registered GitHub project from config",
+									"name", pc.Name, "owner", pc.Owner, "repo", pc.Repo)
 							}
+
 							if regErr := registry.Register(p); regErr != nil {
 								slog.Warn("could not register project from config",
 									"name", pc.Name, "error", regErr)
-							} else {
-								slog.Info("registered project from config",
-									"name", pc.Name, "owner", pc.Owner, "repo", pc.Repo)
 							}
 						}
 					} else if !os.IsNotExist(loadErr) {
