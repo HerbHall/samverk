@@ -43,6 +43,12 @@ secrets/
 config/local/
 deploy/samverk.env
 
+# Samverk runtime state and credentials
+.samverk/auth.yaml
+.samverk/samverk.db
+.samverk/providers.yaml
+*.bak
+
 # Archives
 *.zip
 

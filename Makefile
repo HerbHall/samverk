@@ -1,5 +1,5 @@
 .PHONY: build test test-race test-coverage test-integration test-all lint lint-md lint-all ci hooks run clean web dev-web \
-       cross-build cross-build-full deploy deploy-binary deploy-config redeploy redeploy-full
+       cross-build cross-build-full deploy deploy-binary deploy-config redeploy redeploy-full ssh
 
 # Binary
 BIN=samverk
@@ -101,6 +101,10 @@ redeploy:
 redeploy-full:
 	$(MAKE) web
 	$(MAKE) redeploy
+
+# Quick SSH access to production server
+ssh:
+	ssh root@192.168.1.162
 
 clean:
 	rm -rf bin/ coverage.out
