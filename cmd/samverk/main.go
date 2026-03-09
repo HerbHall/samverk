@@ -339,6 +339,9 @@ func dispatchCmd() *cobra.Command {
 				if scalingMax > 0 {
 					policyCfgS.MaxWorkers = scalingMax
 				}
+				// Sync pool max workers to the scaling policy max so
+				// AddWorkers/Resize does not reject scale-up events.
+				pool.SetMaxWorkers(policyCfgS.MaxWorkers)
 				scalingPol := scaling.NewThresholdPolicy(policyCfgS)
 				autoscaler := scaling.NewAutoscaler(scalingPol, pool, metrics.NewSystemCollector())
 				if st != nil {
