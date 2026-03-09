@@ -59,7 +59,7 @@ hooks:
 	@echo "pre-push hook installed"
 
 run: build
-	./bin/$(BIN) serve
+	SAMVERK_ENV=development ./bin/$(BIN) serve
 
 # Cross-compile for Linux (deploy target) — no web dependency for Windows compat
 DEPLOY_HOST ?= 192.168.1.161

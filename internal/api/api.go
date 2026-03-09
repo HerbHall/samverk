@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"log/slog"
+	"go.uber.org/zap"
 	"net/http"
 
 	"github.com/herbhall/samverk/internal/digest"
@@ -39,17 +39,22 @@ type API struct {
 	scalingMin     int
 	scalingMax     int
 	history        []historyEntry // ring buffer of recent snapshots; guarded by historyMu
+	logger         *zap.Logger
 }
 
 // New creates an API handler with the given dependencies.
 // Any dependency may be nil; endpoints that require a nil dependency
 // return 503 Service Unavailable.
-func New(tracker forge.IssueTracker, s store.Store, costs digest.CostSource) *API {
+func New(tracker forge.IssueTracker, s store.Store, costs digest.CostSource, logger *zap.Logger) *API {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &API{
 		tracker: tracker,
 		store:   s,
 		costs:   costs,
 		workers: newWorkerRegistry(),
+		logger:  logger,
 	}
 }
 
@@ -98,7 +103,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("api: failed to encode JSON response", "err", err)
+		zap.L().Error("api: failed to encode JSON response", zap.Error(err))
 	}
 }
 

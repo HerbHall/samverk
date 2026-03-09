@@ -3,7 +3,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
@@ -151,7 +151,7 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 		// Check if ALL dependencies are now satisfied.
 		blocked, _, depErr := d.checkDependencies(ctx, result.Frontmatter)
 		if depErr != nil {
-			d.logger.Warn("check deps", slog.Int("issue", issue.Number), slog.String("error", depErr.Error()))
+			d.logger.Warn("check deps", zap.Int("issue", issue.Number), zap.String("error", depErr.Error()))
 			continue
 		}
 		if blocked {
@@ -160,10 +160,10 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 
 		// Unblock: transition from blocked to queued.
 		if removeErr := d.tracker.RemoveLabel(ctx, issue.Number, "status:blocked"); removeErr != nil {
-			d.logger.Warn("remove label", slog.Int("issue", issue.Number), slog.String("label", "blocked"), slog.String("error", removeErr.Error()))
+			d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", "blocked"), zap.String("error", removeErr.Error()))
 		}
 		if addErr := d.tracker.AddLabel(ctx, issue.Number, "status:queued"); addErr != nil {
-			d.logger.Warn("add label", slog.Int("issue", issue.Number), slog.String("label", "queued"), slog.String("error", addErr.Error()))
+			d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", "queued"), zap.String("error", addErr.Error()))
 		}
 
 		comment := fmt.Sprintf(
@@ -171,10 +171,10 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 			time.Now().UTC().Format(time.RFC3339), closedIssueNumber,
 		)
 		if _, commentErr := d.tracker.AddComment(ctx, issue.Number, comment); commentErr != nil {
-			d.logger.Warn("add comment", slog.Int("issue", issue.Number), slog.String("context", "unblock"), slog.String("error", commentErr.Error()))
+			d.logger.Warn("add comment", zap.Int("issue", issue.Number), zap.String("context", "unblock"), zap.String("error", commentErr.Error()))
 		}
 
-		d.logger.Info("unblocked", slog.Int("issue", issue.Number), slog.Int("closed_dep", closedIssueNumber))
+		d.logger.Info("unblocked", zap.Int("issue", issue.Number), zap.Int("closed_dep", closedIssueNumber))
 	}
 
 	return nil

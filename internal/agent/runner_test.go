@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/cost"
@@ -15,7 +17,7 @@ import (
 // newTestRunner creates a runner with the given mocks for testing.
 func newTestRunner(mp *mockProvider, mt *mockTracker, ms *mockStore) *Runner {
 	costs := cost.NewTracker(ms, 0, 24)
-	return NewRunner(mp, "test-model", mt, ms, costs)
+	return NewRunner(mp, "test-model", mt, ms, costs, zap.NewNop())
 }
 
 func newDefaultMockStore() *mockStore {
@@ -145,7 +147,7 @@ func TestRunnerBudgetExceeded(t *testing.T) {
 
 	// Budget = $5, spent = $10 -> exceeded.
 	costs := cost.NewTracker(ms, 5.0, 24)
-	runner := NewRunner(mp, "test-model", mt, ms, costs)
+	runner := NewRunner(mp, "test-model", mt, ms, costs, zap.NewNop())
 	task := newDefaultTask()
 
 	err := runner.Run(context.Background(), task)

@@ -3,7 +3,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"strings"
 	"time"
 
@@ -147,15 +147,15 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType) error {
 	// Human-typed issues are tracked but never submitted to the agent pool.
 	if agentType == models.AgentTypeHuman {
-		d.logger.Info("issue classified as human", slog.Int("issue", issue.Number))
+		d.logger.Info("issue classified as human", zap.Int("issue", issue.Number))
 		if err := d.tracker.AddLabel(ctx, issue.Number, "status:needs-human"); err != nil {
-			d.logger.Error("add label", slog.Int("issue", issue.Number), slog.String("label", "needs-human"), slog.String("error", err.Error()))
+			d.logger.Error("add label", zap.Int("issue", issue.Number), zap.String("label", "needs-human"), zap.String("error", err.Error()))
 		}
 		return nil
 	}
 
 	if err := d.tracker.RemoveLabel(ctx, issue.Number, "status:queued"); err != nil {
-		d.logger.Debug("remove queued label", slog.Int("issue", issue.Number), slog.String("error", err.Error()))
+		d.logger.Debug("remove queued label", zap.Int("issue", issue.Number), zap.String("error", err.Error()))
 	}
 	if err := d.tracker.AddLabel(ctx, issue.Number, "status:claimed"); err != nil {
 		return fmt.Errorf("add claimed label to #%d: %w", issue.Number, err)
@@ -178,11 +178,11 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	d.mu.Unlock()
 
 	d.logger.Info("routed",
-		slog.Int("issue", issue.Number),
-		slog.String("agent", string(agentType)),
-		slog.String("provider", providerKey),
-		slog.String("reason", reason),
-		slog.Int("attempt", priorFailures+1),
+		zap.Int("issue", issue.Number),
+		zap.String("agent", string(agentType)),
+		zap.String("provider", providerKey),
+		zap.String("reason", reason),
+		zap.Int("attempt", priorFailures+1),
 	)
 
 	// Submit to agent pool if available.

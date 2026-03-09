@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/herbhall/samverk/internal/server"
@@ -46,7 +48,7 @@ func post(t *testing.T, url string) *http.Response {
 // It returns an httptest.Server backed by the same mux for unit tests.
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	s := server.New(server.Config{Addr: "localhost:0"})
+	s := server.New(server.Config{Addr: "localhost:0"}, zap.NewNop())
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts
@@ -113,7 +115,7 @@ func TestAPINotImplemented(t *testing.T) {
 }
 
 func TestGracefulShutdown(t *testing.T) {
-	s := server.New(server.Config{Addr: "localhost:0"})
+	s := server.New(server.Config{Addr: "localhost:0"}, zap.NewNop())
 
 	ctx, cancel := context.WithCancel(context.Background())
 

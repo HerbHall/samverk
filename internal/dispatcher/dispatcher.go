@@ -4,7 +4,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"sync"
 	"time"
 
@@ -34,15 +34,18 @@ type Dispatcher struct {
 	claimed       map[int]*claimedIssue
 	issueFailures map[int]int // persists failure counts across re-queue cycles
 	mu            sync.Mutex
-	logger        *slog.Logger
+	logger        *zap.Logger
 	stop          context.CancelFunc
 }
 
 // New creates a Dispatcher with the given dependencies. The pool parameter
 // is optional; when nil, routed issues are labeled but no agent tasks are spawned.
-func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.Store, pool *agent.Pool, cfg *Config) *Dispatcher {
+func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.Store, pool *agent.Pool, cfg *Config, logger *zap.Logger) *Dispatcher {
 	if cfg == nil {
 		cfg = DefaultConfig()
+	}
+	if logger == nil {
+		logger = zap.NewNop()
 	}
 	return &Dispatcher{
 		tracker:       tracker,
@@ -52,7 +55,7 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 		config:        cfg,
 		claimed:       make(map[int]*claimedIssue),
 		issueFailures: make(map[int]int),
-		logger:        slog.Default(),
+		logger:        logger,
 	}
 }
 
@@ -73,14 +76,14 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 
 	if result.Success {
 		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
-			d.logger.Error("add label", slog.Int("issue", result.IssueNumber), slog.String("label", "needs-qc"), slog.String("error", err.Error()))
+			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "needs-qc"), zap.String("error", err.Error()))
 		}
-		d.logger.Info("task completed", slog.Int("issue", result.IssueNumber), slog.String("session", result.SessionID))
+		d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
 	} else {
 		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:queued"); err != nil {
-			d.logger.Error("add label", slog.Int("issue", result.IssueNumber), slog.String("label", "queued"), slog.String("error", err.Error()))
+			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "queued"), zap.String("error", err.Error()))
 		}
-		d.logger.Warn("task failed re-queued", slog.Int("issue", result.IssueNumber), slog.String("session", result.SessionID), slog.String("error", result.Error))
+		d.logger.Warn("task failed re-queued", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID), zap.String("error", result.Error))
 	}
 }
 
@@ -115,7 +118,7 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			return fmt.Errorf("watch stopped: %w", err)
 		case <-ticker.C:
 			if err := d.checkTimeouts(ctx); err != nil {
-				d.logger.Error("heartbeat check", slog.String("error", err.Error()))
+				d.logger.Error("heartbeat check", zap.String("error", err.Error()))
 			}
 		}
 	}
@@ -145,11 +148,11 @@ func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
 	case forge.EventIssueEdited:
 		err = d.handleEdited(ctx, ev)
 	default:
-		d.logger.Warn("unknown event type", slog.String("type", string(ev.Type)))
+		d.logger.Warn("unknown event type", zap.String("type", string(ev.Type)))
 		return
 	}
 	if err != nil {
-		d.logger.Error("event handler", slog.String("event", string(ev.Type)), slog.Int("issue", ev.IssueNumber), slog.String("error", err.Error()))
+		d.logger.Error("event handler", zap.String("event", string(ev.Type)), zap.Int("issue", ev.IssueNumber), zap.String("error", err.Error()))
 	}
 }
 
@@ -157,7 +160,7 @@ func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
 // Pull requests are silently skipped — they are not routable work items.
 func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 	if ev.IsPullRequest {
-		d.logger.Debug("skipping pull request", slog.Int("issue", ev.IssueNumber))
+		d.logger.Debug("skipping pull request", zap.Int("issue", ev.IssueNumber))
 		return nil
 	}
 
@@ -176,7 +179,7 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		labels[l] = true
 	}
 	if labels["status:needs-human"] || labels["status:human-pending"] || labels["status:blocked"] || labels["status:claimed"] || labels["status:in-progress"] {
-		d.logger.Debug("skipping issue with terminal status", slog.Int("issue", issue.Number))
+		d.logger.Debug("skipping issue with terminal status", zap.Int("issue", issue.Number))
 		return nil
 	}
 
@@ -258,7 +261,7 @@ func (d *Dispatcher) handleAssigned(_ context.Context, ev forge.Event) error {
 	if assignee == "" && ev.Issue != nil && len(ev.Issue.Assignees) > 0 {
 		assignee = ev.Issue.Assignees[len(ev.Issue.Assignees)-1]
 	}
-	d.logger.Info("issue assigned", slog.Int("issue", ev.IssueNumber), slog.String("assignee", assignee))
+	d.logger.Info("issue assigned", zap.Int("issue", ev.IssueNumber), zap.String("assignee", assignee))
 	return nil
 }
 
@@ -292,10 +295,10 @@ func (d *Dispatcher) escalateCycle(ctx context.Context, cycle []int) error {
 			time.Now().UTC().Format(time.RFC3339), cyclePath,
 		)
 		if err := d.tracker.AddLabel(ctx, num, "status:needs-human"); err != nil {
-			d.logger.Error("add label", slog.Int("issue", num), slog.String("label", "needs-human"), slog.String("error", err.Error()))
+			d.logger.Error("add label", zap.Int("issue", num), zap.String("label", "needs-human"), zap.String("error", err.Error()))
 		}
 		if _, err := d.tracker.AddComment(ctx, num, comment); err != nil {
-			d.logger.Error("add comment", slog.Int("issue", num), slog.String("context", "cycle"), slog.String("error", err.Error()))
+			d.logger.Error("add comment", zap.Int("issue", num), zap.String("context", "cycle"), zap.String("error", err.Error()))
 		}
 	}
 	return nil
