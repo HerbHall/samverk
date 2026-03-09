@@ -1,0 +1,22 @@
+# Samverk Autonomy Policy
+# Controls what agents can do without human approval.
+
+defaults:
+  api_cost_threshold_usd: 5.00
+
+tier_overrides: {}
+agents: {}
+branches: {}
+
+merge:
+  auto_merge_on_ci_pass: true
+  trusted_authors:
+    - HerbHall
+    - release-please[bot]
+    - github-actions[bot]
+  trusted_reviewers:
+    - copilot[bot]
+  require_all_checks_pass: true
+  exclude_labels:
+    - do-not-merge
+    - status:needs-human
