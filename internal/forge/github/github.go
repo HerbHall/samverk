@@ -154,18 +154,23 @@ func (c *Client) AddComment(ctx context.Context, number int, body string) (*forg
 
 // ListComments returns all comments on the given issue.
 func (c *Client) ListComments(ctx context.Context, number int) ([]*forge.Comment, error) {
-	comments, _, err := c.gh.Issues.ListComments(ctx, c.owner, c.repo, number, &gogithub.IssueListCommentsOptions{
-		ListOptions: gogithub.ListOptions{PerPage: 100},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("github: list comments on #%d: %w", number, err)
+	var result []*forge.Comment
+	page := 1
+	for {
+		comments, _, err := c.gh.Issues.ListComments(ctx, c.owner, c.repo, number, &gogithub.IssueListCommentsOptions{
+			ListOptions: gogithub.ListOptions{Page: page, PerPage: 100},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("github: list comments on #%d: %w", number, err)
+		}
+		for i := range comments {
+			result = append(result, convertComment(comments[i]))
+		}
+		if len(comments) < 100 {
+			break
+		}
+		page++
 	}
-
-	result := make([]*forge.Comment, 0, len(comments))
-	for i := range comments {
-		result = append(result, convertComment(comments[i]))
-	}
-
 	return result, nil
 }
 
@@ -224,6 +229,28 @@ func (c *Client) Unassign(ctx context.Context, number int, assignee string) erro
 	return nil
 }
 
+// listAllOpenIssues fetches all open issues, paginating automatically.
+func (c *Client) listAllOpenIssues(ctx context.Context) ([]*forge.Issue, error) {
+	var all []*forge.Issue
+	page := 1
+	for {
+		batch, err := c.ListIssues(ctx, &forge.ListOptions{
+			State:   forge.StateOpen,
+			Page:    page,
+			PerPage: 100,
+		})
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, batch...)
+		if len(batch) < 100 {
+			break
+		}
+		page++
+	}
+	return all, nil
+}
+
 // Watch polls the GitHub API for issue changes and calls handler for each detected event.
 // It blocks until the context is cancelled. The initial poll establishes baseline state;
 // subsequent polls emit events for changes.
@@ -232,7 +259,7 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 	var mu sync.Mutex
 
 	// Initial load.
-	issues, err := c.ListIssues(ctx, &forge.ListOptions{State: forge.StateOpen, PerPage: 100})
+	issues, err := c.listAllOpenIssues(ctx)
 	if err != nil {
 		return fmt.Errorf("github: watch initial load: %w", err)
 	}
@@ -240,6 +267,21 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 	mu.Lock()
 	for _, iss := range issues {
 		known[iss.Number] = iss
+	}
+	// Emit events for pre-existing queued issues so the dispatcher
+	// routes them on startup, not only when new issues appear.
+	for _, iss := range issues {
+		for _, label := range iss.Labels {
+			if label == "status:queued" {
+				handler(forge.Event{
+					Type:          forge.EventIssueOpened,
+					IssueNumber:   iss.Number,
+					Issue:         iss,
+					IsPullRequest: iss.IsPullRequest,
+				})
+				break
+			}
+		}
 	}
 	mu.Unlock()
 
@@ -251,7 +293,7 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			current, err := c.ListIssues(ctx, &forge.ListOptions{State: forge.StateOpen, PerPage: 100})
+			current, err := c.listAllOpenIssues(ctx)
 			if err != nil {
 				continue // transient errors are retried on next tick
 			}

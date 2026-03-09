@@ -163,19 +163,24 @@ func (c *Client) AddComment(ctx context.Context, number int, body string) (comme
 }
 
 // ListComments returns all comments on the given issue.
-func (c *Client) ListComments(ctx context.Context, number int) (comments []*forge.Comment, err error) {
-	gc, _, err := c.gt.ListIssueComments(c.owner, c.repo, int64(number), gogitea.ListIssueCommentOptions{
-		ListOptions: gogitea.ListOptions{PageSize: 50},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("gitea: list comments on #%d: %w", number, err)
+func (c *Client) ListComments(ctx context.Context, number int) ([]*forge.Comment, error) {
+	var result []*forge.Comment
+	page := 1
+	for {
+		gc, _, err := c.gt.ListIssueComments(c.owner, c.repo, int64(number), gogitea.ListIssueCommentOptions{
+			ListOptions: gogitea.ListOptions{Page: page, PageSize: 50},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("gitea: list comments on #%d: %w", number, err)
+		}
+		for i := range gc {
+			result = append(result, convertComment(gc[i]))
+		}
+		if len(gc) < 50 {
+			break
+		}
+		page++
 	}
-
-	result := make([]*forge.Comment, 0, len(gc))
-	for i := range gc {
-		result = append(result, convertComment(gc[i]))
-	}
-
 	return result, nil
 }
 
@@ -284,6 +289,28 @@ func (c *Client) Unassign(ctx context.Context, number int, assignee string) erro
 	return nil
 }
 
+// listAllOpenIssues fetches all open issues, paginating automatically.
+func (c *Client) listAllOpenIssues(ctx context.Context) ([]*forge.Issue, error) {
+	var all []*forge.Issue
+	page := 1
+	for {
+		batch, err := c.ListIssues(ctx, &forge.ListOptions{
+			State:   forge.StateOpen,
+			Page:    page,
+			PerPage: 50,
+		})
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, batch...)
+		if len(batch) < 50 {
+			break
+		}
+		page++
+	}
+	return all, nil
+}
+
 // Watch polls the Gitea API for issue changes and calls handler for each detected event.
 // It blocks until the context is cancelled. The initial poll establishes baseline state;
 // subsequent polls emit events for changes.
@@ -292,7 +319,7 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 	var mu sync.Mutex
 
 	// Initial load.
-	issues, err := c.ListIssues(ctx, &forge.ListOptions{State: forge.StateOpen, PerPage: 50})
+	issues, err := c.listAllOpenIssues(ctx)
 	if err != nil {
 		return fmt.Errorf("gitea: watch initial load: %w", err)
 	}
@@ -300,6 +327,21 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 	mu.Lock()
 	for _, iss := range issues {
 		known[iss.Number] = iss
+	}
+	// Emit events for pre-existing queued issues so the dispatcher
+	// routes them on startup, not only when new issues appear.
+	for _, iss := range issues {
+		for _, label := range iss.Labels {
+			if label == "status:queued" {
+				handler(forge.Event{
+					Type:          forge.EventIssueOpened,
+					IssueNumber:   iss.Number,
+					Issue:         iss,
+					IsPullRequest: iss.IsPullRequest,
+				})
+				break
+			}
+		}
 	}
 	mu.Unlock()
 
@@ -311,7 +353,7 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			current, pollErr := c.ListIssues(ctx, &forge.ListOptions{State: forge.StateOpen, PerPage: 50})
+			current, pollErr := c.listAllOpenIssues(ctx)
 			if pollErr != nil {
 				continue // transient errors are retried on next tick
 			}
@@ -386,20 +428,25 @@ func diffAndEmit(known map[int]*forge.Issue, current []*forge.Issue, handler fun
 	}
 }
 
-// ensureLabelCache populates the label name-to-ID cache from the repo's labels.
 func (c *Client) ensureLabelCache() error {
 	c.labelOnce.Do(func() {
-		labels, _, err := c.gt.ListRepoLabels(c.owner, c.repo, gogitea.ListLabelsOptions{
-			ListOptions: gogitea.ListOptions{PageSize: 50},
-		})
-		if err != nil {
-			c.labelErr = fmt.Errorf("fetch repo labels: %w", err)
-			return
-		}
-
-		c.labelCache = make(map[string]int64, len(labels))
-		for i := range labels {
-			c.labelCache[labels[i].Name] = labels[i].ID
+		c.labelCache = make(map[string]int64)
+		page := 1
+		for {
+			labels, _, err := c.gt.ListRepoLabels(c.owner, c.repo, gogitea.ListLabelsOptions{
+				ListOptions: gogitea.ListOptions{Page: page, PageSize: 50},
+			})
+			if err != nil {
+				c.labelErr = fmt.Errorf("fetch repo labels: %w", err)
+				return
+			}
+			for i := range labels {
+				c.labelCache[labels[i].Name] = labels[i].ID
+			}
+			if len(labels) < 50 {
+				break
+			}
+			page++
 		}
 	})
 
