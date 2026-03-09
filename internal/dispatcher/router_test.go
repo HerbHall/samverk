@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/pkg/models"
@@ -216,4 +217,64 @@ func TestSelectProviderKey(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHeartbeatFunc_UpdatesClaimedLastHeartbeat verifies the HeartbeatFunc closure
+// built inside route() correctly updates d.claimed[N].LastHeartbeat under the lock.
+// We test the closure directly to avoid the complexity of building a real agent.Pool.
+func TestHeartbeatFunc_UpdatesClaimedLastHeartbeat(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	const issueNum = 99
+	oldTime := time.Now().Add(-5 * time.Minute)
+
+	d.mu.Lock()
+	d.claimed[issueNum] = &claimedIssue{
+		AgentID:       "code-gen",
+		ClaimedAt:     oldTime,
+		LastHeartbeat: oldTime,
+	}
+	d.mu.Unlock()
+
+	// Build the same closure that route() injects into agent.Task.HeartbeatFunc.
+	heartbeatFunc := func() {
+		d.mu.Lock()
+		if c, ok := d.claimed[issueNum]; ok {
+			c.LastHeartbeat = time.Now()
+		}
+		d.mu.Unlock()
+	}
+
+	heartbeatFunc()
+
+	d.mu.Lock()
+	hb := d.claimed[issueNum].LastHeartbeat
+	d.mu.Unlock()
+
+	if !hb.After(oldTime) {
+		t.Errorf("LastHeartbeat not updated: got %v, want after %v", hb, oldTime)
+	}
+}
+
+// TestHeartbeatFunc_NoopWhenUnclaimed verifies the HeartbeatFunc does not panic
+// or error when the issue has already been removed from the claimed map (e.g.,
+// after dispatcher completion callback runs before the goroutine stops).
+func TestHeartbeatFunc_NoopWhenUnclaimed(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	const issueNum = 77
+	// Issue is NOT in d.claimed.
+
+	heartbeatFunc := func() {
+		d.mu.Lock()
+		if c, ok := d.claimed[issueNum]; ok {
+			c.LastHeartbeat = time.Now()
+		}
+		d.mu.Unlock()
+	}
+
+	// Must not panic.
+	heartbeatFunc()
 }

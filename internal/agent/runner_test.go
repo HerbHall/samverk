@@ -282,5 +282,74 @@ func TestRunnerTrackerError(t *testing.T) {
 	}
 }
 
+func TestRunnerHeartbeat(t *testing.T) {
+	var heartbeatCalls int
+
+	ms := newDefaultMockStore()
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			return &provider.ChatResponse{
+				Message: provider.Message{
+					Role:    provider.RoleAssistant,
+					Content: "done",
+				},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test-provider" },
+	}
+	mt := &mockTracker{
+		addCommentFn: func(_ context.Context, _ int, _ string) (*forge.Comment, error) {
+			return &forge.Comment{ID: 1}, nil
+		},
+	}
+
+	runner := newTestRunner(mp, mt, ms)
+	task := newDefaultTask()
+	task.HeartbeatFunc = func() {
+		heartbeatCalls++
+	}
+
+	err := runner.Run(context.Background(), task)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	// HeartbeatFunc must be called at least once (immediately before Chat).
+	if heartbeatCalls < 1 {
+		t.Errorf("HeartbeatFunc called %d times, want >= 1", heartbeatCalls)
+	}
+}
+
+func TestRunnerHeartbeatNil(t *testing.T) {
+	// When HeartbeatFunc is nil the runner must not panic.
+	ms := newDefaultMockStore()
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			return &provider.ChatResponse{
+				Message: provider.Message{
+					Role:    provider.RoleAssistant,
+					Content: "done",
+				},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test-provider" },
+	}
+	mt := &mockTracker{
+		addCommentFn: func(_ context.Context, _ int, _ string) (*forge.Comment, error) {
+			return &forge.Comment{ID: 1}, nil
+		},
+	}
+
+	runner := newTestRunner(mp, mt, ms)
+	task := newDefaultTask()
+	// HeartbeatFunc intentionally left nil.
+
+	if err := runner.Run(context.Background(), task); err != nil {
+		t.Fatalf("Run returned error with nil HeartbeatFunc: %v", err)
+	}
+}
+
 // Old buildSystemPrompt tests removed — replaced by prompts_test.go
 // which covers BuildSystemPrompt with per-agent-type verification.
