@@ -13,17 +13,21 @@
         - Failure (CC exited with error or timeout)
 
     Label lifecycle:
-        status:active  → status:needs-qc    (success → ready for QC review)
-        status:active  → status:queued      (first failure → re-queue)
-        status:active  → status:needs-human (max failures reached)
+        status:claimed  → status:needs-qc    (success → ready for QC review)
+        status:claimed  → status:queued      (first failure → re-queue)
+        status:claimed  → status:needs-human (max failures reached)
 #>
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
-$script:ModuleDir = Split-Path $PSCommandPath -Parent
-Import-Module (Join-Path $script:ModuleDir 'workspace.psm1') -Force
-Import-Module (Join-Path $script:ModuleDir 'forge.psm1') -Force
+$script:ModuleDir = $PSScriptRoot
+if (-not (Get-Module workspace)) {
+    Import-Module (Join-Path $script:ModuleDir 'workspace.psm1') -Global
+}
+if (-not (Get-Module forge)) {
+    Import-Module (Join-Path $script:ModuleDir 'forge.psm1') -Global -WarningAction SilentlyContinue
+}
 
 # Maximum number of consecutive failures before escalating to human.
 $script:MaxFailures = 2
@@ -219,7 +223,7 @@ function Invoke-PostTask {
             Add-IssueComment -IssueNumber $Issue.Number -Body $comment -Config $fConfig
             Update-IssueStatus -IssueNumber $Issue.Number `
                 -AddLabels @('status:needs-human') `
-                -RemoveLabels @('status:active') `
+                -RemoveLabels @('status:claimed') `
                 -Config $fConfig
         } else {
             # Re-queue for another attempt.
@@ -227,7 +231,7 @@ function Invoke-PostTask {
             Add-IssueComment -IssueNumber $Issue.Number -Body $comment -Config $fConfig
             Update-IssueStatus -IssueNumber $Issue.Number `
                 -AddLabels @('status:queued') `
-                -RemoveLabels @('status:active') `
+                -RemoveLabels @('status:claimed') `
                 -Config $fConfig
         }
 
@@ -253,7 +257,7 @@ function Invoke-PostTask {
         Add-IssueComment -IssueNumber $Issue.Number -Body $comment -Config $fConfig
         Update-IssueStatus -IssueNumber $Issue.Number `
             -AddLabels @('status:needs-human') `
-            -RemoveLabels @('status:active') `
+            -RemoveLabels @('status:claimed') `
             -Config $fConfig
         $result.Comment = $comment
         Remove-AgentWorktree -Slot $CCResult.Slot -Config $wConfig
@@ -266,7 +270,7 @@ function Invoke-PostTask {
         Add-IssueComment -IssueNumber $Issue.Number -Body $comment -Config $fConfig
         Update-IssueStatus -IssueNumber $Issue.Number `
             -AddLabels @('status:needs-human') `
-            -RemoveLabels @('status:active') `
+            -RemoveLabels @('status:claimed') `
             -Config $fConfig
         $result.Comment = $comment
         Remove-AgentWorktree -Slot $CCResult.Slot -Config $wConfig
@@ -297,7 +301,7 @@ function Invoke-PostTask {
                 Add-IssueComment -IssueNumber $Issue.Number -Body $comment -Config $fConfig
                 Update-IssueStatus -IssueNumber $Issue.Number `
                     -AddLabels @('status:needs-human') `
-                    -RemoveLabels @('status:active') `
+                    -RemoveLabels @('status:claimed') `
                     -Config $fConfig
                 $result.Comment = $comment
                 Remove-AgentWorktree -Slot $CCResult.Slot -Config $wConfig
@@ -320,7 +324,7 @@ function Invoke-PostTask {
     # Update issue labels.
     Update-IssueStatus -IssueNumber $Issue.Number `
         -AddLabels @('status:needs-qc') `
-        -RemoveLabels @('status:active') `
+        -RemoveLabels @('status:claimed') `
         -Config $fConfig
 
     # Post completion comment.
