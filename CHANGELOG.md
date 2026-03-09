@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.1.11](https://github.com/HerbHall/samverk/compare/v0.1.10...v0.1.11) (2026-03-09)
+
+
+### Features
+
+* **#240:** add runner heartbeat to prevent dispatcher timeout restarts ([#353](https://github.com/HerbHall/samverk/issues/353)) ([65c11bd](https://github.com/HerbHall/samverk/commit/65c11bdb05c84a43ca2a2adbd3f8463801131619))
+* **#277:** ErrNotSupported for Gitea search_code; MCP returns friendly message ([#352](https://github.com/HerbHall/samverk/issues/352)) ([0c5502d](https://github.com/HerbHall/samverk/commit/0c5502d05d39a0a982a85e66eb73a6778d787f26))
+* **#289:** add Metrics page to SPA dashboard ([#334](https://github.com/HerbHall/samverk/issues/334)) ([7dbde43](https://github.com/HerbHall/samverk/commit/7dbde435d6e5bbd78a1b94425aa83e2ded2df3b4))
+* **#293:** implement scaling policy engine with configurable thresholds ([#337](https://github.com/HerbHall/samverk/issues/337)) ([1a198fc](https://github.com/HerbHall/samverk/commit/1a198fccf4400a9a771228d6c45c9f172a2fe479))
+* **#294:** autoscaler loop connecting policy to pool ([#338](https://github.com/HerbHall/samverk/issues/338)) ([c0440e8](https://github.com/HerbHall/samverk/commit/c0440e8000cd63b89660780e9d4e97c30fdf3c02))
+* **#296:** scaling events to dashboard, MCP digest, and durable store ([#340](https://github.com/HerbHall/samverk/issues/340)) ([32e0a2b](https://github.com/HerbHall/samverk/commit/32e0a2bd9fa2606e3a9ea46b6dbec8111b65e589))
+* **#299:** task-type duration profiling for smarter routing ([#343](https://github.com/HerbHall/samverk/issues/343)) ([7ad8794](https://github.com/HerbHall/samverk/commit/7ad87945996c5f84b53bbba2e63959ac0dc171e2))
+* **#300,#301:** samverk scale CLI, REST API, and MCP scaling tools ([#341](https://github.com/HerbHall/samverk/issues/341)) ([de1a046](https://github.com/HerbHall/samverk/commit/de1a0469ddd77f1b3147189cf45f84e85aa57b4f))
+* **#305,#306:** PC agent workspace module and design doc ([#344](https://github.com/HerbHall/samverk/issues/344)) ([71dac4e](https://github.com/HerbHall/samverk/commit/71dac4e0b282a09220c906d0e16d2091cd9f063d))
+* **#307,#308:** PC agent forge poller, prompt formatter, and CC launcher ([#345](https://github.com/HerbHall/samverk/issues/345)) ([cf6ff65](https://github.com/HerbHall/samverk/commit/cf6ff650d9e0e2f209a863108bd3eb7365cb197b))
+* **#309:** PC agent post-task handler ([#346](https://github.com/HerbHall/samverk/issues/346)) ([1233263](https://github.com/HerbHall/samverk/commit/12332637364157647bfc67cd9a8987073f1302e4))
+* **#311:** PC agent single-session runner loop ([#347](https://github.com/HerbHall/samverk/issues/347)) ([b3eaead](https://github.com/HerbHall/samverk/commit/b3eaeade747244f85922243f25336b4e524eaa02)), closes [#311](https://github.com/HerbHall/samverk/issues/311)
+* **#312:** PC agent autonomy tier gate ([#348](https://github.com/HerbHall/samverk/issues/348)) ([cfc8ec2](https://github.com/HerbHall/samverk/commit/cfc8ec23eaa37535e8e8adff1c5c1733b70ebe33)), closes [#312](https://github.com/HerbHall/samverk/issues/312)
+* **#313:** register PC agent as a worker node with Samverk server ([#351](https://github.com/HerbHall/samverk/issues/351)) ([40785b2](https://github.com/HerbHall/samverk/commit/40785b2bb77128a6273f95dc31df13acfa9f76ef))
+* **#328:** migrate dispatcher from log.Printf to structured slog ([#350](https://github.com/HerbHall/samverk/issues/350)) ([ffe4c25](https://github.com/HerbHall/samverk/commit/ffe4c25e6ab18287a7700b11a9d87d3c9abb5ed6))
+* **#388:** PR review and merge workflow with tier-based policy ([#391](https://github.com/HerbHall/samverk/issues/391)) ([01922a7](https://github.com/HerbHall/samverk/commit/01922a79701646fe0f907f19748efe9e972de11b))
+* **agent:** dynamic pool scaling with Resize and max-worker bound ([#292](https://github.com/HerbHall/samverk/issues/292)) ([#357](https://github.com/HerbHall/samverk/issues/357)) ([bcb9e9b](https://github.com/HerbHall/samverk/commit/bcb9e9b7a7d5ddce5da1f9e7e351b57167745d0e))
+* **api:** pressure indicator, metrics history, and healthz pressure ([#288](https://github.com/HerbHall/samverk/issues/288)) ([#354](https://github.com/HerbHall/samverk/issues/354)) ([7bf924a](https://github.com/HerbHall/samverk/commit/7bf924aeceaeb6e8e042c654a7490d7290b944a8))
+* **ci:** add Gitea Actions CI and security workflows ([#331](https://github.com/HerbHall/samverk/issues/331)) ([7d99199](https://github.com/HerbHall/samverk/commit/7d991998a2b85853432080966a3f58835e2ee83b))
+* **config:** add dual-forge support to server.yaml project config ([#326](https://github.com/HerbHall/samverk/issues/326)) ([b6259bc](https://github.com/HerbHall/samverk/commit/b6259bcd00f1eeec93663aca759429f71256ac11))
+* **dispatch:** add --forge and --gitea-url flags for dual-forge dispatching ([#387](https://github.com/HerbHall/samverk/issues/387)) ([22776bb](https://github.com/HerbHall/samverk/commit/22776bb23770c6315a0457b7e3b533f741317b4f)), closes [#274](https://github.com/HerbHall/samverk/issues/274)
+* **mcp:** pressure indicator in get_digest metrics section ([#290](https://github.com/HerbHall/samverk/issues/290)) ([#356](https://github.com/HerbHall/samverk/issues/356)) ([3f5d17d](https://github.com/HerbHall/samverk/commit/3f5d17d23fef166b0586e7bfbb6dd72402a16ce5))
+* **scripts:** add --forge flag to create-issues.sh for Gitea support ([#327](https://github.com/HerbHall/samverk/issues/327)) ([9191c7f](https://github.com/HerbHall/samverk/commit/9191c7fb6f349e84e178bbdeb29bebe337759534))
+* **scripts:** add migrate-issues.py for GitHub-to-Gitea issue migration ([#330](https://github.com/HerbHall/samverk/issues/330)) ([ba7a77e](https://github.com/HerbHall/samverk/commit/ba7a77e2d0b2ad34015dc2a4393eb76e89301ef1))
+* **web:** pressure indicator on metrics dashboard ([#289](https://github.com/HerbHall/samverk/issues/289)) ([#355](https://github.com/HerbHall/samverk/issues/355)) ([31b36de](https://github.com/HerbHall/samverk/commit/31b36dedbc30e984135a563024ab2b501fbbe67e))
+
+
+### Bug Fixes
+
+* **pc-agent:** fix E2E bugs in PowerShell modules ([#310](https://github.com/HerbHall/samverk/issues/310)) ([#362](https://github.com/HerbHall/samverk/issues/362)) ([ea75111](https://github.com/HerbHall/samverk/commit/ea751117ca0247b1d242afdaf73217a90c2dd360))
+
 ## [0.1.10](https://github.com/HerbHall/samverk/compare/v0.1.9...v0.1.10) (2026-03-09)
 
 
