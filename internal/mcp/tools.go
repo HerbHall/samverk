@@ -198,6 +198,9 @@ func (h *Handler) handleGetDigest(
 		return nil, nil, fmt.Errorf("building digest: %w", err)
 	}
 
+	// Enrich digest with PR data from all registered projects.
+	h.populateDigestPRs(ctx, &data)
+
 	text := digest.FormatDigest(data) + h.formatMetricsSection()
 
 	return &gosdk.CallToolResult{

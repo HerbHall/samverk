@@ -37,6 +37,9 @@ func FormatDigest(d DigestData) string {
 	if hasCompleted {
 		renderCompletedActions(&b, d.CompletedActions)
 	}
+	if len(d.PRsAwaiting) > 0 || d.AutoMergedCount > 0 {
+		renderPRSection(&b, d.PRsAwaiting, d.AutoMergedCount)
+	}
 	renderStatus(&b, d)
 
 	b.WriteString("\nWhat would you like to do?\n")
@@ -111,6 +114,45 @@ func renderStatus(b *strings.Builder, d DigestData) {
 		b.WriteString("\n")
 	} else {
 		b.WriteString("Cost: no cost data available\n")
+	}
+}
+
+func renderPRSection(b *strings.Builder, prs []PRAwaitingReview, autoMerged int) {
+	b.WriteString("\n--- PRS AWAITING REVIEW ---\n")
+
+	if autoMerged > 0 {
+		fmt.Fprintf(b, "\nAuto-merged since last check-in: %d PR%s\n", autoMerged, plural(autoMerged))
+	}
+
+	if len(prs) == 0 {
+		b.WriteString("\nNo open PRs awaiting review.\n")
+		return
+	}
+
+	// Group by project.
+	groups := make(map[string][]PRAwaitingReview)
+	var order []string
+	for _, pr := range prs {
+		proj := pr.Project
+		if proj == "" {
+			proj = "default"
+		}
+		if _, ok := groups[proj]; !ok {
+			order = append(order, proj)
+		}
+		groups[proj] = append(groups[proj], pr)
+	}
+
+	for _, proj := range order {
+		if len(order) > 1 {
+			fmt.Fprintf(b, "\n%s:\n", proj)
+		} else {
+			b.WriteString("\n")
+		}
+		for _, pr := range groups[proj] {
+			fmt.Fprintf(b, "- #%d %s [%s, CI: %s, %s] by %s\n",
+				pr.Number, pr.Title, pr.Tier, pr.CIStatus, pr.Age, pr.Author)
+		}
 	}
 }
 
