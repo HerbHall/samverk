@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
@@ -59,8 +60,9 @@ type Pool struct {
 	done       chan struct{}
 	mu         sync.Mutex
 	shutdown   bool
-	onComplete atomic.Pointer[func(TaskResult)] // callback to notify dispatcher; atomic to avoid mu deadlock
-	workerQuit chan struct{}                     // each send causes one worker to exit after its current task
+	active     atomic.Int32                        // currently processing workers
+	onComplete atomic.Pointer[func(TaskResult)]   // callback to notify dispatcher; atomic to avoid mu deadlock
+	workerQuit chan struct{}                        // each send causes one worker to exit after its current task
 }
 
 // NewPool creates a pool with the given number of worker goroutines and starts
@@ -157,6 +159,25 @@ func (p *Pool) Workers() int {
 	return p.workers
 }
 
+// Snapshot returns a point-in-time view of pool state for the scaling policy.
+func (p *Pool) Snapshot() metrics.PoolSnapshot {
+	p.mu.Lock()
+	total := p.workers
+	queue := len(p.tasks)
+	p.mu.Unlock()
+	active := int(p.active.Load())
+	if active > total {
+		active = total
+	}
+	return metrics.PoolSnapshot{
+		CollectedAt:   time.Now(),
+		TotalWorkers:  total,
+		ActiveWorkers: active,
+		IdleWorkers:   total - active,
+		QueueDepth:    queue,
+	}
+}
+
 // Submit enqueues a task for processing. Returns ErrPoolShutdown if the pool
 // has been shut down.
 //
@@ -223,6 +244,9 @@ func (p *Pool) worker() {
 // string(task.AgentType). If the selected chain has no healthy provider,
 // it retries with the "default" chain before giving up.
 func (p *Pool) processTask(task Task) {
+	p.active.Add(1)
+	defer p.active.Add(-1)
+
 	ctx := context.Background()
 	logger := p.logger.With(
 		slog.String("session_id", task.SessionID),
