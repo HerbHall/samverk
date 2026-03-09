@@ -44,6 +44,7 @@ This adds overlay labels, creates `.samverk/project.yaml` and
 | `labels.json` | Samverk-specific labels added on top of DevKit's base set |
 | `templates/project.yaml.template` | Template for `.samverk/project.yaml` |
 | `templates/status.md.template` | Template for `.samverk/status.md` |
+| `templates/gitea-ai-review.yml` | Gitea Actions workflow for AI-powered code review |
 | `agents/ideation.md` | Agent template for idea intake and synthesis |
 | `agents/feasibility.md` | Agent template for technical assessment |
 | `agents/legal.md` | Agent template for trademark/licensing research |
@@ -68,6 +69,13 @@ Labels are split into two tiers:
    complexity routing, and lifecycle phases.
 
 The base + overlay sets are disjoint — no label appears in both files.
+
+## AI Code Review for Gitea Projects
+
+Samverk-managed Gitea projects should include the AI code review workflow
+for automated PR review. Copy `templates/gitea-ai-review.yml` to
+`.gitea/workflows/ai-review.yml` in the target repo. See
+[docs/gitea-ai-review.md](../docs/gitea-ai-review.md) for setup details.
 
 ## Related Documents
 
