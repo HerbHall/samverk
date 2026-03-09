@@ -31,19 +31,29 @@ type Task struct {
 	ProviderKey string // routing chain key; defaults to string(AgentType) when empty
 }
 
+// TaskResult reports the outcome of a pool task back to the dispatcher.
+type TaskResult struct {
+	IssueNumber int
+	SessionID   string
+	AgentType   models.AgentType
+	Success     bool
+	Error       string
+}
+
 // Pool manages a fixed set of worker goroutines that process agent tasks.
 type Pool struct {
-	registry *provider.Registry
-	tracker  forge.IssueTracker
-	store    store.Store
-	costs    *cost.Tracker
-	workers  int
-	tasks    chan Task
-	wg       sync.WaitGroup
-	logger   *slog.Logger
-	done     chan struct{}
-	mu       sync.Mutex
-	shutdown bool
+	registry   *provider.Registry
+	tracker    forge.IssueTracker
+	store      store.Store
+	costs      *cost.Tracker
+	workers    int
+	tasks      chan Task
+	wg         sync.WaitGroup
+	logger     *slog.Logger
+	done       chan struct{}
+	mu         sync.Mutex
+	shutdown   bool
+	onComplete func(TaskResult) // callback to notify dispatcher of task completion
 }
 
 // NewPool creates a pool with the given number of worker goroutines and starts
@@ -109,6 +119,13 @@ func (p *Pool) Done() <-chan struct{} {
 	return p.done
 }
 
+// SetOnComplete registers a callback invoked after each task finishes.
+func (p *Pool) SetOnComplete(fn func(TaskResult)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.onComplete = fn
+}
+
 // worker is the main loop for a single worker goroutine.
 func (p *Pool) worker() {
 	defer p.wg.Done()
@@ -147,16 +164,45 @@ func (p *Pool) processTask(task Task) {
 	if err != nil {
 		logger.Error("no healthy provider", slog.String("error", err.Error()))
 		p.failSession(ctx, task.SessionID, fmt.Sprintf("no healthy provider: %v", err))
+		// Notify dispatcher even on provider failure.
+		p.mu.Lock()
+		cb := p.onComplete
+		p.mu.Unlock()
+		if cb != nil {
+			cb(TaskResult{
+				IssueNumber: task.Issue.Number,
+				SessionID:   task.SessionID,
+				AgentType:   task.AgentType,
+				Success:     false,
+				Error:       err.Error(),
+			})
+		}
 		return
 	}
 
 	runner := NewRunner(prov, model, p.tracker, p.store, p.costs)
-	if err = runner.Run(ctx, task); err != nil {
-		logger.Error("runner failed", slog.String("error", err.Error()))
-		return
+	runErr := runner.Run(ctx, task)
+
+	// Notify dispatcher of completion (success or failure).
+	result := TaskResult{
+		IssueNumber: task.Issue.Number,
+		SessionID:   task.SessionID,
+		AgentType:   task.AgentType,
+		Success:     runErr == nil,
+	}
+	if runErr != nil {
+		result.Error = runErr.Error()
+		logger.Error("runner failed", slog.String("error", runErr.Error()))
+	} else {
+		logger.Info("task completed")
 	}
 
-	logger.Info("task completed")
+	p.mu.Lock()
+	cb := p.onComplete
+	p.mu.Unlock()
+	if cb != nil {
+		cb(result)
+	}
 }
 
 // failSession marks a session as failed when the pool cannot even start it.

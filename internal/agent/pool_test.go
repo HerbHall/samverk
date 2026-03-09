@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -155,6 +156,172 @@ func TestPoolSubmitAfterShutdown(t *testing.T) {
 
 	if !errors.Is(err, ErrPoolShutdown) {
 		t.Fatalf("expected ErrPoolShutdown, got %v", err)
+	}
+}
+
+func TestPool_OnCompleteCallback_Success(t *testing.T) {
+	var results []TaskResult
+	var mu sync.Mutex
+
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			return &provider.ChatResponse{
+				Message: provider.Message{Role: provider.RoleAssistant, Content: "done"},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+
+	pool := newTestPool(t, 1, mp)
+	defer pool.Shutdown()
+
+	pool.SetOnComplete(func(r TaskResult) {
+		mu.Lock()
+		results = append(results, r)
+		mu.Unlock()
+	})
+
+	task := Task{
+		Issue:     &forge.Issue{Number: 42, Title: "Test", Body: "body"},
+		AgentType: models.AgentTypeCodeGen,
+		SessionID: "sess-42",
+	}
+	if err := pool.Submit(task); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	// Wait for processing.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(results)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 callback, got %d", len(results))
+	}
+	if !results[0].Success {
+		t.Errorf("expected Success=true, got false (err=%s)", results[0].Error)
+	}
+	if results[0].IssueNumber != 42 {
+		t.Errorf("IssueNumber: got %d, want 42", results[0].IssueNumber)
+	}
+	if results[0].SessionID != "sess-42" {
+		t.Errorf("SessionID: got %q, want sess-42", results[0].SessionID)
+	}
+}
+
+func TestPool_OnCompleteCallback_RunnerFailure(t *testing.T) {
+	var results []TaskResult
+	var mu sync.Mutex
+
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			return nil, errors.New("provider error")
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+
+	pool := newTestPool(t, 1, mp)
+	defer pool.Shutdown()
+
+	pool.SetOnComplete(func(r TaskResult) {
+		mu.Lock()
+		results = append(results, r)
+		mu.Unlock()
+	})
+
+	task := Task{
+		Issue:     &forge.Issue{Number: 99, Title: "Fail", Body: "body"},
+		AgentType: models.AgentTypeCodeGen,
+		SessionID: "sess-99",
+	}
+	if err := pool.Submit(task); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(results)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 callback, got %d", len(results))
+	}
+	if results[0].Success {
+		t.Errorf("expected Success=false on runner failure")
+	}
+	if results[0].Error == "" {
+		t.Errorf("expected non-empty Error on runner failure")
+	}
+}
+
+func TestPool_OnCompleteCallback_ProviderFailure(t *testing.T) {
+	var results []TaskResult
+	var mu sync.Mutex
+
+	// Provider reports unhealthy so registry.Get returns an error.
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return false },
+		nameFn:    func() string { return "test" },
+	}
+
+	pool := newTestPool(t, 1, mp)
+	defer pool.Shutdown()
+
+	pool.SetOnComplete(func(r TaskResult) {
+		mu.Lock()
+		results = append(results, r)
+		mu.Unlock()
+	})
+
+	task := Task{
+		Issue:     &forge.Issue{Number: 7, Title: "No provider", Body: "body"},
+		AgentType: models.AgentTypeCodeGen,
+		SessionID: "sess-7",
+	}
+	if err := pool.Submit(task); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(results)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 callback on provider failure, got %d", len(results))
+	}
+	if results[0].Success {
+		t.Errorf("expected Success=false on provider failure")
+	}
+	if results[0].Error == "" {
+		t.Errorf("expected non-empty Error on provider failure")
 	}
 }
 
