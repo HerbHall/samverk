@@ -130,6 +130,14 @@ func (m *mockStore) GetBudgetStatus(_ context.Context, _ float64) (spent, remain
 	return 0, 0, errors.New("not implemented")
 }
 
+func (m *mockStore) SaveScalingEvent(_ context.Context, _ models.ScalingEvent) error {
+	return errors.New("not implemented")
+}
+
+func (m *mockStore) ListScalingEvents(_ context.Context, _ int) ([]*models.ScalingEvent, error) {
+	return nil, nil
+}
+
 func (m *mockStore) Close() error { return nil }
 
 // Compile-time check: mockStore implements store.Store.

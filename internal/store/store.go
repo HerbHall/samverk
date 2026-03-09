@@ -30,6 +30,10 @@ type Store interface {
 	ComputeCostSince(ctx context.Context, since time.Time) (*models.CostSummary, error)
 	GetBudgetStatus(ctx context.Context, dailyBudgetUSD float64) (spent float64, remaining float64, err error)
 
+	// Scaling events (written by dispatch, read by serve and MCP)
+	SaveScalingEvent(ctx context.Context, e models.ScalingEvent) error
+	ListScalingEvents(ctx context.Context, limit int) ([]*models.ScalingEvent, error)
+
 	Close() error
 }
 
@@ -102,6 +106,18 @@ CREATE TABLE IF NOT EXISTS cost_records (
 
 CREATE INDEX IF NOT EXISTS idx_cost_session ON cost_records(session_id);
 CREATE INDEX IF NOT EXISTS idx_cost_created ON cost_records(created_at);
+
+CREATE TABLE IF NOT EXISTS scaling_events (
+	id           TEXT PRIMARY KEY,
+	timestamp    TEXT NOT NULL,
+	action       TEXT NOT NULL,
+	from_workers INTEGER NOT NULL,
+	to_workers   INTEGER NOT NULL,
+	reason       TEXT NOT NULL,
+	confidence   REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_scaling_ts ON scaling_events(timestamp DESC);
 `
 	_, err := s.db.ExecContext(context.Background(), ddl)
 	return err

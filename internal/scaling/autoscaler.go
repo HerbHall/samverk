@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/metrics"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // PoolScaler is the interface the autoscaler uses to inspect and resize the pool.
@@ -31,10 +32,14 @@ type Autoscaler struct {
 	collector SystemCollector
 	interval  time.Duration
 	logger    *slog.Logger
+	events    *EventBuffer
+	persister EventPersister // optional; nil means no durable storage
 }
 
 // NewAutoscaler creates an Autoscaler wired to the given policy, pool, and
-// system collector.
+// system collector. Scaling events are stored in an internal rolling buffer
+// (capacity 100) accessible via Events(). Call SetPersister to additionally
+// write events to durable storage.
 func NewAutoscaler(policy *ThresholdPolicy, pool PoolScaler, collector SystemCollector) *Autoscaler {
 	interval := policy.config.EvaluationInterval
 	if interval <= 0 {
@@ -46,7 +51,25 @@ func NewAutoscaler(policy *ThresholdPolicy, pool PoolScaler, collector SystemCol
 		collector: collector,
 		interval:  interval,
 		logger:    slog.Default(),
+		events:    NewEventBuffer(100),
 	}
+}
+
+// SetPersister attaches an optional durable store for scaling events.
+// When set, each scale event is also saved via p.SaveScalingEvent so events
+// survive process restarts and are visible to other processes (e.g. serve).
+func (a *Autoscaler) SetPersister(p EventPersister) {
+	a.persister = p
+}
+
+// Events returns recent scaling events from the in-memory buffer, newest first.
+func (a *Autoscaler) Events() []models.ScalingEvent {
+	return a.events.Events()
+}
+
+// PolicyConfig returns the policy configuration used by this autoscaler.
+func (a *Autoscaler) PolicyConfig() PolicyConfig {
+	return a.policy.config
 }
 
 // Run starts the evaluation loop. It blocks until ctx is cancelled, then returns
@@ -85,6 +108,16 @@ func (a *Autoscaler) evaluate() {
 	a.apply(decision, oldCount)
 }
 
+// persist saves e to the optional durable store. Errors are logged but not fatal.
+func (a *Autoscaler) persist(e models.ScalingEvent) {
+	if a.persister == nil {
+		return
+	}
+	if err := a.persister.SaveScalingEvent(context.Background(), e); err != nil {
+		a.logger.Warn("autoscaler: failed to persist scaling event", slog.String("error", err.Error()))
+	}
+}
+
 // apply executes a non-Hold scaling decision.
 func (a *Autoscaler) apply(d Decision, oldCount int) {
 	switch d.Action {
@@ -106,6 +139,16 @@ func (a *Autoscaler) apply(d Decision, oldCount int) {
 			slog.String("reason", d.Reason),
 			slog.Float64("confidence", d.Confidence),
 		)
+		e := models.ScalingEvent{
+			Timestamp:   time.Now(),
+			Action:      ScaleUp.String(),
+			FromWorkers: oldCount,
+			ToWorkers:   newCount,
+			Reason:      d.Reason,
+			Confidence:  d.Confidence,
+		}
+		a.events.Add(e)
+		a.persist(e)
 		a.policy.NotifyScaled()
 
 	case ScaleDown:
@@ -124,6 +167,16 @@ func (a *Autoscaler) apply(d Decision, oldCount int) {
 			slog.String("reason", d.Reason),
 			slog.Float64("confidence", d.Confidence),
 		)
+		e := models.ScalingEvent{
+			Timestamp:   time.Now(),
+			Action:      ScaleDown.String(),
+			FromWorkers: oldCount,
+			ToWorkers:   newCount,
+			Reason:      d.Reason,
+			Confidence:  d.Confidence,
+		}
+		a.events.Add(e)
+		a.persist(e)
 		a.policy.NotifyScaled()
 	}
 }

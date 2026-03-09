@@ -28,12 +28,15 @@ type systemMetricsSource interface {
 
 // API provides REST endpoints for the web dashboard.
 type API struct {
-	tracker    forge.IssueTracker    // may be nil if no forge credentials
-	store      store.Store           // may be nil if no database
-	costs      digest.CostSource     // may be nil if no cost tracking
-	pool       poolMetricsSource     // may be nil if pool not yet started
-	dispatcher dispatcherMetricsSource // may be nil if dispatcher not started
-	system     systemMetricsSource   // may be nil; created via SetMetrics
+	tracker        forge.IssueTracker      // may be nil if no forge credentials
+	store          store.Store             // may be nil if no database
+	costs          digest.CostSource       // may be nil if no cost tracking
+	pool           poolMetricsSource       // may be nil if pool not yet started
+	dispatcher     dispatcherMetricsSource // may be nil if dispatcher not started
+	system         systemMetricsSource     // may be nil; created via SetMetrics
+	scalingEnabled bool                    // true when autoscaler was configured
+	scalingMin     int
+	scalingMax     int
 }
 
 // New creates an API handler with the given dependencies.
@@ -52,6 +55,15 @@ func (a *API) SetMetrics(pool poolMetricsSource, disp dispatcherMetricsSource, s
 	a.pool = pool
 	a.dispatcher = disp
 	a.system = sys
+}
+
+// SetScalingConfig records the active scaling policy limits so the metrics endpoint
+// can expose them alongside events read from the store. Call before serving.
+// If not called, scaling_events and scaling_config in /api/v1/metrics will be null.
+func (a *API) SetScalingConfig(enabled bool, minW, maxW int) {
+	a.scalingEnabled = enabled
+	a.scalingMin = minW
+	a.scalingMax = maxW
 }
 
 // RegisterRoutes registers all API endpoints on the given mux.

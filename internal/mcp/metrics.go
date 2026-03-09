@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/herbhall/samverk/internal/metrics"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // poolMetricsSource provides pool stats for the digest.
@@ -22,6 +24,12 @@ type systemMetricsSource interface {
 	Collect() metrics.SystemSnapshot
 }
 
+// scalingEventReader reads recent scaling events from durable storage.
+// store.Store satisfies this interface.
+type scalingEventReader interface {
+	ListScalingEvents(ctx context.Context, limit int) ([]*models.ScalingEvent, error)
+}
+
 // SetMetrics attaches runtime metrics sources to the handler.
 // Sources may be nil; only non-nil sources appear in the digest.
 func (h *Handler) SetMetrics(pool poolMetricsSource, disp dispatcherMetricsSource, sys systemMetricsSource) {
@@ -30,9 +38,15 @@ func (h *Handler) SetMetrics(pool poolMetricsSource, disp dispatcherMetricsSourc
 	h.sysM = sys
 }
 
+// SetScalingEventReader attaches a scaling event reader for the digest.
+// When set, recent scaling activity appears in the System Health section.
+func (h *Handler) SetScalingEventReader(r scalingEventReader) {
+	h.scalingEvents = r
+}
+
 // formatMetricsSection renders a brief METRICS block appended to the digest text.
 func (h *Handler) formatMetricsSection() string {
-	if h.poolM == nil && h.dispM == nil && h.sysM == nil {
+	if h.poolM == nil && h.dispM == nil && h.sysM == nil && h.scalingEvents == nil {
 		return ""
 	}
 
@@ -68,6 +82,23 @@ func (h *Handler) formatMetricsSection() string {
 		snap := h.sysM.Collect()
 		fmt.Fprintf(&b, "System: %d goroutines | heap: %s | GC cycles: %d\n",
 			snap.Goroutines, formatBytes(snap.HeapAllocBytes), snap.GCCycles)
+	}
+
+	if h.scalingEvents != nil {
+		events, err := h.scalingEvents.ListScalingEvents(context.Background(), 3)
+		if err == nil && len(events) > 0 {
+			b.WriteString("Scaling (recent):")
+			for _, e := range events {
+				fmt.Fprintf(&b, "\n  [%s] %s %d→%d workers — %s (conf %.0f%%)",
+					e.Timestamp.UTC().Format("15:04:05Z"),
+					e.Action,
+					e.FromWorkers, e.ToWorkers,
+					e.Reason,
+					e.Confidence*100,
+				)
+			}
+			b.WriteString("\n")
+		}
 	}
 
 	return b.String()

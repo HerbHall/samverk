@@ -7,9 +7,29 @@ import (
 
 // metricsResponse is the JSON body returned by GET /api/v1/metrics.
 type metricsResponse struct {
-	Pool       *poolMetricsDTO       `json:"pool"`
-	Dispatcher *dispatcherMetricsDTO `json:"dispatcher"`
-	System     *systemMetricsDTO     `json:"system"`
+	Pool          *poolMetricsDTO       `json:"pool"`
+	Dispatcher    *dispatcherMetricsDTO `json:"dispatcher"`
+	System        *systemMetricsDTO     `json:"system"`
+	ScalingEvents []scalingEventDTO     `json:"scaling_events"`
+	ScalingConfig *scalingConfigDTO     `json:"scaling_config"`
+}
+
+// scalingEventDTO is the JSON-serializable form of a scaling.ScalingEvent.
+type scalingEventDTO struct {
+	Timestamp   string  `json:"timestamp"`
+	Action      string  `json:"action"`
+	FromWorkers int     `json:"from_workers"`
+	ToWorkers   int     `json:"to_workers"`
+	Reason      string  `json:"reason"`
+	Confidence  float64 `json:"confidence"`
+}
+
+// scalingConfigDTO exposes the active scaling policy configuration.
+type scalingConfigDTO struct {
+	Enabled       bool `json:"enabled"`
+	MinWorkers    int  `json:"min_workers"`
+	MaxWorkers    int  `json:"max_workers"`
+	CurrentTarget int  `json:"current_target"`
 }
 
 // poolMetricsDTO is the JSON-serializable form of metrics.PoolSnapshot.
@@ -49,7 +69,7 @@ type systemMetricsDTO struct {
 
 // handleMetrics serves GET /api/v1/metrics.
 // Returns 200 with a JSON body. Any source that is nil contributes a null field.
-func (a *API) handleMetrics(w http.ResponseWriter, _ *http.Request) {
+func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	resp := metricsResponse{}
 
 	if a.pool != nil {
@@ -89,6 +109,35 @@ func (a *API) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 			SysBytesTotal:  snap.SysBytesTotal,
 			GCCycles:       snap.GCCycles,
 			NextGCBytes:    snap.NextGCBytes,
+		}
+	}
+
+	if a.scalingEnabled && a.store != nil {
+		events, evErr := a.store.ListScalingEvents(r.Context(), 20)
+		if evErr == nil {
+			dtos := make([]scalingEventDTO, 0, len(events))
+			for _, e := range events {
+				dtos = append(dtos, scalingEventDTO{
+					Timestamp:   e.Timestamp.UTC().Format(time.RFC3339),
+					Action:      e.Action,
+					FromWorkers: e.FromWorkers,
+					ToWorkers:   e.ToWorkers,
+					Reason:      e.Reason,
+					Confidence:  e.Confidence,
+				})
+			}
+			resp.ScalingEvents = dtos
+		}
+
+		currentTarget := 0
+		if a.pool != nil {
+			currentTarget = a.pool.Snapshot().TotalWorkers
+		}
+		resp.ScalingConfig = &scalingConfigDTO{
+			Enabled:       true,
+			MinWorkers:    a.scalingMin,
+			MaxWorkers:    a.scalingMax,
+			CurrentTarget: currentTarget,
 		}
 	}
 

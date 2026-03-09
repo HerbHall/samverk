@@ -83,10 +83,29 @@ export interface SystemMetrics {
   next_gc_bytes: number
 }
 
+export interface ScalingEvent {
+  id: string
+  timestamp: string
+  action: string
+  from_workers: number
+  to_workers: number
+  reason: string
+  confidence: number
+}
+
+export interface ScalingConfig {
+  enabled: boolean
+  min_workers: number
+  max_workers: number
+  current_target: number
+}
+
 export interface MetricsResponse {
   pool: PoolMetrics | null
   dispatcher: DispatcherMetrics | null
   system: SystemMetrics | null
+  scaling_events: ScalingEvent[] | null
+  scaling_config: ScalingConfig | null
 }
 
 export const api = {
