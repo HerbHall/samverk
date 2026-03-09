@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
@@ -40,20 +42,27 @@ type TaskResult struct {
 	Error       string
 }
 
-// Pool manages a fixed set of worker goroutines that process agent tasks.
+// workerQuitBuf is the maximum number of pending quit signals.
+// Generous to accommodate burst RemoveWorkers calls.
+const workerQuitBuf = 64
+
+// Pool manages a set of worker goroutines that process agent tasks.
+// Workers may be added or removed at runtime via AddWorkers/RemoveWorkers.
 type Pool struct {
 	registry   *provider.Registry
 	tracker    forge.IssueTracker
 	store      store.Store
 	costs      *cost.Tracker
-	workers    int
+	workers    int        // current target worker count (under mu)
 	tasks      chan Task
 	wg         sync.WaitGroup
 	logger     *slog.Logger
 	done       chan struct{}
 	mu         sync.Mutex
 	shutdown   bool
-	onComplete func(TaskResult) // callback to notify dispatcher of task completion
+	active     atomic.Int32                        // currently processing workers
+	onComplete atomic.Pointer[func(TaskResult)]   // callback to notify dispatcher; atomic to avoid mu deadlock
+	workerQuit chan struct{}                        // each send causes one worker to exit after its current task
 }
 
 // NewPool creates a pool with the given number of worker goroutines and starts
@@ -64,14 +73,15 @@ func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.S
 	}
 
 	p := &Pool{
-		registry: registry,
-		tracker:  tracker,
-		store:    st,
-		costs:    costs,
-		workers:  workers,
-		tasks:    make(chan Task, workers*2),
-		logger:   slog.Default(),
-		done:     make(chan struct{}),
+		registry:   registry,
+		tracker:    tracker,
+		store:      st,
+		costs:      costs,
+		workers:    workers,
+		tasks:      make(chan Task, workers*2),
+		logger:     slog.Default(),
+		done:       make(chan struct{}),
+		workerQuit: make(chan struct{}, workerQuitBuf),
 	}
 
 	p.wg.Add(workers)
@@ -82,16 +92,106 @@ func NewPool(registry *provider.Registry, tracker forge.IssueTracker, st store.S
 	return p
 }
 
-// Submit enqueues a task for processing. Returns ErrPoolShutdown if the pool
-// has been shut down.
-func (p *Pool) Submit(task Task) error {
+// AddWorkers starts n additional worker goroutines. Returns ErrPoolShutdown if
+// the pool has already been shut down. No-op if n <= 0.
+func (p *Pool) AddWorkers(n int) error {
+	if n <= 0 {
+		return nil
+	}
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.shutdown {
-		p.mu.Unlock()
 		return ErrPoolShutdown
 	}
+	p.workers += n
+	p.wg.Add(n)
+	for range n {
+		go p.worker()
+	}
+	p.logger.Info("agent pool scaled up", slog.Int("added", n), slog.Int("workers", p.workers))
+	return nil
+}
+
+// RemoveWorkers signals n workers to exit after completing their current task.
+// To protect liveness, at least one worker is always kept running; the actual
+// number removed may be less than n. Returns the number of quit signals sent.
+func (p *Pool) RemoveWorkers(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	p.mu.Lock()
+	// Keep at least one worker alive.
+	available := p.workers - 1
+	if available <= 0 {
+		p.mu.Unlock()
+		return 0
+	}
+	if n > available {
+		n = available
+	}
+	p.workers -= n
 	p.mu.Unlock()
 
+	sent := 0
+sendLoop:
+	for range n {
+		select {
+		case p.workerQuit <- struct{}{}:
+			sent++
+		default:
+			// Buffer full; stop here. Remaining workers stay alive.
+			p.mu.Lock()
+			p.workers += (n - sent)
+			p.mu.Unlock()
+			break sendLoop
+		}
+	}
+	if sent > 0 {
+		p.logger.Info("agent pool scaled down", slog.Int("removed", sent), slog.Int("workers", p.Workers()))
+	}
+	return sent
+}
+
+// Workers returns the current target worker count.
+func (p *Pool) Workers() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.workers
+}
+
+// Snapshot returns a point-in-time view of pool state for the scaling policy.
+func (p *Pool) Snapshot() metrics.PoolSnapshot {
+	p.mu.Lock()
+	total := p.workers
+	queue := len(p.tasks)
+	p.mu.Unlock()
+	active := int(p.active.Load())
+	if active > total {
+		active = total
+	}
+	return metrics.PoolSnapshot{
+		CollectedAt:   time.Now(),
+		TotalWorkers:  total,
+		ActiveWorkers: active,
+		IdleWorkers:   total - active,
+		QueueDepth:    queue,
+	}
+}
+
+// Submit enqueues a task for processing. Returns ErrPoolShutdown if the pool
+// has been shut down.
+//
+// The lock is held across the channel send to prevent a TOCTOU race with
+// Shutdown: without it, Shutdown can close the channel between the flag
+// check and the send, causing a panic. The channel is buffered (workers×2)
+// so the send is almost always non-blocking. In the rare case the buffer
+// is full, workers will drain it without acquiring mu, so no deadlock.
+func (p *Pool) Submit(task Task) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shutdown {
+		return ErrPoolShutdown
+	}
 	p.tasks <- task
 	return nil
 }
@@ -121,17 +221,21 @@ func (p *Pool) Done() <-chan struct{} {
 
 // SetOnComplete registers a callback invoked after each task finishes.
 func (p *Pool) SetOnComplete(fn func(TaskResult)) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.onComplete = fn
+	p.onComplete.Store(&fn)
 }
 
 // worker is the main loop for a single worker goroutine.
+// After each task it checks workerQuit; if a signal is pending, it exits.
 func (p *Pool) worker() {
 	defer p.wg.Done()
 
 	for task := range p.tasks {
 		p.processTask(task)
+		select {
+		case <-p.workerQuit:
+			return
+		default:
+		}
 	}
 }
 
@@ -140,6 +244,9 @@ func (p *Pool) worker() {
 // string(task.AgentType). If the selected chain has no healthy provider,
 // it retries with the "default" chain before giving up.
 func (p *Pool) processTask(task Task) {
+	p.active.Add(1)
+	defer p.active.Add(-1)
+
 	ctx := context.Background()
 	logger := p.logger.With(
 		slog.String("session_id", task.SessionID),
@@ -165,11 +272,8 @@ func (p *Pool) processTask(task Task) {
 		logger.Error("no healthy provider", slog.String("error", err.Error()))
 		p.failSession(ctx, task.SessionID, fmt.Sprintf("no healthy provider: %v", err))
 		// Notify dispatcher even on provider failure.
-		p.mu.Lock()
-		cb := p.onComplete
-		p.mu.Unlock()
-		if cb != nil {
-			cb(TaskResult{
+		if cbPtr := p.onComplete.Load(); cbPtr != nil {
+			(*cbPtr)(TaskResult{
 				IssueNumber: task.Issue.Number,
 				SessionID:   task.SessionID,
 				AgentType:   task.AgentType,
@@ -197,11 +301,8 @@ func (p *Pool) processTask(task Task) {
 		logger.Info("task completed")
 	}
 
-	p.mu.Lock()
-	cb := p.onComplete
-	p.mu.Unlock()
-	if cb != nil {
-		cb(result)
+	if cbPtr := p.onComplete.Load(); cbPtr != nil {
+		(*cbPtr)(result)
 	}
 }
 

@@ -18,8 +18,10 @@ import (
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/forge/github"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/prwatcher"
 	"github.com/herbhall/samverk/internal/provider"
+	"github.com/herbhall/samverk/internal/scaling"
 	"github.com/herbhall/samverk/internal/provider/claude"
 	"github.com/herbhall/samverk/internal/provider/claudecli"
 	"github.com/herbhall/samverk/internal/provider/ollama"
@@ -207,6 +209,7 @@ func dispatchCmd() *cobra.Command {
 	var owner, repo, dbPath, providersConfig string
 	var pollSeconds, workers int
 	var budget float64
+	var scalingEnabled bool
 
 	cmd := &cobra.Command{
 		Use:   "dispatch",
@@ -277,6 +280,20 @@ func dispatchCmd() *cobra.Command {
 				return disp.Run(gctx)
 			})
 
+			// Start autoscaler if pool is active and scaling is enabled.
+			if pool != nil && scalingEnabled {
+				scalingPolicy := scaling.NewThresholdPolicy(scaling.DefaultPolicyConfig())
+				autoscaler := scaling.NewAutoscaler(scalingPolicy, pool, metrics.NewSystemCollector())
+				g.Go(func() error {
+					err := autoscaler.Run(gctx)
+					if err == context.Canceled {
+						return nil
+					}
+					return err
+				})
+				slog.Info("autoscaler started")
+			}
+
 			// Start PR watcher if auto-merge is enabled.
 			if policyCfg.Merge.AutoMergeOnCIPass {
 				pw := prwatcher.New(ghClient, ghClient, policyCfg.Merge, time.Duration(pollSeconds)*time.Second)
@@ -299,6 +316,7 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().IntVar(&pollSeconds, "poll-interval", 30, "Polling interval in seconds")
 	cmd.Flags().IntVar(&workers, "workers", 3, "Number of agent worker goroutines")
 	cmd.Flags().Float64Var(&budget, "budget", 0, "Daily budget in USD (0 = unlimited)")
+	cmd.Flags().BoolVar(&scalingEnabled, "scaling", false, "Enable adaptive worker scaling (default: disabled)")
 
 	return cmd
 }
