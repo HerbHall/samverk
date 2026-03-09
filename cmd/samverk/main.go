@@ -12,6 +12,7 @@ import (
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/autonomy"
+	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/dispatcher"
@@ -173,8 +174,9 @@ func serveCmd() *cobra.Command {
 				}
 
 				mcpHandler.SetProjects(registry)
-				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
-				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
+			mcpHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+			cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
+			slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
 			} else {
 				slog.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
 			}
