@@ -44,7 +44,7 @@ lint:
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1 run ./...
 
 lint-md:
-	npx markdownlint-cli2 "**/*.md" "#node_modules" "#web/node_modules" "#CHANGELOG.md"
+	npx markdownlint-cli2 "**/*.md" "#node_modules" "#web/node_modules" "#CHANGELOG.md" "#.samverk"
 
 # Run all lint checks (matches CI)
 lint-all: lint lint-md
