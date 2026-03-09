@@ -108,8 +108,10 @@ jobs:
       - name: Copy dist to static
         run: cp -r web/dist/* internal/server/static/
 
+      # -race requires CGO which is not available in the LXC runner.
+      # Race detection runs in GitHub CI (Ubuntu with CGO).
       - name: Run tests
-        run: go test -race ./...
+        run: go test ./...
 
   markdown:
     name: Markdown Lint
