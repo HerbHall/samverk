@@ -166,6 +166,225 @@ func TestMergePullRequest(t *testing.T) {
 	}
 }
 
+func TestGetPRChecks_CheckRunsOnly(t *testing.T) {
+	headSHA := "abc123def456"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/owner/repo/pulls/10", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.PullRequest{
+			Number: gogithub.Ptr(10),
+			Head: &gogithub.PullRequestBranch{
+				SHA: gogithub.Ptr(headSHA),
+			},
+		})
+	})
+	mux.HandleFunc("GET /repos/owner/repo/commits/"+headSHA+"/status", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.CombinedStatus{
+			Statuses: []*gogithub.RepoStatus{}, // no legacy statuses
+		})
+	})
+	mux.HandleFunc("GET /repos/owner/repo/commits/"+headSHA+"/check-runs", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.ListCheckRunsResults{
+			Total: gogithub.Ptr(3),
+			CheckRuns: []*gogithub.CheckRun{
+				{Name: gogithub.Ptr("Build"), Status: gogithub.Ptr("completed"), Conclusion: gogithub.Ptr("success")},
+				{Name: gogithub.Ptr("Test"), Status: gogithub.Ptr("completed"), Conclusion: gogithub.Ptr("success")},
+				{Name: gogithub.Ptr("Lint"), Status: gogithub.Ptr("completed"), Conclusion: gogithub.Ptr("failure")},
+			},
+		})
+	})
+
+	c, _ := newTestClient(t, mux)
+	checks, err := c.GetPRChecks(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetPRChecks: %v", err)
+	}
+
+	if len(checks) != 3 {
+		t.Fatalf("len(checks) = %d, want 3", len(checks))
+	}
+
+	byName := make(map[string]forge.CheckStatus, len(checks))
+	for _, ch := range checks {
+		byName[ch.Name] = ch.Status
+	}
+
+	if byName["Build"] != forge.CheckStatusSuccess {
+		t.Errorf("Build = %q, want success", byName["Build"])
+	}
+	if byName["Test"] != forge.CheckStatusSuccess {
+		t.Errorf("Test = %q, want success", byName["Test"])
+	}
+	if byName["Lint"] != forge.CheckStatusFailure {
+		t.Errorf("Lint = %q, want failure", byName["Lint"])
+	}
+}
+
+func TestGetPRChecks_MergesBothSources(t *testing.T) {
+	headSHA := "abc123def456"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/owner/repo/pulls/10", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.PullRequest{
+			Number: gogithub.Ptr(10),
+			Head:   &gogithub.PullRequestBranch{SHA: gogithub.Ptr(headSHA)},
+		})
+	})
+	mux.HandleFunc("GET /repos/owner/repo/commits/"+headSHA+"/status", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.CombinedStatus{
+			Statuses: []*gogithub.RepoStatus{
+				{Context: gogithub.Ptr("external-ci"), State: gogithub.Ptr("success")},
+				{Context: gogithub.Ptr("Build"), State: gogithub.Ptr("pending")}, // will be overwritten by check run
+			},
+		})
+	})
+	mux.HandleFunc("GET /repos/owner/repo/commits/"+headSHA+"/check-runs", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.ListCheckRunsResults{
+			Total: gogithub.Ptr(1),
+			CheckRuns: []*gogithub.CheckRun{
+				{Name: gogithub.Ptr("Build"), Status: gogithub.Ptr("completed"), Conclusion: gogithub.Ptr("success")},
+			},
+		})
+	})
+
+	c, _ := newTestClient(t, mux)
+	checks, err := c.GetPRChecks(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetPRChecks: %v", err)
+	}
+
+	if len(checks) != 2 {
+		t.Fatalf("len(checks) = %d, want 2", len(checks))
+	}
+
+	byName := make(map[string]forge.CheckStatus, len(checks))
+	for _, ch := range checks {
+		byName[ch.Name] = ch.Status
+	}
+
+	// Check run should overwrite legacy status for "Build".
+	if byName["Build"] != forge.CheckStatusSuccess {
+		t.Errorf("Build = %q, want success (check run should overwrite legacy pending)", byName["Build"])
+	}
+	if byName["external-ci"] != forge.CheckStatusSuccess {
+		t.Errorf("external-ci = %q, want success", byName["external-ci"])
+	}
+}
+
+func TestGetPRChecks_PendingCheckRun(t *testing.T) {
+	headSHA := "abc123def456"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/owner/repo/pulls/10", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.PullRequest{
+			Number: gogithub.Ptr(10),
+			Head:   &gogithub.PullRequestBranch{SHA: gogithub.Ptr(headSHA)},
+		})
+	})
+	mux.HandleFunc("GET /repos/owner/repo/commits/"+headSHA+"/status", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.CombinedStatus{})
+	})
+	mux.HandleFunc("GET /repos/owner/repo/commits/"+headSHA+"/check-runs", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.ListCheckRunsResults{
+			Total: gogithub.Ptr(1),
+			CheckRuns: []*gogithub.CheckRun{
+				{Name: gogithub.Ptr("Build"), Status: gogithub.Ptr("in_progress"), Conclusion: gogithub.Ptr("")},
+			},
+		})
+	})
+
+	c, _ := newTestClient(t, mux)
+	checks, err := c.GetPRChecks(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetPRChecks: %v", err)
+	}
+
+	if len(checks) != 1 {
+		t.Fatalf("len(checks) = %d, want 1", len(checks))
+	}
+	if checks[0].Status != forge.CheckStatusPending {
+		t.Errorf("Status = %q, want pending", checks[0].Status)
+	}
+}
+
+func TestGetPRChecks_NoBothSources(t *testing.T) {
+	headSHA := "abc123def456"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/owner/repo/pulls/10", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.PullRequest{
+			Number: gogithub.Ptr(10),
+			Head:   &gogithub.PullRequestBranch{SHA: gogithub.Ptr(headSHA)},
+		})
+	})
+	mux.HandleFunc("GET /repos/owner/repo/commits/"+headSHA+"/status", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.CombinedStatus{})
+	})
+	mux.HandleFunc("GET /repos/owner/repo/commits/"+headSHA+"/check-runs", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogithub.ListCheckRunsResults{Total: gogithub.Ptr(0)})
+	})
+
+	c, _ := newTestClient(t, mux)
+	checks, err := c.GetPRChecks(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetPRChecks: %v", err)
+	}
+
+	if len(checks) != 0 {
+		t.Fatalf("len(checks) = %d, want 0", len(checks))
+	}
+}
+
+func TestMapCheckRunStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		conclusion string
+		want       forge.CheckStatus
+	}{
+		{"completed success", "completed", "success", forge.CheckStatusSuccess},
+		{"completed failure", "completed", "failure", forge.CheckStatusFailure},
+		{"completed neutral", "completed", "neutral", forge.CheckStatusSuccess},
+		{"completed skipped", "completed", "skipped", forge.CheckStatusSuccess},
+		{"completed cancelled", "completed", "cancelled", forge.CheckStatusFailure},
+		{"completed timed_out", "completed", "timed_out", forge.CheckStatusFailure},
+		{"completed action_required", "completed", "action_required", forge.CheckStatusFailure},
+		{"in_progress", "in_progress", "", forge.CheckStatusPending},
+		{"queued", "queued", "", forge.CheckStatusPending},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mapCheckRunStatus(tt.status, tt.conclusion)
+			if got != tt.want {
+				t.Errorf("mapCheckRunStatus(%q, %q) = %q, want %q", tt.status, tt.conclusion, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMapCommitStatus(t *testing.T) {
+	tests := []struct {
+		state string
+		want  forge.CheckStatus
+	}{
+		{"success", forge.CheckStatusSuccess},
+		{"failure", forge.CheckStatusFailure},
+		{"error", forge.CheckStatusFailure},
+		{"pending", forge.CheckStatusPending},
+		{"unknown", forge.CheckStatusPending},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.state, func(t *testing.T) {
+			got := mapCommitStatus(tt.state)
+			if got != tt.want {
+				t.Errorf("mapCommitStatus(%q) = %q, want %q", tt.state, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestListReviewComments(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /repos/owner/repo/pulls/10/comments", func(w http.ResponseWriter, _ *http.Request) {

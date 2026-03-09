@@ -85,7 +85,10 @@ func (c *Client) MergePullRequest(ctx context.Context, number int, method forge.
 	return nil
 }
 
-// GetPRChecks returns the combined commit status checks for a pull request's head.
+// GetPRChecks returns CI status for a pull request's head by querying both the
+// legacy commit status API and the check runs API (used by GitHub Actions).
+// Results from both sources are merged; check runs take precedence over
+// commit statuses with the same name.
 func (c *Client) GetPRChecks(ctx context.Context, number int) ([]forge.Check, error) {
 	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, number)
 	if err != nil {
@@ -97,27 +100,67 @@ func (c *Client) GetPRChecks(ctx context.Context, number int) ([]forge.Check, er
 		return nil, nil
 	}
 
+	// Collect checks by name; check runs overwrite legacy statuses.
+	byName := make(map[string]forge.Check)
+
+	// Legacy commit status API (external CI systems, older integrations).
 	status, _, err := c.gh.Repositories.GetCombinedStatus(ctx, c.owner, c.repo, ref, nil)
 	if err != nil {
 		return nil, fmt.Errorf("github: get combined status for %s: %w", ref, err)
 	}
-
-	checks := make([]forge.Check, 0, len(status.Statuses))
 	for _, s := range status.Statuses {
-		cs := forge.CheckStatusPending
-		switch s.GetState() {
-		case "success":
-			cs = forge.CheckStatusSuccess
-		case "failure", "error":
-			cs = forge.CheckStatusFailure
-		}
-		checks = append(checks, forge.Check{
+		byName[s.GetContext()] = forge.Check{
 			Name:   s.GetContext(),
-			Status: cs,
-		})
+			Status: mapCommitStatus(s.GetState()),
+		}
+	}
+
+	// Check runs API (GitHub Actions, GitHub Apps).
+	runs, _, err := c.gh.Checks.ListCheckRunsForRef(ctx, c.owner, c.repo, ref, nil)
+	if err != nil {
+		return nil, fmt.Errorf("github: list check runs for %s: %w", ref, err)
+	}
+	for _, run := range runs.CheckRuns {
+		byName[run.GetName()] = forge.Check{
+			Name:   run.GetName(),
+			Status: mapCheckRunStatus(run.GetStatus(), run.GetConclusion()),
+		}
+	}
+
+	checks := make([]forge.Check, 0, len(byName))
+	for _, ch := range byName {
+		checks = append(checks, ch)
 	}
 
 	return checks, nil
+}
+
+// mapCommitStatus converts a legacy commit status state to forge.CheckStatus.
+func mapCommitStatus(state string) forge.CheckStatus {
+	switch state {
+	case "success":
+		return forge.CheckStatusSuccess
+	case "failure", "error":
+		return forge.CheckStatusFailure
+	default:
+		return forge.CheckStatusPending
+	}
+}
+
+// mapCheckRunStatus converts GitHub check run status + conclusion to forge.CheckStatus.
+// A check run with status "completed" uses its conclusion; otherwise it is pending.
+func mapCheckRunStatus(status, conclusion string) forge.CheckStatus {
+	if status != "completed" {
+		return forge.CheckStatusPending
+	}
+	switch conclusion {
+	case "success", "neutral", "skipped":
+		return forge.CheckStatusSuccess
+	case "failure", "cancelled", "timed_out", "action_required":
+		return forge.CheckStatusFailure
+	default:
+		return forge.CheckStatusPending
+	}
 }
 
 // ListReviewComments returns all review comments on a pull request.
