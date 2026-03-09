@@ -77,12 +77,14 @@ Import-Module (Join-Path $script:ModuleDir 'forge.psm1')      -Force
 Import-Module (Join-Path $script:ModuleDir 'launcher.psm1')   -Force
 Import-Module (Join-Path $script:ModuleDir 'post-task.psm1')  -Force
 Import-Module (Join-Path $script:ModuleDir 'autonomy.psm1')   -Force
+Import-Module (Join-Path $script:ModuleDir 'registration.psm1') -Force
 
 # ---------------------------------------------------------------------------
 # Graceful shutdown
 # ---------------------------------------------------------------------------
 
 $script:StopRequested = $false
+$script:CurrentTask   = $null  # Shared with heartbeat thread: issue number or $null
 
 # Trap Ctrl-C so the loop can finish the current task before exiting.
 $null = [Console]::TreatControlCAsInput = $false
@@ -169,7 +171,9 @@ function Invoke-PollCycle {
 
     # 5. Run CC in an isolated worktree.
     Write-AgentLog "Launching CC task for issue #$($issue.Number)..."
+    $script:CurrentTask = $issue.Number
     $ccResult = Invoke-CCTask -Issue $issue -WorkspaceConfig $WorkspaceConfig
+    $script:CurrentTask = $null
 
     $durationStr = '{0:N0}m {1:N0}s' -f `
         [Math]::Floor($ccResult.Duration.TotalMinutes), ($ccResult.Duration.Seconds % 60)
@@ -220,6 +224,15 @@ $forgeConfig    = Get-ForgeConfig
 
 $iterationCount = 0
 
+# Register with Samverk server and start background heartbeat.
+try {
+    Register-PCAgent -WorkspaceRoot $wsConfig.Root
+    Start-HeartbeatLoop -WorkspaceRoot $wsConfig.Root
+} catch {
+    Write-AgentLog "Could not register with Samverk server: $($_.Exception.Message)" 'WARN'
+    Write-AgentLog 'Continuing without server registration -- PC workers section in digest will be empty.' 'WARN'
+}
+
 while (-not $script:StopRequested) {
     $iterationCount++
     Write-AgentLog "--- Poll cycle #$iterationCount ---"
@@ -252,4 +265,5 @@ while (-not $script:StopRequested) {
 }
 
 Write-AgentLog 'Stop requested -- exiting cleanly.'
+Stop-HeartbeatLoop
 exit 0
