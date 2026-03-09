@@ -185,6 +185,12 @@ func TestLoadProjectConfig(t *testing.T) {
   - name: devkit
     owner: HerbHall
     repo: devkit
+  - name: samverk-gitea
+    owner: samverk
+    repo: samverk
+    forge: gitea
+    gitea_url: https://gitea.herbhall.net
+    gitea_token: tok123
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server.yaml")
@@ -197,8 +203,8 @@ func TestLoadProjectConfig(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(configs) != 2 {
-		t.Fatalf("expected 2 configs, got %d", len(configs))
+	if len(configs) != 3 {
+		t.Fatalf("expected 3 configs, got %d", len(configs))
 	}
 
 	if configs[0].Name != "samverk" {
@@ -212,6 +218,16 @@ func TestLoadProjectConfig(t *testing.T) {
 	}
 	if configs[1].Name != "devkit" {
 		t.Errorf("expected second project name %q, got %q", "devkit", configs[1].Name)
+	}
+	// Gitea project.
+	if configs[2].Forge != "gitea" {
+		t.Errorf("expected Gitea forge, got %q", configs[2].Forge)
+	}
+	if configs[2].GiteaURL != "https://gitea.herbhall.net" {
+		t.Errorf("expected gitea_url, got %q", configs[2].GiteaURL)
+	}
+	if configs[2].GiteaToken != "tok123" {
+		t.Errorf("expected gitea_token, got %q", configs[2].GiteaToken)
 	}
 }
 
@@ -249,6 +265,26 @@ func TestLoadProjectConfig_Invalid(t *testing.T) {
     owner: HerbHall
 `,
 			wantErr: "repo is required",
+		},
+		{
+			name: "invalid forge value",
+			content: `projects:
+  - name: samverk
+    owner: HerbHall
+    repo: samverk
+    forge: bitbucket
+`,
+			wantErr: "forge must be",
+		},
+		{
+			name: "gitea missing gitea_url",
+			content: `projects:
+  - name: samverk-gitea
+    owner: samverk
+    repo: samverk
+    forge: gitea
+`,
+			wantErr: "gitea_url is required",
 		},
 	}
 

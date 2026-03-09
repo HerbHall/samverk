@@ -125,10 +125,15 @@ func (r *ProjectRegistry) ActiveName() string {
 }
 
 // ProjectConfig is the YAML-serializable configuration for a project.
+// Forge may be "github" (default) or "gitea". Gitea projects require GiteaURL
+// and optionally GiteaToken (falls back to GITEA_TOKEN environment variable).
 type ProjectConfig struct {
-	Name  string `yaml:"name"`
-	Owner string `yaml:"owner"`
-	Repo  string `yaml:"repo"`
+	Name       string `yaml:"name"`
+	Owner      string `yaml:"owner"`
+	Repo       string `yaml:"repo"`
+	Forge      string `yaml:"forge"`       // "github" (default) or "gitea"
+	GiteaURL   string `yaml:"gitea_url"`   // required when forge = "gitea"
+	GiteaToken string `yaml:"gitea_token"` // optional; falls back to GITEA_TOKEN env var
 }
 
 // projectsFileConfig is the top-level YAML structure for the projects config file.
@@ -158,6 +163,12 @@ func LoadProjectConfig(path string) ([]ProjectConfig, error) {
 		}
 		if p.Repo == "" {
 			return nil, fmt.Errorf("project %q: repo is required", p.Name)
+		}
+		if p.Forge != "" && p.Forge != "github" && p.Forge != "gitea" {
+			return nil, fmt.Errorf("project %q: forge must be \"github\" or \"gitea\", got %q", p.Name, p.Forge)
+		}
+		if p.Forge == "gitea" && p.GiteaURL == "" {
+			return nil, fmt.Errorf("project %q: gitea_url is required when forge = \"gitea\"", p.Name)
 		}
 	}
 
