@@ -29,6 +29,7 @@ type Handler struct {
 	dispM         dispatcherMetricsSource // may be nil (dispatcher not running here)
 	sysM          systemMetricsSource     // may be nil
 	scalingEvents scalingEventReader      // may be nil (reads from store)
+	workersM      workerLister            // may be nil (no PC agent workers registered)
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
@@ -58,6 +59,11 @@ func (h *Handler) SetPRManager(prm forge.PullRequestManager) {
 // When set, tools resolve tracker and repo through the active project.
 func (h *Handler) SetProjects(reg *ProjectRegistry) {
 	h.projects = reg
+}
+
+// SetWorkerLister attaches a worker lister so the digest includes PC agent status.
+func (h *Handler) SetWorkerLister(wl workerLister) {
+	h.workersM = wl
 }
 
 // activeTracker returns the IssueTracker to use for the current context.

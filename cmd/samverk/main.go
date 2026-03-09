@@ -105,6 +105,7 @@ func serveCmd() *cobra.Command {
 
 			// Wire GitHub forge if credentials are available.
 			var tracker forge.IssueTracker
+			var mcpHandler *internalmcp.Handler
 			token := os.Getenv("GITHUB_TOKEN")
 			if owner == "" {
 				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
@@ -128,7 +129,7 @@ func serveCmd() *cobra.Command {
 
 				// The GitHub Client implements both IssueTracker and RepoReader.
 				var repoReader forge.RepoReader = ghClient
-				mcpHandler := internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
+				mcpHandler = internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
 				mcpHandler.SetPRManager(ghClient)
 
 				// Wire multi-project support.
@@ -183,10 +184,6 @@ func serveCmd() *cobra.Command {
 				if st != nil {
 					mcpHandler.SetScalingEventReader(st)
 				}
-				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
-				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
-			} else {
-				slog.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
 			}
 
 			// Wire REST API handler for dashboard.
@@ -194,6 +191,16 @@ func serveCmd() *cobra.Command {
 			apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
 			cfg.APIHandler = apiHandler
 			slog.Info("REST API enabled")
+
+			// Wire worker lister from API into MCP digest so the get_digest tool
+			// shows registered PC agent workers in the RUNTIME METRICS section.
+			if mcpHandler != nil {
+				mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
+				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
+				slog.Info("MCP handler enabled", "owner", owner, "repo", repo)
+			} else {
+				slog.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
+			}
 
 			s := server.New(cfg)
 			slog.Info("starting samverk server", "addr", addr)
@@ -678,6 +685,28 @@ func versionCmd() *cobra.Command {
 				version.Version, version.GitCommit, version.BuildDate)
 		},
 	}
+}
+
+// apiWorkerAdapter bridges api.WorkerRecord to mcp.WorkerInfo without
+// creating an import cycle between the api and mcp packages.
+type apiWorkerAdapter struct{ api *api.API }
+
+func (a *apiWorkerAdapter) ListWorkers() []internalmcp.WorkerInfo {
+	records := a.api.ListWorkers()
+	out := make([]internalmcp.WorkerInfo, len(records))
+	for i := range records {
+		r := &records[i]
+		out[i] = internalmcp.WorkerInfo{
+			AgentID:         r.AgentID,
+			Hostname:        r.Hostname,
+			Status:          string(r.Status),
+			CurrentTask:     r.CurrentTask,
+			ActiveWorktrees: r.ActiveWorktrees,
+			CPUPercent:      r.CPUPercent,
+			MemoryPercent:   r.MemoryPercent,
+		}
+	}
+	return out
 }
 
 // providerFactory constructs a provider.Provider from YAML config.

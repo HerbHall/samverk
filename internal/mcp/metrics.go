@@ -30,6 +30,23 @@ type scalingEventReader interface {
 	ListScalingEvents(ctx context.Context, limit int) ([]*models.ScalingEvent, error)
 }
 
+// WorkerInfo is a summary of a registered PC agent worker for digest output.
+type WorkerInfo struct {
+	AgentID         string
+	Hostname        string
+	Status          string
+	CurrentTask     *int
+	ActiveWorktrees int
+	CPUPercent      float64
+	MemoryPercent   float64
+}
+
+// workerLister provides registered worker snapshots for the digest.
+// api.API satisfies this interface via ListWorkers.
+type workerLister interface {
+	ListWorkers() []WorkerInfo
+}
+
 // SetMetrics attaches runtime metrics sources to the handler.
 // Sources may be nil; only non-nil sources appear in the digest.
 func (h *Handler) SetMetrics(pool poolMetricsSource, disp dispatcherMetricsSource, sys systemMetricsSource) {
@@ -46,7 +63,7 @@ func (h *Handler) SetScalingEventReader(r scalingEventReader) {
 
 // formatMetricsSection renders a brief METRICS block appended to the digest text.
 func (h *Handler) formatMetricsSection() string {
-	if h.poolM == nil && h.dispM == nil && h.sysM == nil && h.scalingEvents == nil {
+	if h.poolM == nil && h.dispM == nil && h.sysM == nil && h.scalingEvents == nil && h.workersM == nil {
 		return ""
 	}
 
@@ -96,6 +113,25 @@ func (h *Handler) formatMetricsSection() string {
 					e.Reason,
 					e.Confidence*100,
 				)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	if h.workersM != nil {
+		workers := h.workersM.ListWorkers()
+		if len(workers) > 0 {
+			b.WriteString("PC Workers:")
+			for _, w := range workers {
+				task := "idle"
+				if w.CurrentTask != nil {
+					task = fmt.Sprintf("issue #%d", *w.CurrentTask)
+				}
+				fmt.Fprintf(&b, "\n  %s (%s) — %s | worktrees: %d | cpu: %.0f%% mem: %.0f%%",
+					w.AgentID, w.Hostname, task, w.ActiveWorktrees, w.CPUPercent, w.MemoryPercent)
+				if w.Status == "offline" {
+					b.WriteString(" [OFFLINE]")
+				}
 			}
 			b.WriteString("\n")
 		}

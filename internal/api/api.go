@@ -34,6 +34,7 @@ type API struct {
 	pool           poolMetricsSource       // may be nil if pool not yet started
 	dispatcher     dispatcherMetricsSource // may be nil if dispatcher not started
 	system         systemMetricsSource     // may be nil; created via SetMetrics
+	workers        *workerRegistry         // in-memory registry of PC agent workers
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
 	scalingMax     int
@@ -47,6 +48,7 @@ func New(tracker forge.IssueTracker, s store.Store, costs digest.CostSource) *AP
 		tracker: tracker,
 		store:   s,
 		costs:   costs,
+		workers: newWorkerRegistry(),
 	}
 }
 
@@ -79,6 +81,9 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/scaling/pause", a.handleScalingPause)
 	mux.HandleFunc("POST /api/v1/scaling/resume", a.handleScalingResume)
 	mux.HandleFunc("POST /api/v1/scaling/set", a.handleScalingSet)
+	mux.HandleFunc("GET /api/v1/workers", a.handleListWorkers)
+	mux.HandleFunc("POST /api/v1/workers/register", a.handleRegisterWorker)
+	mux.HandleFunc("POST /api/v1/workers/heartbeat", a.handleWorkerHeartbeat)
 }
 
 // errorResponse is the JSON body returned for error responses.
