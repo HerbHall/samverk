@@ -31,8 +31,9 @@ type Task struct {
 	Issue         *forge.Issue
 	AgentType     models.AgentType
 	SessionID     string
-	ProviderKey   string // routing chain key; defaults to string(AgentType) when empty
-	HeartbeatFunc func() // called periodically while running; signals dispatcher that work is in progress; may be nil
+	ProviderKey   string        // routing chain key; defaults to string(AgentType) when empty
+	Timeout       time.Duration // per-task timeout; 0 means no deadline
+	HeartbeatFunc func()        // called periodically while running; signals dispatcher that work is in progress; may be nil
 }
 
 // TaskResult reports the outcome of a pool task back to the dispatcher.
@@ -296,15 +297,25 @@ func (p *Pool) worker() {
 // It uses task.ProviderKey for registry lookup when set, falling back to
 // string(task.AgentType). If the selected chain has no healthy provider,
 // it retries with the "default" chain before giving up.
+//
+// When task.Timeout is set, the context is wrapped with a deadline so the
+// provider call is cancelled if it exceeds the estimated duration.
 func (p *Pool) processTask(task Task) {
 	p.active.Add(1)
 	defer p.active.Add(-1)
 
 	ctx := context.Background()
+	if task.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, task.Timeout)
+		defer cancel()
+	}
+
 	logger := p.logger.With(
 		zap.String("session_id", task.SessionID),
 		zap.Int("issue", task.Issue.Number),
 		zap.String("agent_type", string(task.AgentType)),
+		zap.Duration("timeout", task.Timeout),
 	)
 
 	routingKey := task.ProviderKey
@@ -354,10 +365,12 @@ func (p *Pool) processTask(task Task) {
 		logger.Error("task failed",
 			zap.String("error", runErr.Error()),
 			zap.Duration("duration", duration.Truncate(time.Millisecond)),
+			zap.Duration("estimated", task.Timeout),
 		)
 	} else {
 		logger.Info("task done",
 			zap.Duration("duration", duration.Truncate(time.Millisecond)),
+			zap.Duration("estimated", task.Timeout),
 		)
 	}
 

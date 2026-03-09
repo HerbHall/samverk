@@ -166,6 +166,14 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 
 	providerKey, reason := selectProviderKey(issue, agentType)
 
+	// Estimate per-issue timeout from complexity signals or frontmatter override.
+	fm, _ := d.parseFrontmatter(issue) // ignore error; nil fm is fine
+	timeout := EstimateTimeout(issue, fm, agentType, providerKey)
+	d.logger.Info("timeout estimated",
+		zap.Int("issue", issue.Number),
+		zap.Duration("timeout", timeout),
+	)
+
 	now := time.Now()
 	d.mu.Lock()
 	priorFailures := d.issueFailures[issue.Number]
@@ -206,6 +214,7 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 			AgentType:   agentType,
 			SessionID:   sessionID,
 			ProviderKey: providerKey,
+			Timeout:     timeout,
 			HeartbeatFunc: func() {
 				d.mu.Lock()
 				if c, ok := d.claimed[issueNum]; ok {

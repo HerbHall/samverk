@@ -73,4 +73,5 @@ type IssueFrontmatter struct {
 	EstimatedTokens int        `yaml:"estimated_tokens,omitempty"`
 	ActualTokens    int        `yaml:"actual_tokens,omitempty"`
 	ModelUsed       string     `yaml:"model_used,omitempty"`
+	TimeoutMinutes  int        `yaml:"timeout_minutes,omitempty"`
 }

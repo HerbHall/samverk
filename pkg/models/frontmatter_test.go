@@ -73,6 +73,18 @@ func TestParseFrontmatter(t *testing.T) {
 			},
 			wantBody: "Task with dependencies.\n",
 		},
+		{
+			name: "timeout_minutes parsing",
+			body: "---\nschema_version: \"1.0.0\"\ntype: task\nagent_type: code-gen\npriority: normal\ntimeout_minutes: 30\n---\n\nTask with timeout.\n",
+			wantFM: &IssueFrontmatter{
+				SchemaVersion:  "1.0.0",
+				Type:           IssueTypeTask,
+				AgentType:      AgentTypeCodeGen,
+				Priority:       PriorityNormal,
+				TimeoutMinutes: 30,
+			},
+			wantBody: "Task with timeout.\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -166,5 +178,8 @@ func assertFrontmatterEqual(t *testing.T, want, got *IssueFrontmatter) {
 	}
 	if got.ModelUsed != want.ModelUsed {
 		t.Errorf("ModelUsed: got %q, want %q", got.ModelUsed, want.ModelUsed)
+	}
+	if got.TimeoutMinutes != want.TimeoutMinutes {
+		t.Errorf("TimeoutMinutes: got %d, want %d", got.TimeoutMinutes, want.TimeoutMinutes)
 	}
 }
