@@ -9,6 +9,12 @@ import (
 	"github.com/herbhall/samverk/pkg/models"
 )
 
+// Autoscaling validation: burst-3 task 4/8 — scale-up validation.
+// This package implements the autoscaler that monitors pool metrics and makes
+// scale-up/scale-down decisions based on queue depth, worker utilization, and
+// configured thresholds. The autoscaler is tested end-to-end via burst task #297
+// to verify that the pool correctly scales up under load and scales down when idle.
+
 // PoolScaler is the interface the autoscaler uses to inspect and resize the pool.
 // agent.Pool satisfies this interface.
 type PoolScaler interface {
