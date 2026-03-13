@@ -1,10 +1,26 @@
 const BASE = '/api/v1'
 
+// Read auth token injected by the Go server at serve time.
+declare global {
+  interface Window {
+    __SAMVERK_TOKEN__?: string
+  }
+}
+
+function getAuthHeaders(): HeadersInit {
+  const token = window.__SAMVERK_TOKEN__
+  if (token) {
+    return { Authorization: `Bearer ${token}` }
+  }
+  return {}
+}
+
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
       ...init?.headers,
     },
   })
