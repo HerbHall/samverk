@@ -338,7 +338,7 @@ func (p *Pool) processTask(task Task) {
 	}
 	if err != nil {
 		logger.Error("no healthy provider", zap.String("error", err.Error()))
-		p.failSession(ctx, task.SessionID, fmt.Sprintf("no healthy provider: %v", err))
+		p.failSession(cleanupCtx, task.SessionID, fmt.Sprintf("no healthy provider: %v", err))
 		// Notify dispatcher even on provider failure.
 		if cbPtr := p.onComplete.Load(); cbPtr != nil {
 			(*cbPtr)(TaskResult{
