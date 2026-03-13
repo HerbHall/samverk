@@ -128,6 +128,12 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 		return "local", "title prefix chore:"
 	}
 
+	// QC: dedicated chain ensures cross-model validation (ADR-030).
+	// Checked after complex/local so critical QC issues still get the complex chain.
+	if agentType == models.AgentTypeQC {
+		return "qc", "agent type qc (cross-model validation)"
+	}
+
 	// Triage: low priority, docs agent, or short issue body.
 	if labels["priority:low"] {
 		return "triage", "label priority:low"
