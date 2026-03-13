@@ -183,15 +183,9 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		return nil
 	}
 
-	agentType, err := d.classify(ctx, issue)
+	agentType, fm, err := d.classify(ctx, issue)
 	if err != nil {
 		return d.escalate(ctx, issue.Number, "invalid_frontmatter", err.Error())
-	}
-
-	// Check dependencies before routing.
-	fm, fmErr := d.parseFrontmatter(issue)
-	if fmErr != nil {
-		return d.escalate(ctx, issue.Number, "frontmatter_parse_error", fmErr.Error())
 	}
 
 	if fm != nil && len(fm.DependsOn) > 0 {
@@ -213,7 +207,7 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		}
 	}
 
-	return d.route(ctx, issue, agentType)
+	return d.route(ctx, issue, agentType, fm)
 }
 
 // handleClosed processes a closed issue by unblocking dependents.

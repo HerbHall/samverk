@@ -15,16 +15,6 @@ function StatusIndicator({ connected, label }: { connected: boolean; label: stri
   )
 }
 
-function ForgeLabel({ name, forgeType }: { name: string; forgeType: string }) {
-  const icon = forgeType === 'gitea' ? '??' : '??'
-  return (
-    <span>
-      {icon} {name}{' '}
-      <span className="text-xs text-gray-400">({forgeType})</span>
-    </span>
-  )
-}
-
 function StatCard({ title, value, subtitle }: { title: string; value: string; subtitle?: string }) {
   return (
     <div className="rounded-lg border bg-white p-5">
@@ -92,7 +82,6 @@ export function Dashboard() {
 
   const activeSessions = sessions.data?.filter((s) => s.status === 'running') ?? []
   const totalSessions = sessions.data?.length ?? 0
-  const forges = status.data?.forges ?? []
 
   return (
     <div>
@@ -115,20 +104,10 @@ export function Dashboard() {
             </span>
           </div>
           <div className="space-y-2">
-            {forges.length > 0 ? (
-              forges.map((f) => (
-                <StatusIndicator
-                  key={f.name}
-                  connected={f.connected}
-                  label={`${f.name} (${f.forge_type})`}
-                />
-              ))
-            ) : (
-              <StatusIndicator
-                connected={status.data?.forge_connected ?? false}
-                label="Git Forge"
-              />
-            )}
+            <StatusIndicator
+              connected={status.data?.forge_connected ?? false}
+              label="Git Forge"
+            />
             <StatusIndicator
               connected={status.data?.database_connected ?? false}
               label="Database"

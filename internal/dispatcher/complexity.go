@@ -62,7 +62,7 @@ func EstimateTimeout(issue *forge.Issue, fm *models.IssueFrontmatter, agentType 
 
 // estimateFromSignals computes a timeout from heuristic signals.
 func estimateFromSignals(sig complexitySignals) time.Duration {
-	minutes := 15.0 // base: 15 minutes
+	minutes := DefaultTimeout.Minutes()
 
 	// Body length factor: +1 min per 100 words above 200.
 	if sig.WordCount > 200 {

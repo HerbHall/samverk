@@ -28,25 +28,26 @@ var knownAgentTypes = map[models.AgentType]bool{
 var complexTitleKeywords = []string{"architect", "refactor", "redesign", "spike"}
 
 // classify parses frontmatter from the issue body and validates the agent_type.
-// Returns an error if frontmatter is missing or agent_type is invalid.
-func (d *Dispatcher) classify(_ context.Context, issue *forge.Issue) (models.AgentType, error) {
+// Returns the agent type and parsed frontmatter (may be nil for heuristic matches).
+// Returns an error if frontmatter is missing/invalid and no heuristic matches.
+func (d *Dispatcher) classify(_ context.Context, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
 	fm, err := d.parseFrontmatter(issue)
 	if err != nil {
-		return "", fmt.Errorf("classify issue #%d: %w", issue.Number, err)
+		return "", nil, fmt.Errorf("classify issue #%d: %w", issue.Number, err)
 	}
 	if fm == nil {
 		if at := classifyByHeuristic(issue); at != "" {
-			return at, nil
+			return at, nil, nil
 		}
-		return "", fmt.Errorf("classify issue #%d: no frontmatter found and no heuristic match", issue.Number)
+		return "", nil, fmt.Errorf("classify issue #%d: no frontmatter found and no heuristic match", issue.Number)
 	}
 	if fm.AgentType == "" {
-		return "", fmt.Errorf("classify issue #%d: agent_type is empty", issue.Number)
+		return "", nil, fmt.Errorf("classify issue #%d: agent_type is empty", issue.Number)
 	}
 	if !knownAgentTypes[fm.AgentType] {
-		return "", fmt.Errorf("classify issue #%d: unknown agent_type %q", issue.Number, fm.AgentType)
+		return "", nil, fmt.Errorf("classify issue #%d: unknown agent_type %q", issue.Number, fm.AgentType)
 	}
-	return fm.AgentType, nil
+	return fm.AgentType, fm, nil
 }
 
 // classifyByHeuristic attempts to determine the agent type from issue labels
@@ -144,7 +145,7 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 // It selects a provider routing chain based on issue signals, logs the selection,
 // and records the claim in memory. Any failure count accumulated from prior
 // timeout cycles is carried forward so the escalation threshold is not reset.
-func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType) error {
+func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType, fm *models.IssueFrontmatter) error {
 	// Human-typed issues are tracked but never submitted to the agent pool.
 	if agentType == models.AgentTypeHuman {
 		d.logger.Info("issue classified as human", zap.Int("issue", issue.Number))
@@ -167,7 +168,6 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	providerKey, reason := selectProviderKey(issue, agentType)
 
 	// Estimate per-issue timeout from complexity signals or frontmatter override.
-	fm, _ := d.parseFrontmatter(issue) // ignore error; nil fm is fine
 	timeout := EstimateTimeout(issue, fm, agentType, providerKey)
 	d.logger.Info("timeout estimated",
 		zap.Int("issue", issue.Number),

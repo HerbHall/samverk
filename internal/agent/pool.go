@@ -304,7 +304,11 @@ func (p *Pool) processTask(task Task) {
 	p.active.Add(1)
 	defer p.active.Add(-1)
 
-	ctx := context.Background()
+	// cleanupCtx is never cancelled by the task timeout so that session
+	// status updates and failure comments can still reach the store/forge.
+	cleanupCtx := context.Background()
+
+	ctx := cleanupCtx
 	if task.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, task.Timeout)
@@ -349,6 +353,7 @@ func (p *Pool) processTask(task Task) {
 	}
 
 	runner := NewRunner(prov, model, p.tracker, p.store, p.costs, p.logger)
+	runner.cleanupCtx = cleanupCtx
 	start := time.Now()
 	runErr := runner.Run(ctx, task)
 	duration := time.Since(start)

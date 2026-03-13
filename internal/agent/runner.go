@@ -33,6 +33,7 @@ type Runner struct {
 	store      store.Store
 	costs      *cost.Tracker
 	logger     *zap.Logger
+	cleanupCtx context.Context // used for session updates and failure comments; survives task timeout
 }
 
 // NewRunner creates a runner bound to a specific provider and model.
@@ -188,8 +189,8 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		return fmt.Errorf("post-process: %w", err)
 	}
 
-	// Step 8: Mark session completed.
-	if err = r.completeSession(ctx, task.SessionID); err != nil {
+	// Step 8: Mark session completed (use cleanup context to survive timeout).
+	if err = r.completeSession(r.safeCtx(ctx), task.SessionID); err != nil {
 		return fmt.Errorf("complete session: %w", err)
 	}
 
@@ -355,10 +356,22 @@ func (r *Runner) completeSession(ctx context.Context, sessionID string) error {
 	return r.store.UpdateSession(ctx, session)
 }
 
+// safeCtx returns the cleanup context if set, otherwise the provided context.
+// This ensures session updates and failure comments are not cancelled by the
+// task timeout deadline.
+func (r *Runner) safeCtx(ctx context.Context) context.Context {
+	if r.cleanupCtx != nil {
+		return r.cleanupCtx
+	}
+	return ctx
+}
+
 // failTask marks the session as failed and posts an error comment on the issue.
 // If the session has partial output, a CHECKPOINT comment is posted first so
 // that a retry can resume from where the previous attempt left off.
 func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
+	ctx = r.safeCtx(ctx)
+
 	// Attempt to save checkpoint from partial output.
 	r.saveCheckpoint(ctx, task)
 

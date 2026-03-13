@@ -45,16 +45,9 @@ export interface CostSummary {
   record_count: number
 }
 
-export interface ForgeStatus {
-  name: string
-  forge_type: string
-  connected: boolean
-}
-
 export interface SystemStatus {
   healthy: boolean
   forge_connected: boolean
-  forges: ForgeStatus[]
   database_connected: boolean
   tool_count: number
 }
