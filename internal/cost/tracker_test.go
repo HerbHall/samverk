@@ -17,8 +17,9 @@ import (
 // nil interface if called (which is fine -- tests only call mocked methods).
 type mockStore struct {
 	store.Store
-	recordCostFn  func(ctx context.Context, r *models.CostRecord) error
-	computeCostFn func(ctx context.Context, since time.Time) (*models.CostSummary, error)
+	recordCostFn       func(ctx context.Context, r *models.CostRecord) error
+	computeCostFn      func(ctx context.Context, since time.Time) (*models.CostSummary, error)
+	computeForIssueFn  func(ctx context.Context, issueNumber int) (*models.CostSummary, error)
 }
 
 func (m *mockStore) RecordCost(ctx context.Context, r *models.CostRecord) error {
@@ -26,6 +27,13 @@ func (m *mockStore) RecordCost(ctx context.Context, r *models.CostRecord) error 
 		return m.recordCostFn(ctx, r)
 	}
 	return nil
+}
+
+func (m *mockStore) ComputeCostForIssue(ctx context.Context, issueNumber int) (*models.CostSummary, error) {
+	if m.computeForIssueFn != nil {
+		return m.computeForIssueFn(ctx, issueNumber)
+	}
+	return &models.CostSummary{}, nil
 }
 
 func (m *mockStore) ComputeCostSince(ctx context.Context, since time.Time) (*models.CostSummary, error) {
@@ -175,5 +183,91 @@ func TestNewTrackerDefaults(t *testing.T) {
 	tr3 := NewTracker(&mockStore{}, 5.00, 12)
 	if tr3.windowHours != 12 {
 		t.Errorf("windowHours = %d, want 12 (explicit)", tr3.windowHours)
+	}
+}
+
+func TestCheckOutlier(t *testing.T) {
+	tests := []struct {
+		name            string
+		estimatedTokens int
+		actualInput     int
+		actualOutput    int
+		wantWarning     bool
+	}{
+		{
+			name:            "no estimate skips check",
+			estimatedTokens: 0,
+			wantWarning:     false,
+		},
+		{
+			name:            "under threshold no warning",
+			estimatedTokens: 10000,
+			actualInput:     8000,
+			actualOutput:    5000,
+			wantWarning:     false,
+		},
+		{
+			name:            "exactly at 2x no warning",
+			estimatedTokens: 10000,
+			actualInput:     15000,
+			actualOutput:    5000,
+			wantWarning:     false,
+		},
+		{
+			name:            "over 2x triggers warning",
+			estimatedTokens: 10000,
+			actualInput:     15000,
+			actualOutput:    6000,
+			wantWarning:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := &mockStore{
+				computeForIssueFn: func(_ context.Context, _ int) (*models.CostSummary, error) {
+					return &models.CostSummary{
+						TotalInputTokens:  tt.actualInput,
+						TotalOutputTokens: tt.actualOutput,
+					}, nil
+				},
+			}
+			tr := NewTracker(ms, 0, 24)
+			warning := tr.CheckOutlier(context.Background(), 42, tt.estimatedTokens)
+			if tt.wantWarning && warning == "" {
+				t.Error("expected warning, got empty string")
+			}
+			if !tt.wantWarning && warning != "" {
+				t.Errorf("expected no warning, got %q", warning)
+			}
+		})
+	}
+}
+
+func TestGetIssueCostSummary(t *testing.T) {
+	expected := &models.CostSummary{
+		TotalInputTokens:  5000,
+		TotalOutputTokens: 2000,
+		TotalCostUSD:      0.05,
+		RecordCount:       3,
+	}
+	ms := &mockStore{
+		computeForIssueFn: func(_ context.Context, num int) (*models.CostSummary, error) {
+			if num != 42 {
+				t.Errorf("issueNumber = %d, want 42", num)
+			}
+			return expected, nil
+		},
+	}
+	tr := NewTracker(ms, 0, 24)
+	got, err := tr.GetIssueCostSummary(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetIssueCostSummary error: %v", err)
+	}
+	if got.TotalInputTokens != expected.TotalInputTokens {
+		t.Errorf("input_tokens = %d, want %d", got.TotalInputTokens, expected.TotalInputTokens)
+	}
+	if got.RecordCount != expected.RecordCount {
+		t.Errorf("record_count = %d, want %d", got.RecordCount, expected.RecordCount)
 	}
 }

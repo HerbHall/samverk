@@ -79,6 +79,7 @@ func (a *API) SetScalingConfig(enabled bool, minW, maxW int) {
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/issues", a.handleListIssues)
 	mux.HandleFunc("GET /api/v1/issues/{number}", a.handleGetIssue)
+	mux.HandleFunc("GET /api/v1/issues/{number}/cost", a.handleGetIssueCost)
 	mux.HandleFunc("GET /api/v1/sessions", a.handleListSessions)
 	mux.HandleFunc("GET /api/v1/costs", a.handleGetCosts)
 	mux.HandleFunc("GET /api/v1/status", a.handleStatus)

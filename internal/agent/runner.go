@@ -183,6 +183,19 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		// Non-fatal: continue even if cost recording fails.
 	}
 
+	// Step 6b: Check for token outlier (best-effort, non-fatal).
+	if task.Frontmatter != nil && task.Frontmatter.EstimatedTokens > 0 {
+		if warning := r.costs.CheckOutlier(ctx, task.Issue.Number, task.Frontmatter.EstimatedTokens); warning != "" {
+			r.logger.Warn("token outlier detected",
+				zap.Int("issue", task.Issue.Number),
+				zap.String("warning", warning),
+			)
+			if _, commentErr := r.tracker.AddComment(ctx, task.Issue.Number, warning); commentErr != nil {
+				r.logger.Error("failed to post outlier warning", zap.Error(commentErr))
+			}
+		}
+	}
+
 	// Step 7: Post-process response based on agent type.
 	if err = r.postProcess(ctx, task, resp.Message.Content); err != nil {
 		r.failTask(ctx, task, fmt.Sprintf("post-process error: %v", err))

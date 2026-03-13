@@ -128,6 +128,10 @@ func (m *mockStore) ComputeCostSince(_ context.Context, _ time.Time) (*models.Co
 	return nil, errors.New("not implemented")
 }
 
+func (m *mockStore) ComputeCostForIssue(_ context.Context, _ int) (*models.CostSummary, error) {
+	return &models.CostSummary{}, nil
+}
+
 func (m *mockStore) GetBudgetStatus(_ context.Context, _ float64) (spent, remaining float64, err error) {
 	return 0, 0, errors.New("not implemented")
 }

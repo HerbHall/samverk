@@ -31,9 +31,10 @@ type Task struct {
 	Issue         *forge.Issue
 	AgentType     models.AgentType
 	SessionID     string
-	ProviderKey   string        // routing chain key; defaults to string(AgentType) when empty
-	Timeout       time.Duration // per-task timeout; 0 means no deadline
-	HeartbeatFunc func()        // called periodically while running; signals dispatcher that work is in progress; may be nil
+	ProviderKey   string                    // routing chain key; defaults to string(AgentType) when empty
+	Timeout       time.Duration             // per-task timeout; 0 means no deadline
+	HeartbeatFunc func()                    // called periodically while running; signals dispatcher that work is in progress; may be nil
+	Frontmatter   *models.IssueFrontmatter  // parsed frontmatter from issue body; may be nil
 }
 
 // TaskResult reports the outcome of a pool task back to the dispatcher.
