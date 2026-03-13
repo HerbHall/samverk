@@ -139,7 +139,13 @@ func (s *Server) registerRoutes() {
 	}
 
 	if s.cfg.APIHandler != nil {
-		s.cfg.APIHandler.RegisterRoutes(s.mux)
+		apiMux := http.NewServeMux()
+		s.cfg.APIHandler.RegisterRoutes(apiMux)
+		if s.cfg.AuthToken != "" || s.cfg.KeyStore != nil {
+			s.mux.Handle("/api/", BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)(apiMux))
+		} else {
+			s.mux.Handle("/api/", apiMux)
+		}
 	} else {
 		s.mux.HandleFunc("/api/v1/", s.handleNotImplemented)
 	}
