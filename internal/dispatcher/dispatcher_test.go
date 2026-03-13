@@ -1104,7 +1104,7 @@ func TestRoute_HumanAgentNotDispatched(t *testing.T) {
 		Labels: []string{"agent:human"},
 	}
 
-	err := d.route(context.Background(), issue, models.AgentTypeHuman)
+	err := d.route(context.Background(), issue, models.AgentTypeHuman, nil)
 	if err != nil {
 		t.Fatalf("route returned error: %v", err)
 	}
