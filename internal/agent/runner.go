@@ -22,18 +22,23 @@ import (
 // (HeartbeatInterval × HeartbeatTimeoutMultiplier, default 30 min).
 const heartbeatPulseInterval = 5 * time.Minute
 
+// defaultProgressInterval is the default interval between mid-task PROGRESS
+// comments. Set to 0 to disable periodic progress posting.
+const defaultProgressInterval = 30 * time.Minute
+
 // Runner executes a single agent task: sends the issue to an AI provider,
 // records cost, and posts the response as an issue comment or opens a PR.
 type Runner struct {
-	provider   provider.Provider
-	model      string
-	tracker    forge.IssueTracker
-	repoWriter forge.RepoWriter
-	prManager  forge.PullRequestManager
-	store      store.Store
-	costs      *cost.Tracker
-	logger     *zap.Logger
-	cleanupCtx context.Context // used for session updates and failure comments; survives task timeout
+	provider         provider.Provider
+	model            string
+	tracker          forge.IssueTracker
+	repoWriter       forge.RepoWriter
+	prManager        forge.PullRequestManager
+	store            store.Store
+	costs            *cost.Tracker
+	logger           *zap.Logger
+	cleanupCtx       context.Context // used for session updates and failure comments; survives task timeout
+	progressInterval time.Duration   // interval between PROGRESS posts; 0 disables
 }
 
 // NewRunner creates a runner bound to a specific provider and model.
@@ -44,13 +49,20 @@ func NewRunner(p provider.Provider, model string, tracker forge.IssueTracker, st
 		logger = zap.NewNop()
 	}
 	return &Runner{
-		provider: p,
-		model:    model,
-		tracker:  tracker,
-		store:    st,
-		costs:    costs,
-		logger:   logger,
+		provider:         p,
+		model:            model,
+		tracker:          tracker,
+		store:            st,
+		costs:            costs,
+		logger:           logger,
+		progressInterval: defaultProgressInterval,
 	}
+}
+
+// SetProgressInterval overrides the default interval between PROGRESS posts.
+// A value of 0 disables periodic progress posting entirely.
+func (r *Runner) SetProgressInterval(d time.Duration) {
+	r.progressInterval = d
 }
 
 // SetRepoWriter configures write access for branch/file operations.
@@ -139,21 +151,47 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	//      the callback fires on every chunk of output, resetting the heartbeat
 	//      timer immediately. This prevents false timeout kills during long but
 	//      active streaming sessions.
-	if task.HeartbeatFunc != nil {
-		task.HeartbeatFunc() // fire immediately before blocking call
+	{
 		stop := make(chan struct{})
-		go func() {
-			ticker := time.NewTicker(heartbeatPulseInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					task.HeartbeatFunc()
-				case <-stop:
-					return
-				}
+		var started bool
+
+		if task.HeartbeatFunc != nil {
+			task.HeartbeatFunc() // fire immediately before blocking call
+			started = true
+		}
+
+		if task.HeartbeatFunc != nil || r.progressInterval > 0 {
+			if !started {
+				started = true
 			}
-		}()
+			go func() {
+				heartTicker := time.NewTicker(heartbeatPulseInterval)
+				defer heartTicker.Stop()
+
+				var progressTicker *time.Ticker
+				var progressCh <-chan time.Time
+				if r.progressInterval > 0 {
+					progressTicker = time.NewTicker(r.progressInterval)
+					progressCh = progressTicker.C
+					defer progressTicker.Stop()
+				}
+
+				var lastProgressHash string
+				for {
+					select {
+					case <-heartTicker.C:
+						if task.HeartbeatFunc != nil {
+							task.HeartbeatFunc()
+						}
+					case <-progressCh:
+						r.postProgress(ctx, task, &lastProgressHash)
+					case <-stop:
+						return
+					}
+				}
+			}()
+		}
+
 		defer close(stop)
 	}
 
@@ -204,6 +242,25 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	}
 
 	return nil
+}
+
+// postProgress posts a PROGRESS comment if the session has new partial output
+// since the last progress post. Uses hash-based dedup to avoid duplicate posts.
+func (r *Runner) postProgress(ctx context.Context, task Task, lastHash *string) {
+	session, err := r.store.GetSession(ctx, task.SessionID)
+	if err != nil || session.PartialOutput == "" {
+		return
+	}
+	hash := HashCheckpoint(session.PartialOutput)
+	if hash == *lastHash {
+		return // no new content since last progress post
+	}
+	comment := FormatProgress(task.SessionID, session.PartialOutput)
+	if _, err = r.tracker.AddComment(ctx, task.Issue.Number, comment); err != nil {
+		r.logger.Error("progress: failed to post", zap.Error(err))
+		return
+	}
+	*lastHash = hash
 }
 
 // postProcess routes the provider response to the appropriate output handler.

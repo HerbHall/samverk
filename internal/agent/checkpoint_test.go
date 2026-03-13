@@ -142,6 +142,71 @@ func TestDeduplicateEdits(t *testing.T) {
 	}
 }
 
+func TestFormatProgress(t *testing.T) {
+	got := FormatProgress("sess-1", "partial work")
+	if !contains(got, "PROGRESS [sess-1]") {
+		t.Error("expected PROGRESS prefix with session ID")
+	}
+	if !contains(got, "```\npartial work\n```") {
+		t.Error("expected partial output in code fence")
+	}
+}
+
+func TestFindLatestProgress(t *testing.T) {
+	tests := []struct {
+		name     string
+		comments []*forge.Comment
+		want     string
+	}{
+		{
+			name:     "no comments",
+			comments: nil,
+			want:     "",
+		},
+		{
+			name: "no progress comments",
+			comments: []*forge.Comment{
+				{Body: "regular comment"},
+				{Body: "CHECKPOINT [sess-1]\n\n```\nold\n```"},
+			},
+			want: "",
+		},
+		{
+			name: "single progress",
+			comments: []*forge.Comment{
+				{Body: "PROGRESS [sess-1] [2026-03-13T10:00:00Z]\n\n```\nwork done\n```"},
+			},
+			want: "work done",
+		},
+		{
+			name: "multiple progress returns latest",
+			comments: []*forge.Comment{
+				{Body: "PROGRESS [sess-1] [2026-03-13T10:00:00Z]\n\n```\nold progress\n```"},
+				{Body: "some other comment"},
+				{Body: "PROGRESS [sess-1] [2026-03-13T10:30:00Z]\n\n```\nnew progress\n```"},
+			},
+			want: "new progress",
+		},
+		{
+			name: "mixed checkpoint and progress",
+			comments: []*forge.Comment{
+				{Body: "CHECKPOINT [sess-1]\n\n```\ncheckpoint content\n```"},
+				{Body: "PROGRESS [sess-1] [2026-03-13T10:30:00Z]\n\n```\nprogress content\n```"},
+			},
+			want: "progress content",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FindLatestProgress(tt.comments)
+			if got != tt.want {
+				t.Errorf("FindLatestProgress = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildResumePrompt(t *testing.T) {
 	got := BuildResumePrompt("some prior work")
 	if got == "" {

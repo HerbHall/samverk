@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
 )
@@ -67,6 +68,49 @@ func extractCheckpointContent(body string) string {
 func HashCheckpoint(content string) string {
 	h := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(h[:])
+}
+
+// progressPrefix is the marker that identifies a progress comment.
+const progressPrefix = "PROGRESS ["
+
+// FormatProgress wraps partial output in the progress comment format.
+// Unlike CHECKPOINT (posted on failure), PROGRESS is posted periodically
+// during long-running tasks to create resumable mid-task state.
+func FormatProgress(sessionID, partialOutput string) string {
+	return fmt.Sprintf("PROGRESS [%s] [%s]\n\n```\n%s\n```",
+		sessionID, time.Now().UTC().Format(time.RFC3339), partialOutput)
+}
+
+// FindLatestProgress scans issue comments (newest first) for the most
+// recent PROGRESS block and returns its content. Returns empty string
+// if no progress comment exists.
+func FindLatestProgress(comments []*forge.Comment) string {
+	for i := len(comments) - 1; i >= 0; i-- {
+		if content := extractProgressContent(comments[i].Body); content != "" {
+			return content
+		}
+	}
+	return ""
+}
+
+// extractProgressContent pulls the content from inside a PROGRESS comment.
+func extractProgressContent(body string) string {
+	if !strings.HasPrefix(body, progressPrefix) {
+		return ""
+	}
+
+	start := strings.Index(body, "```\n")
+	if start < 0 {
+		return ""
+	}
+	start += len("```\n")
+
+	end := strings.LastIndex(body, "\n```")
+	if end < 0 || end <= start {
+		return ""
+	}
+
+	return body[start:end]
 }
 
 // DeduplicateEdits filters out EDIT blocks from newEdits that already exist
