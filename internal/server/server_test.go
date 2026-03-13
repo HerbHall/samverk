@@ -114,6 +114,90 @@ func TestAPINotImplemented(t *testing.T) {
 	}
 }
 
+// stubAPI is a minimal APIRegistrar that registers a single test endpoint.
+type stubAPI struct{}
+
+func (stubAPI) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/ping", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"pong":true}`))
+	})
+}
+
+func TestAPIRoutesRequireAuth(t *testing.T) {
+	const token = "test-api-token"
+
+	s := server.New(server.Config{
+		Addr:       "localhost:0",
+		AuthToken:  token,
+		APIHandler: stubAPI{},
+	}, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	tests := []struct {
+		name       string
+		authHeader string
+		wantStatus int
+	}{
+		{
+			name:       "no auth returns 401",
+			authHeader: "",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "wrong token returns 401",
+			authHeader: "Bearer wrong-token",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "valid token returns 200",
+			authHeader: "Bearer " + token,
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/ping", http.NoBody)
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("do request: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAPIRoutesNoAuthWhenTokenEmpty(t *testing.T) {
+	s := server.New(server.Config{
+		Addr:       "localhost:0",
+		AuthToken:  "", // no token = no auth
+		APIHandler: stubAPI{},
+	}, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	resp := get(t, ts.URL+"/api/v1/ping")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want %d (no auth should pass through)", resp.StatusCode, http.StatusOK)
+	}
+}
+
 func TestGracefulShutdown(t *testing.T) {
 	s := server.New(server.Config{Addr: "localhost:0"}, zap.NewNop())
 
