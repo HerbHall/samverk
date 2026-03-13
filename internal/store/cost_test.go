@@ -138,6 +138,85 @@ func TestComputeCostSinceEmpty(t *testing.T) {
 	}
 }
 
+func TestComputeCostForIssue(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Create two sessions for different issues.
+	sess1 := &models.Session{
+		IssueNumber: 42,
+		AgentType:   "code-gen",
+		Provider:    "claude",
+		Model:       "sonnet-4",
+		Status:      models.SessionStatusCompleted,
+		StartedAt:   time.Now().UTC(),
+	}
+	sess2 := &models.Session{
+		IssueNumber: 42,
+		AgentType:   "test",
+		Provider:    "claude",
+		Model:       "haiku-4",
+		Status:      models.SessionStatusCompleted,
+		StartedAt:   time.Now().UTC(),
+	}
+	sess3 := &models.Session{
+		IssueNumber: 99, // different issue
+		AgentType:   "code-gen",
+		Provider:    "claude",
+		Model:       "sonnet-4",
+		Status:      models.SessionStatusCompleted,
+		StartedAt:   time.Now().UTC(),
+	}
+	for _, sess := range []*models.Session{sess1, sess2, sess3} {
+		if err := s.CreateSession(ctx, sess); err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+	}
+
+	// Record costs for each session.
+	costs := []*models.CostRecord{
+		{SessionID: sess1.ID, Provider: "claude", Model: "sonnet-4", InputTokens: 1000, OutputTokens: 500, CostUSD: 0.01},
+		{SessionID: sess2.ID, Provider: "claude", Model: "haiku-4", InputTokens: 800, OutputTokens: 200, CostUSD: 0.005},
+		{SessionID: sess3.ID, Provider: "claude", Model: "sonnet-4", InputTokens: 5000, OutputTokens: 2000, CostUSD: 0.05},
+	}
+	for _, c := range costs {
+		if err := s.RecordCost(ctx, c); err != nil {
+			t.Fatalf("record cost: %v", err)
+		}
+	}
+
+	// Query issue 42: should aggregate sess1 + sess2 only.
+	summary, err := s.ComputeCostForIssue(ctx, 42)
+	if err != nil {
+		t.Fatalf("compute cost for issue: %v", err)
+	}
+	if summary.TotalInputTokens != 1800 {
+		t.Errorf("input_tokens = %d, want 1800", summary.TotalInputTokens)
+	}
+	if summary.TotalOutputTokens != 700 {
+		t.Errorf("output_tokens = %d, want 700", summary.TotalOutputTokens)
+	}
+	if summary.RecordCount != 2 {
+		t.Errorf("record_count = %d, want 2", summary.RecordCount)
+	}
+}
+
+func TestComputeCostForIssueEmpty(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	summary, err := s.ComputeCostForIssue(ctx, 999)
+	if err != nil {
+		t.Fatalf("compute: %v", err)
+	}
+	if summary.RecordCount != 0 {
+		t.Errorf("record_count = %d, want 0", summary.RecordCount)
+	}
+	if summary.TotalInputTokens != 0 {
+		t.Errorf("input_tokens = %d, want 0", summary.TotalInputTokens)
+	}
+}
+
 func TestGetBudgetStatus(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

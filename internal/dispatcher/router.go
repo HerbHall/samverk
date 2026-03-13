@@ -216,6 +216,7 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 			SessionID:   sessionID,
 			ProviderKey: providerKey,
 			Timeout:     timeout,
+			Frontmatter: fm,
 			HeartbeatFunc: func() {
 				d.mu.Lock()
 				if c, ok := d.claimed[issueNum]; ok {

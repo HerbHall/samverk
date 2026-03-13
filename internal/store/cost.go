@@ -55,6 +55,28 @@ func (s *SQLiteStore) ComputeCostSince(ctx context.Context, since time.Time) (su
 	return summary, nil
 }
 
+// ComputeCostForIssue aggregates all cost records across every session for the
+// given issue number. This enables per-issue budget tracking and outlier detection.
+func (s *SQLiteStore) ComputeCostForIssue(ctx context.Context, issueNumber int) (summary *models.CostSummary, err error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(cr.input_tokens), 0),
+		        COALESCE(SUM(cr.output_tokens), 0),
+		        COALESCE(SUM(cr.cost_usd), 0),
+		        COUNT(*)
+		 FROM cost_records cr
+		 JOIN sessions s ON cr.session_id = s.id
+		 WHERE s.issue_number = ?`,
+		issueNumber,
+	)
+
+	summary = &models.CostSummary{}
+	err = row.Scan(&summary.TotalInputTokens, &summary.TotalOutputTokens, &summary.TotalCostUSD, &summary.RecordCount)
+	if err != nil {
+		return nil, fmt.Errorf("compute cost for issue #%d: %w", issueNumber, err)
+	}
+	return summary, nil
+}
+
 // GetBudgetStatus computes today's spending and remaining budget.
 // spent is the total cost_usd since midnight UTC today.
 // remaining is dailyBudgetUSD - spent (floored at 0).
