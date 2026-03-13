@@ -29,6 +29,7 @@ type Store interface {
 	// Cost tracking
 	RecordCost(ctx context.Context, r *models.CostRecord) error
 	ComputeCostSince(ctx context.Context, since time.Time) (*models.CostSummary, error)
+	ComputeCostForIssue(ctx context.Context, issueNumber int) (*models.CostSummary, error)
 	GetBudgetStatus(ctx context.Context, dailyBudgetUSD float64) (spent float64, remaining float64, err error)
 
 	// Scaling events (written by dispatch, read by serve and MCP)
@@ -118,6 +119,7 @@ CREATE TABLE IF NOT EXISTS cost_records (
 
 CREATE INDEX IF NOT EXISTS idx_cost_session ON cost_records(session_id);
 CREATE INDEX IF NOT EXISTS idx_cost_created ON cost_records(created_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_issue ON sessions(issue_number);
 
 CREATE TABLE IF NOT EXISTS scaling_events (
 	id           TEXT PRIMARY KEY,

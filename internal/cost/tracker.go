@@ -66,6 +66,29 @@ func (t *Tracker) RecordUsage(ctx context.Context, sessionID, providerName, mode
 	return t.store.RecordCost(ctx, record)
 }
 
+// GetIssueCostSummary returns the aggregated cost for all sessions of the given issue.
+func (t *Tracker) GetIssueCostSummary(ctx context.Context, issueNumber int) (*models.CostSummary, error) {
+	return t.store.ComputeCostForIssue(ctx, issueNumber)
+}
+
+// CheckOutlier compares actual token usage for an issue against its estimate.
+// Returns a warning message if actual exceeds 2x the estimate, empty string otherwise.
+func (t *Tracker) CheckOutlier(ctx context.Context, issueNumber, estimatedTokens int) string {
+	if estimatedTokens <= 0 {
+		return ""
+	}
+	summary, err := t.store.ComputeCostForIssue(ctx, issueNumber)
+	if err != nil {
+		return ""
+	}
+	actual := summary.TotalInputTokens + summary.TotalOutputTokens
+	if actual > 2*estimatedTokens {
+		return fmt.Sprintf("Token outlier: issue #%d used %d tokens (estimated %d, %.1fx over)",
+			issueNumber, actual, estimatedTokens, float64(actual)/float64(estimatedTokens))
+	}
+	return ""
+}
+
 // pricing holds per-million-token costs for input and output.
 type pricing struct {
 	inputPer1M  float64
