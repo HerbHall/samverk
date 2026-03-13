@@ -118,6 +118,27 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "short issue body",
 		},
 
+		// --- qc tier ---
+		{
+			name:      "agent type qc → qc",
+			issue:     &forge.Issue{Title: "validate: check output", Body: longBody},
+			agentType: models.AgentTypeQC,
+			wantKey:   "qc",
+			wantReason: "cross-model",
+		},
+		{
+			// complex beats qc: priority:critical takes precedence
+			name: "priority:critical beats qc agent type",
+			issue: &forge.Issue{
+				Title:  "validate: critical output",
+				Body:   longBody,
+				Labels: []string{"priority:critical"},
+			},
+			agentType: models.AgentTypeQC,
+			wantKey:   "complex",
+			wantReason: "priority:critical",
+		},
+
 		// --- default tier ---
 		{
 			name:      "no signals → default",
