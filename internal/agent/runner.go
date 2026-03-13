@@ -153,17 +153,12 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	//      active streaming sessions.
 	{
 		stop := make(chan struct{})
-		var started bool
 
 		if task.HeartbeatFunc != nil {
 			task.HeartbeatFunc() // fire immediately before blocking call
-			started = true
 		}
 
 		if task.HeartbeatFunc != nil || r.progressInterval > 0 {
-			if !started {
-				started = true
-			}
 			go func() {
 				heartTicker := time.NewTicker(heartbeatPulseInterval)
 				defer heartTicker.Stop()
