@@ -264,3 +264,43 @@ Each worktree is a full working directory with its own branch and index,
 but shares the bare clone's object store (instant provisioning, zero extra disk).
 CLAUDE.md, Makefile, go.mod — all inherited automatically.
 Worktrees are created before each task and destroyed after.
+
+## Research-Driven Hardening (R-stream)
+
+Based on the [Multi-Agent Research Analysis](multi-agent-research.md) (15+ papers, 2024-2026),
+three hardening items should be implemented during the current execution phase. These address
+the most common multi-agent failure modes identified in the literature and build on existing
+W-stream and checkpoint (#243/#244) infrastructure.
+
+See [Research Action Item Mapping](research-action-item-mapping.md) for full assessment of all
+13 research recommendations against the current codebase.
+
+### R-stream Issues (Implement Now)
+
+| Issue | Task | Builds On | Effort |
+|-------|------|-----------|--------|
+| R01 | Cross-model QC routing policy | W-stream provider registry, ADR-030 | Config + router logic |
+| R02 | PROGRESS comment protocol for long-running tasks | #243/#244 checkpoint infrastructure | Runner enhancement |
+| R03 | Per-issue token aggregation with outlier alerts | W-stream cost tracker | SQL query + alerting |
+
+### R-stream Dependencies
+
+```text
+R01 (cross-model QC)     — no blockers, W-stream provider registry is complete
+R02 (PROGRESS comments)  — no blockers, checkpoint.go provides foundation
+R03 (per-issue budget)   — no blockers, cost tracker + session→issue link exists
+```
+
+All three items are independent and can run in parallel.
+
+### Deferred Research Items
+
+| Item | When | Trigger |
+|------|------|---------|
+| SPA build output strategy (gitignore static/ + Makefile target) | Next web UI work | Any PR touching web/ or Dashboard |
+| `files_touched` frontmatter field | Phase 6 | Multi-turn agent implementation |
+| Daily self-audit job | After W20 soak | 24h+ unattended operation validated |
+| Cycle resolution UX | After B-stream | Dependency graph exercised at scale |
+| Meta-QC on orchestrator | Phase 6+ | Orchestrator agent implementation |
+| Schema-level tool restrictions | Phase 6+ | Agents gain direct forge access |
+| RL-trained orchestrator | Future | Hundreds of task completions for training data |
