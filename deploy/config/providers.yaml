@@ -40,3 +40,7 @@ routing:
 
   # Frontend SPA work
   frontend: [claude-sonnet]
+
+  # QC validation: use a different model than the default code-gen chain (ADR-030).
+  # Haiku first ensures cross-model diversity; sonnet fallback if haiku is unhealthy.
+  qc:       [claude-haiku, claude-sonnet]
