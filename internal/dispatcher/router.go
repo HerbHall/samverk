@@ -29,7 +29,8 @@ var complexTitleKeywords = []string{"architect", "refactor", "redesign", "spike"
 
 // classify parses frontmatter from the issue body and validates the agent_type.
 // Returns the agent type and parsed frontmatter (may be nil for heuristic matches).
-// Returns an error if frontmatter is missing/invalid and no heuristic matches.
+// If frontmatter is present but malformed, returns an error immediately (no
+// heuristic fallback). Heuristics are only attempted when frontmatter is absent.
 func (d *Dispatcher) classify(_ context.Context, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
 	fm, err := d.parseFrontmatter(issue)
 	if err != nil {
