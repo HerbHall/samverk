@@ -654,7 +654,7 @@ func keyCmd() *cobra.Command {
 }
 
 func keyCreateCmd() *cobra.Command {
-	var name, authKeysPath string
+	var name, authKeysPath, scope, workerID string
 	var projects []string
 
 	cmd := &cobra.Command{
@@ -670,7 +670,12 @@ func keyCreateCmd() *cobra.Command {
 				return fmt.Errorf("load key store: %w", err)
 			}
 
-			plaintext, err := ks.Create(name, projects)
+			var plaintext string
+			if scope != "" || workerID != "" {
+				plaintext, err = ks.CreateScoped(name, projects, scope, workerID)
+			} else {
+				plaintext, err = ks.Create(name, projects)
+			}
 			if err != nil {
 				return fmt.Errorf("create key: %w", err)
 			}
@@ -684,6 +689,8 @@ func keyCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Name for the API key (required)")
 	cmd.Flags().StringSliceVar(&projects, "project", nil, "Project scope (repeatable; omit for all projects)")
 	cmd.Flags().StringVar(&authKeysPath, "auth-keys", ".samverk/auth.yaml", "Path to API key YAML file")
+	cmd.Flags().StringVar(&scope, "scope", "", "Key scope: admin (default) or worker")
+	cmd.Flags().StringVar(&workerID, "worker-id", "", "Worker ID (required when scope=worker)")
 
 	return cmd
 }
@@ -706,14 +713,22 @@ func keyListCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Printf("%-20s %-30s %s\n", "NAME", "PROJECTS", "CREATED")
-			fmt.Printf("%-20s %-30s %s\n", "----", "--------", "-------")
+			fmt.Printf("%-20s %-10s %-15s %-25s %s\n", "NAME", "SCOPE", "WORKER_ID", "PROJECTS", "CREATED")
+			fmt.Printf("%-20s %-10s %-15s %-25s %s\n", "----", "-----", "---------", "--------", "-------")
 			for i := range keys {
 				proj := "(all)"
 				if len(keys[i].Projects) > 0 {
 					proj = fmt.Sprintf("%v", keys[i].Projects)
 				}
-				fmt.Printf("%-20s %-30s %s\n", keys[i].Name, proj, keys[i].CreatedAt)
+				scope := keys[i].Scope
+				if scope == "" {
+					scope = "admin"
+				}
+				wid := keys[i].WorkerID
+				if wid == "" {
+					wid = "-"
+				}
+				fmt.Printf("%-20s %-10s %-15s %-25s %s\n", keys[i].Name, scope, wid, proj, keys[i].CreatedAt)
 			}
 			return nil
 		},
