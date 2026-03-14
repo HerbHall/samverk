@@ -33,6 +33,7 @@ import (
 	"github.com/herbhall/samverk/internal/provider/openai"
 	"github.com/herbhall/samverk/internal/scaling"
 	"github.com/herbhall/samverk/internal/server"
+	"github.com/herbhall/samverk/internal/status"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/internal/version"
 	"github.com/spf13/cobra"
@@ -66,6 +67,7 @@ func run() int {
 	root.AddCommand(scaleCmd())
 	root.AddCommand(digestCmd())
 	root.AddCommand(keyCmd())
+	root.AddCommand(statusCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -824,6 +826,58 @@ func keyRevokeCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&name, "name", "", "Name of the API key to revoke (required)")
 	cmd.Flags().StringVar(&authKeysPath, "auth-keys", ".samverk/auth.yaml", "Path to API key YAML file")
+
+	return cmd
+}
+
+func statusCmd() *cobra.Command {
+	var owner, repo, healthURL string
+	var write bool
+
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show or update project status from issue tracker",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			token := os.Getenv("GITHUB_TOKEN")
+			if token == "" {
+				return fmt.Errorf("GITHUB_TOKEN environment variable is required")
+			}
+			if owner == "" {
+				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
+			}
+			if repo == "" {
+				repo = os.Getenv("SAMVERK_GITHUB_REPO")
+			}
+			if owner == "" || repo == "" {
+				return fmt.Errorf("--owner and --repo flags (or SAMVERK_GITHUB_OWNER/SAMVERK_GITHUB_REPO env vars) are required")
+			}
+
+			ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+			httpClient := oauth2.NewClient(context.Background(), ts)
+			tracker := github.New(owner, repo, httpClient)
+
+			w := status.New(tracker, healthURL)
+			content, err := w.Generate(context.Background())
+			if err != nil {
+				return fmt.Errorf("generating status: %w", err)
+			}
+
+			if write {
+				if writeErr := os.WriteFile(".samverk/status.md", []byte(content), 0o600); writeErr != nil {
+					return fmt.Errorf("writing status.md: %w", writeErr)
+				}
+				fmt.Println("Updated .samverk/status.md")
+			} else {
+				fmt.Print(content)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
+	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
+	cmd.Flags().BoolVar(&write, "write", false, "Write to .samverk/status.md instead of stdout")
+	cmd.Flags().StringVar(&healthURL, "health-url", "http://localhost:8080/healthz", "Health check URL")
 
 	return cmd
 }
