@@ -41,6 +41,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/samverk
+ReadWritePaths=/var/lib/samverk/.claude
 PrivateTmp=true
 
 [Install]
