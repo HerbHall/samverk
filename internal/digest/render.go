@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // FormatDigest renders DigestData as the conversational text format
@@ -12,7 +14,7 @@ func FormatDigest(d DigestData) string {
 	var b strings.Builder
 
 	away := time.Since(d.LastCheckIn)
-	fmt.Fprintf(&b, "SAMVERK: Welcome back. You've been away %s. Here's where things stand.\n", formatDuration(away))
+	fmt.Fprintf(&b, "SAMVERK: Welcome back. You've been away %s. Here's where things stand.\n", models.FormatDuration(away))
 
 	hasPending := len(d.PendingActions) > 0
 	hasCompleted := len(d.CompletedActions) > 0
@@ -62,7 +64,7 @@ func renderPendingActions(b *strings.Builder, actions []PendingAction) {
 			fmt.Fprintf(b, "    Why: %s\n", truncate(a.Context, 80))
 		}
 		fmt.Fprintf(b, "    Blocks: %d dependent issue%s\n", a.BlockedCount, plural(a.BlockedCount))
-		fmt.Fprintf(b, "    Waiting: %s\n", formatDuration(time.Since(a.RequestedAt)))
+		fmt.Fprintf(b, "    Waiting: %s\n", models.FormatDuration(time.Since(a.RequestedAt)))
 		fmt.Fprintf(b, "    > %d approve | %dr reject | %d? more context\n", idx, idx, idx)
 	}
 }
@@ -194,22 +196,6 @@ func groupByDay(actions []CompletedAction) []dayGroup {
 		groups = append(groups, dayGroup{label: "Earlier", actions: olderActions})
 	}
 	return groups
-}
-
-func formatDuration(d time.Duration) string {
-	hours := int(d.Hours())
-	if hours < 1 {
-		mins := int(d.Minutes())
-		if mins < 1 {
-			return "just now"
-		}
-		return fmt.Sprintf("%dm", mins)
-	}
-	if hours < 48 {
-		return fmt.Sprintf("%dh", hours)
-	}
-	days := hours / 24
-	return fmt.Sprintf("%dd", days)
 }
 
 func plural(n int) string {
