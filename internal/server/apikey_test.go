@@ -211,6 +211,162 @@ func TestKeyStore_List(t *testing.T) {
 	}
 }
 
+func TestKeyStore_CreateScoped_WorkerKey(t *testing.T) {
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	plaintext, err := ks.CreateScoped("worker-key", nil, "worker", "worker-1")
+	if err != nil {
+		t.Fatalf("CreateScoped: %v", err)
+	}
+	if plaintext == "" {
+		t.Fatal("CreateScoped returned empty plaintext")
+	}
+
+	key, ok := ks.Validate(plaintext)
+	if !ok {
+		t.Fatal("Validate returned false for valid scoped key")
+	}
+	if key.Scope != "worker" {
+		t.Errorf("key.Scope = %q, want %q", key.Scope, "worker")
+	}
+	if key.WorkerID != "worker-1" {
+		t.Errorf("key.WorkerID = %q, want %q", key.WorkerID, "worker-1")
+	}
+}
+
+func TestKeyStore_CreateScoped_WorkerRequiresID(t *testing.T) {
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	_, err = ks.CreateScoped("bad-worker", nil, "worker", "")
+	if err == nil {
+		t.Fatal("expected error when scope=worker without worker_id, got nil")
+	}
+}
+
+func TestKeyStore_CreateScoped_InvalidScope(t *testing.T) {
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	_, err = ks.CreateScoped("bad-scope", nil, "invalid", "")
+	if err == nil {
+		t.Fatal("expected error for invalid scope, got nil")
+	}
+}
+
+func TestKeyStore_ValidateWorker_MatchingID(t *testing.T) {
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	plaintext, err := ks.CreateScoped("w1", nil, "worker", "agent-42")
+	if err != nil {
+		t.Fatalf("CreateScoped: %v", err)
+	}
+
+	if !ks.ValidateWorker(plaintext, "agent-42") {
+		t.Error("ValidateWorker returned false for matching worker ID")
+	}
+}
+
+func TestKeyStore_ValidateWorker_WrongID(t *testing.T) {
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	plaintext, err := ks.CreateScoped("w2", nil, "worker", "agent-42")
+	if err != nil {
+		t.Fatalf("CreateScoped: %v", err)
+	}
+
+	if ks.ValidateWorker(plaintext, "agent-99") {
+		t.Error("ValidateWorker returned true for non-matching worker ID")
+	}
+}
+
+func TestKeyStore_ValidateWorker_AdminBypassesIDCheck(t *testing.T) {
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	// Explicit admin scope.
+	plaintext, err := ks.CreateScoped("admin-key", nil, "admin", "")
+	if err != nil {
+		t.Fatalf("CreateScoped: %v", err)
+	}
+	if !ks.ValidateWorker(plaintext, "any-worker") {
+		t.Error("ValidateWorker returned false for admin-scoped key")
+	}
+}
+
+func TestKeyStore_ValidateWorker_LegacyKeyActsAsAdmin(t *testing.T) {
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	// Legacy key created with Create (no scope).
+	plaintext, err := ks.Create("legacy-key", nil)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !ks.ValidateWorker(plaintext, "any-worker") {
+		t.Error("ValidateWorker returned false for legacy key (empty scope should act as admin)")
+	}
+}
+
+func TestKeyStore_ValidateWorker_InvalidToken(t *testing.T) {
+	ks, err := server.NewKeyStore(tempKeyStorePath(t))
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+
+	if ks.ValidateWorker("sk_invalid", "agent-1") {
+		t.Error("ValidateWorker returned true for invalid token")
+	}
+}
+
+func TestKeyStore_CreateScoped_Persistence(t *testing.T) {
+	path := tempKeyStorePath(t)
+
+	ks1, err := server.NewKeyStore(path)
+	if err != nil {
+		t.Fatalf("NewKeyStore (first): %v", err)
+	}
+
+	plaintext, err := ks1.CreateScoped("persist-worker", []string{"proj"}, "worker", "w-7")
+	if err != nil {
+		t.Fatalf("CreateScoped: %v", err)
+	}
+
+	// Reload from the same file.
+	ks2, err := server.NewKeyStore(path)
+	if err != nil {
+		t.Fatalf("NewKeyStore (reload): %v", err)
+	}
+
+	key, ok := ks2.Validate(plaintext)
+	if !ok {
+		t.Fatal("Validate failed after reload")
+	}
+	if key.Scope != "worker" {
+		t.Errorf("key.Scope = %q after reload, want %q", key.Scope, "worker")
+	}
+	if key.WorkerID != "w-7" {
+		t.Errorf("key.WorkerID = %q after reload, want %q", key.WorkerID, "w-7")
+	}
+}
+
 func TestKeyStore_NewKeyStore_CreatesFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "subdir", "auth.yaml")
 
