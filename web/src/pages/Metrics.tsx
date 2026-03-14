@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { PoolMetrics, DispatcherMetrics, SystemMetrics, PressureMetrics, ScalingEvent, ScalingConfig } from '../lib/api'
+import type { PoolMetrics, DispatcherMetrics, SystemMetrics, PressureMetrics, ScalingEvent, ScalingConfig, CapacityInfo } from '../lib/api'
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`
@@ -15,10 +15,19 @@ function formatMs(ms: number): string {
   return `${ms.toFixed(1)}ms`
 }
 
-function MetricRow({ label, value }: { label: string; value: string }) {
+function MetricRow({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
   return (
     <div className="flex items-center justify-between py-2 border-b last:border-b-0">
-      <span className="text-sm text-gray-600">{label}</span>
+      {tooltip ? (
+        <span className="group relative text-sm text-gray-600 cursor-help underline decoration-dotted decoration-gray-400 underline-offset-2">
+          {label}
+          <span className="pointer-events-none absolute left-0 bottom-full mb-1 z-10 hidden w-64 rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-gray-100 shadow-lg group-hover:block">
+            {tooltip}
+          </span>
+        </span>
+      ) : (
+        <span className="text-sm text-gray-600">{label}</span>
+      )}
       <span className="text-sm font-medium text-gray-900 font-mono">{value}</span>
     </div>
   )
@@ -81,15 +90,15 @@ function PoolSection({ pool }: { pool: PoolMetrics | null }) {
 
   return (
     <SectionCard title="Agent Pool">
-      <MetricRow label="Total Workers" value={pool.total_workers.toString()} />
-      <MetricRow label="Active Workers" value={pool.active_workers.toString()} />
-      <MetricRow label="Idle Workers" value={pool.idle_workers.toString()} />
-      <MetricRow label="Utilization" value={`${utilization}%`} />
-      <MetricRow label="Queue Depth" value={pool.queue_depth.toString()} />
-      <MetricRow label="Tasks Completed" value={pool.tasks_completed.toLocaleString()} />
-      <MetricRow label="Tasks Failed" value={pool.tasks_failed.toLocaleString()} />
-      <MetricRow label="Avg Task Duration" value={formatMs(pool.avg_task_duration_ms)} />
-      <MetricRow label="P95 Task Duration" value={formatMs(pool.p95_task_duration_ms)} />
+      <MetricRow label="Total Workers" value={pool.total_workers.toString()} tooltip="Current number of worker goroutines in the agent pool. Autoscaler adjusts this between min and max based on queue pressure." />
+      <MetricRow label="Active Workers" value={pool.active_workers.toString()} tooltip="Workers currently executing a task. Each active worker is running an AI provider session." />
+      <MetricRow label="Idle Workers" value={pool.idle_workers.toString()} tooltip="Workers waiting for tasks. Idle workers are ready to pick up work immediately." />
+      <MetricRow label="Utilization" value={`${utilization}%`} tooltip="Percentage of workers currently active (active / total). High utilization with queued tasks triggers scale-up." />
+      <MetricRow label="Queue Depth" value={pool.queue_depth.toString()} tooltip="Tasks waiting in the queue for an available worker. Non-zero means all workers are busy." />
+      <MetricRow label="Tasks Completed" value={pool.tasks_completed.toLocaleString()} tooltip="Total tasks successfully completed since the dispatcher started." />
+      <MetricRow label="Tasks Failed" value={pool.tasks_failed.toLocaleString()} tooltip="Total tasks that failed (provider error, timeout, budget exceeded). Failed tasks may be requeued." />
+      <MetricRow label="Avg Task Duration" value={formatMs(pool.avg_task_duration_ms)} tooltip="Average wall-clock time per completed task, including provider API calls and issue updates." />
+      <MetricRow label="P95 Task Duration" value={formatMs(pool.p95_task_duration_ms)} tooltip="95th percentile task duration. Tasks above this are unusually slow (complex issues or provider latency)." />
     </SectionCard>
   )
 }
@@ -104,15 +113,12 @@ function DispatcherSection({ dispatcher }: { dispatcher: DispatcherMetrics | nul
 
   return (
     <SectionCard title="Dispatcher">
-      <MetricRow label="Claimed Issues" value={dispatcher.claimed_count.toString()} />
-      <MetricRow label="Total Routed" value={dispatcher.total_routed.toLocaleString()} />
-      <MetricRow label="Total Requeued" value={dispatcher.total_requeued.toLocaleString()} />
-      <MetricRow
-        label="Events Processed"
-        value={dispatcher.total_events_processed.toLocaleString()}
-      />
-      <MetricRow label="Avg Poll Latency" value={formatMs(dispatcher.avg_poll_latency_ms)} />
-      <MetricRow label="Last Poll" value={lastPoll} />
+      <MetricRow label="Claimed Issues" value={dispatcher.claimed_count.toString()} tooltip="Issues currently claimed by the dispatcher via optimistic locking. These are in-flight or queued for processing." />
+      <MetricRow label="Total Routed" value={dispatcher.total_routed.toLocaleString()} tooltip="Total issues routed to the agent pool since startup. Includes issues that were later requeued." />
+      <MetricRow label="Total Requeued" value={dispatcher.total_requeued.toLocaleString()} tooltip="Issues that failed and were returned to the queue for retry. High counts may indicate provider issues." />
+      <MetricRow label="Events Processed" value={dispatcher.total_events_processed.toLocaleString()} tooltip="Total forge events (issue opened, closed, labeled, commented) processed by the dispatcher." />
+      <MetricRow label="Avg Poll Latency" value={formatMs(dispatcher.avg_poll_latency_ms)} tooltip="Average time to poll the forge for new events. High latency may indicate forge API rate limiting." />
+      <MetricRow label="Last Poll" value={lastPoll} tooltip="Timestamp of the most recent forge poll. Polls occur at the configured interval (default 30s)." />
     </SectionCard>
   )
 }
@@ -122,11 +128,11 @@ function SystemSection({ system }: { system: SystemMetrics | null }) {
 
   return (
     <SectionCard title="System">
-      <MetricRow label="Goroutines" value={system.goroutines.toString()} />
-      <MetricRow label="Heap Allocated" value={formatBytes(system.heap_alloc_bytes)} />
-      <MetricRow label="OS Memory" value={formatBytes(system.sys_bytes_total)} />
-      <MetricRow label="GC Cycles" value={system.gc_cycles.toString()} />
-      <MetricRow label="Next GC Target" value={formatBytes(system.next_gc_bytes)} />
+      <MetricRow label="Goroutines" value={system.goroutines.toString()} tooltip="Active Go goroutines. Each worker, the dispatcher, and HTTP handlers each use goroutines." />
+      <MetricRow label="Heap Allocated" value={formatBytes(system.heap_alloc_bytes)} tooltip="Memory currently allocated on the Go heap. Rises during task execution and drops after GC." />
+      <MetricRow label="OS Memory" value={formatBytes(system.sys_bytes_total)} tooltip="Total memory obtained from the OS. Includes heap, stacks, and GC metadata. This is the process RSS." />
+      <MetricRow label="GC Cycles" value={system.gc_cycles.toString()} tooltip="Number of garbage collection cycles completed since process start." />
+      <MetricRow label="Next GC Target" value={formatBytes(system.next_gc_bytes)} tooltip="Heap size that will trigger the next garbage collection cycle." />
     </SectionCard>
   )
 }
@@ -142,10 +148,10 @@ function ScalingSection({
 
   return (
     <SectionCard title="Adaptive Scaling">
-      <MetricRow label="Status" value={config.enabled ? 'Enabled' : 'Disabled'} />
-      <MetricRow label="Min Workers" value={config.min_workers.toString()} />
-      <MetricRow label="Max Workers" value={config.max_workers.toString()} />
-      <MetricRow label="Current Target" value={config.current_target.toString()} />
+      <MetricRow label="Status" value={config.enabled ? 'Enabled' : 'Disabled'} tooltip="Whether the autoscaler is actively adjusting worker count based on queue pressure." />
+      <MetricRow label="Min Workers" value={config.min_workers.toString()} tooltip="Minimum worker count the autoscaler will maintain, even when idle." />
+      <MetricRow label="Max Workers" value={config.max_workers.toString()} tooltip="Maximum worker count the autoscaler can scale to under high pressure." />
+      <MetricRow label="Current Target" value={config.current_target.toString()} tooltip="The autoscaler's target worker count. The pool adjusts toward this value." />
       {events != null && events.length > 0 && (
         <div className="mt-3">
           <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -177,6 +183,54 @@ function ScalingSection({
       )}
       {(events == null || events.length === 0) && (
         <div className="py-4 text-center text-xs text-gray-400">No scaling events yet</div>
+      )}
+    </SectionCard>
+  )
+}
+
+function CapacitySection({ capacity, maxWorkers }: { capacity: CapacityInfo | null; maxWorkers: number }) {
+  if (capacity == null) return <NullSection title="Capacity" />
+
+  const healthyCount = capacity.providers.filter((p) => p.healthy).length
+  const routingChainNames = Object.keys(capacity.routing_chains)
+
+  return (
+    <SectionCard title="Capacity">
+      <MetricRow label="AI Providers" value={`${healthyCount} / ${capacity.providers.length}`} tooltip="Registered AI providers (healthy / total). Each provider represents a model that can execute agent tasks." />
+      <MetricRow label="Max Concurrent Sessions" value={maxWorkers.toString()} tooltip="Maximum number of agent sessions that can run simultaneously, set by the autoscaler's max-workers limit." />
+      <MetricRow label="Routing Chains" value={routingChainNames.length.toString()} tooltip="Number of routing chains (triage, default, complex, local, etc.). Each chain maps task types to a priority-ordered list of providers." />
+      {capacity.providers.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Providers
+          </p>
+          <div className="space-y-1">
+            {capacity.providers.map((p) => (
+              <div key={p.name} className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-block h-2 w-2 rounded-full ${p.healthy ? 'bg-green-500' : 'bg-red-400'}`} />
+                  <span className="font-medium text-gray-700">{p.name}</span>
+                </div>
+                <span className="text-gray-500 font-mono">{p.model}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {routingChainNames.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Routing
+          </p>
+          <div className="space-y-1">
+            {routingChainNames.map((chain) => (
+              <div key={chain} className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-xs">
+                <span className="font-medium text-gray-700">{chain}</span>
+                <span className="text-gray-500 font-mono">{capacity.routing_chains[chain].join(' → ')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </SectionCard>
   )
@@ -217,10 +271,16 @@ export function Metrics() {
             <DispatcherSection dispatcher={metrics.data.dispatcher} />
             <SystemSection system={metrics.data.system} />
           </div>
-          <ScalingSection
-            events={metrics.data.scaling_events}
-            config={metrics.data.scaling_config}
-          />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <CapacitySection
+              capacity={metrics.data.capacity}
+              maxWorkers={metrics.data.scaling_config?.max_workers ?? metrics.data.pool?.total_workers ?? 0}
+            />
+            <ScalingSection
+              events={metrics.data.scaling_events}
+              config={metrics.data.scaling_config}
+            />
+          </div>
         </div>
       )}
     </div>

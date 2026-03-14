@@ -2,8 +2,9 @@ package api
 
 import (
 	"encoding/json"
-	"go.uber.org/zap"
 	"net/http"
+
+	"go.uber.org/zap"
 
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
@@ -34,6 +35,7 @@ type API struct {
 	pool           poolMetricsSource       // may be nil if pool not yet started
 	dispatcher     dispatcherMetricsSource // may be nil if dispatcher not started
 	system         systemMetricsSource     // may be nil; created via SetMetrics
+	capacity       *capacityDTO            // may be nil if no providers configured
 	workers        *workerRegistry         // in-memory registry of PC agent workers
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
@@ -63,6 +65,15 @@ func (a *API) SetMetrics(pool poolMetricsSource, disp dispatcherMetricsSource, s
 	a.pool = pool
 	a.dispatcher = disp
 	a.system = sys
+}
+
+// SetCapacity configures the static provider capacity info displayed on the
+// metrics page. Call from the serve command after parsing providers.yaml.
+func (a *API) SetCapacity(providers []ProviderDTO, routing map[string][]string) {
+	a.capacity = &capacityDTO{
+		Providers:     providers,
+		RoutingChains: routing,
+	}
 }
 
 // SetScalingConfig records the active scaling policy limits so the metrics endpoint

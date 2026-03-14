@@ -15,6 +15,21 @@ type metricsResponse struct {
 	ScalingEvents []scalingEventDTO     `json:"scaling_events"`
 	ScalingConfig *scalingConfigDTO     `json:"scaling_config"`
 	TaskProfiles  []taskProfileDTO      `json:"task_profiles"`
+	Capacity      *capacityDTO          `json:"capacity"`
+}
+
+// ProviderDTO describes a single registered AI provider.
+type ProviderDTO struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Model   string `json:"model"`
+	Healthy bool   `json:"healthy"`
+}
+
+// capacityDTO describes the available AI providers and routing configuration.
+type capacityDTO struct {
+	Providers     []ProviderDTO       `json:"providers"`
+	RoutingChains map[string][]string `json:"routing_chains"`
 }
 
 // historyEntry is a single timestamped snapshot stored in the history ring buffer.
@@ -252,6 +267,8 @@ func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			resp.TaskProfiles = dtos
 		}
 	}
+
+	resp.Capacity = a.capacity
 
 	// Record snapshot in history ring buffer for /api/v1/metrics/history.
 	a.appendHistory(historyEntry{

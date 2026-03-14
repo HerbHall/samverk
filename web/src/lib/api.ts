@@ -131,6 +131,18 @@ export interface TaskProfile {
   updated_at: string
 }
 
+export interface ProviderInfo {
+  name: string
+  type: string
+  model: string
+  healthy: boolean
+}
+
+export interface CapacityInfo {
+  providers: ProviderInfo[]
+  routing_chains: Record<string, string[]>
+}
+
 export interface MetricsResponse {
   pool: PoolMetrics | null
   dispatcher: DispatcherMetrics | null
@@ -139,6 +151,7 @@ export interface MetricsResponse {
   scaling_events: ScalingEvent[] | null
   scaling_config: ScalingConfig | null
   task_profiles: TaskProfile[] | null
+  capacity: CapacityInfo | null
 }
 
 export const api = {
