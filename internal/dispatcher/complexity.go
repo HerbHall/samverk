@@ -1,11 +1,14 @@
 package dispatcher
 
 import (
+	"context"
 	"strings"
 	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
+	"go.uber.org/zap"
 )
 
 // Default timeout bounds.
@@ -136,6 +139,61 @@ func countCheckboxes(body string) int {
 		}
 	}
 	return count
+}
+
+// minCalibrationSamples is the minimum number of completed sessions required
+// before historical data replaces heuristic timeout estimation.
+const minCalibrationSamples = 20
+
+// calibrationSafetyMargin is the multiplier applied to p90 duration to provide
+// headroom for variance in task completion time.
+const calibrationSafetyMargin = 1.2
+
+// CalibratedTimeout returns a timeout based on historical session data when
+// enough samples exist for the (agentType, provider) pair. It uses p90
+// duration with a 20% safety margin, clamped to [MinTimeout, MaxTimeout].
+// Falls back to heuristic estimation when insufficient data is available.
+func CalibratedTimeout(
+	ctx context.Context,
+	st store.Store,
+	logger *zap.Logger,
+	issue *forge.Issue,
+	fm *models.IssueFrontmatter,
+	agentType models.AgentType,
+	providerKey string,
+) time.Duration {
+	// Frontmatter override always takes priority.
+	if fm != nil && fm.TimeoutMinutes > 0 {
+		return clampTimeout(time.Duration(fm.TimeoutMinutes) * time.Minute)
+	}
+
+	profile, err := st.GetTaskProfile(ctx, string(agentType), providerKey)
+	if err != nil {
+		logger.Warn("calibration: failed to get task profile, falling back to heuristic",
+			zap.String("agent_type", string(agentType)),
+			zap.String("provider", providerKey),
+			zap.Error(err),
+		)
+		return EstimateTimeout(issue, fm, agentType, providerKey)
+	}
+
+	if profile != nil && profile.SampleCount >= minCalibrationSamples {
+		calibrated := time.Duration(float64(profile.P90Duration) * calibrationSafetyMargin)
+		heuristic := EstimateTimeout(issue, fm, agentType, providerKey)
+		result := clampTimeout(calibrated)
+
+		logger.Info("timeout calibrated from historical data",
+			zap.String("agent_type", string(agentType)),
+			zap.String("provider", providerKey),
+			zap.Int("samples", profile.SampleCount),
+			zap.Duration("p90", profile.P90Duration),
+			zap.Duration("calibrated", result),
+			zap.Duration("heuristic", heuristic),
+		)
+		return result
+	}
+
+	return EstimateTimeout(issue, fm, agentType, providerKey)
 }
 
 // countFileRefs counts file path references matching common project directories.
