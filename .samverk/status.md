@@ -1,6 +1,6 @@
 ---
 phase: execution
-updated: 2026-03-14T01:12:36Z
+updated: 2026-03-14T12:00:00Z
 updated_by: claude-code
 ---
 
@@ -8,7 +8,7 @@ updated_by: claude-code
 
 ## Phase
 
-Phase 5 complete. Q2 2026 execution: 3 streams (B/W/P), 62 issues. Security batch (#407-#410, #399) done. Auth middleware, dashboard token injection, and cross-process metrics fix deployed.
+Phase 5 complete. Q2 2026 execution: 3 streams (B/W/P), 62 issues. Security batch done. Dispatcher improvements (timeout calibration, pre-flight decomposition, cross-model QC, PROGRESS protocol) deployed. Now implementing #323: automated failure analysis loop.
 
 ## What Is Running
 
@@ -20,67 +20,51 @@ Phase 5 complete. Q2 2026 execution: 3 streams (B/W/P), 62 issues. Security batc
 
 ## Recent Completions
 
+### Wave 1 Batch (2026-03-14)
+
+- PR #427: `samverk status` CLI command (#186 CLOSED)
+- PR #428: Documentation refresh + operations guide (#248 CLOSED)
+- PR #429: Timeout calibration feedback loop with historical p90 (#246 CLOSED)
+- PR #430: Pre-flight issue decomposition for oversized tasks (#245 CLOSED)
+- #359 CLOSED: FormatDuration helper promoted to pkg/models (PR #424)
+- #411 CLOSED: Caddy basicauth on ollama.herbhall.net
+
 ### Security Batch (2026-03-13 to 2026-03-14)
 
-- PR #420: BearerAuth middleware on all API and MCP routes
-- PR #421: Dashboard auth token injection into SPA via `window.__SAMVERK_TOKEN__`
-- PR #422: Scoped worker identity in KeyStore (per-worker API keys)
-- PR #423: Cross-process metrics bridge between dispatch and serve
-- PR #425: Restored systemd hardening with `.claude` ReadWritePaths
+- PR #420: BearerAuth middleware on all API and MCP routes (#407, #408 CLOSED)
+- PR #421: Dashboard auth token injection (#409 CLOSED)
+- PR #422: Scoped worker identity (#410 CLOSED)
+- PR #423: Cross-process metrics bridge (#399 CLOSED)
+- PR #425: Restored systemd hardening
 
-### Dispatcher Improvements (2026-03-13)
+### R-stream Hardening (2026-03-13)
 
-- PR #402: Dynamic per-issue timeout based on complexity
-- PR #416: Cross-model QC routing via dedicated provider chain
-- PR #417: Per-issue token aggregation with outlier detection
-- PR #418: PROGRESS comment protocol for periodic mid-task state
-
-### Agent Runtime (2026-03-09)
-
-- PR #397: Migrated logging from slog to zap with dual-mode output
-- PR #398: Pagination for label cache, issue listing, and comments
-- PR #400: Inline SPA build in Gitea CI
-- PR #403: Query check runs API for GitHub Actions CI status
-- PR #405: Streaming progress detection with heartbeat reset
-- PR #406: Session checkpoint and resume
-
-### Other
-
-- PR #415: Copilot #402 followup + multi-agent research docs
-- PR #419: Production pipeline design v0.9
-- PR #404: Release 0.1.13
+- PR #416: Cross-model QC routing (#412 CLOSED)
+- PR #417: Per-issue token aggregation (#414 CLOSED)
+- PR #418: PROGRESS comment protocol (#413 CLOSED)
 
 ## Open Issues by Category
 
-### In Progress / Claimed
+### In Progress
 
-- #245: feat: pre-flight issue decomposition for oversized tasks (status:claimed, status:blocked)
+- #323: epic: automated failure analysis loop (active work this session)
 
 ### Blocked
 
-- #282: End-to-end validation: full agent loop on Gitea (agent:infra, status:blocked)
-- #314: Verify: PC agent runs autonomously for 2 hours (agent:pc, status:blocked)
-- #317: Verify: Multi-session PC agent processes a full batch (agent:pc, status:blocked)
+- #282: End-to-end validation: full agent loop on Gitea (agent:infra)
+- #314: Verify: PC agent runs autonomously for 2 hours (agent:pc)
+- #317: Verify: Multi-session PC agent processes a full batch (agent:pc)
 
 ### Needs Human / Human Pending
 
-- #186: feat: samverk status --write CLI command (status:needs-human)
-- #246: feat: timeout calibration feedback loop (status:needs-human)
-- #248: docs: stale documentation vs actual deployed state (status:needs-human)
-- #250: epic: GitHub to Gitea migration strategy (agent:human, status:needs-human)
-- #251: epic: documentation integrity system (agent:human, status:needs-human)
-- #252: research: Samverk GitHub to Gitea migration requirements (agent:human, status:needs-human)
-- #283: End-to-end validation: conversational check-in via MCP (agent:human, status:human-pending)
-- #291: Verify: Metrics visible on dashboard and in MCP digest (agent:human, status:human-pending)
-- #303: Verify: Full adaptive scaling lifecycle over 24-hour soak (agent:human, status:human-pending)
-- #315: Implement multi-session CC support with concurrent worktrees (status:needs-human)
-- #323: epic: automated failure analysis loop (agent:human, status:needs-human)
-- #392: infra: fix RTX 5090 GPU passthrough to Docker Desktop (agent:human, status:needs-human)
-- #411: sec: ollama.herbhall.net exposed without authentication (agent:human, status:needs-human)
-
-### Queued
-
-- #359: test: Add FormatDuration helper to pkg/models (agent:code-gen, status:needs-qc)
+- #250: epic: GitHub to Gitea migration strategy (agent:human)
+- #251: epic: documentation integrity system (agent:human)
+- #252: research: Samverk GitHub to Gitea migration requirements (agent:human)
+- #283: End-to-end validation: conversational check-in via MCP (human-pending)
+- #291: Verify: Metrics visible on dashboard and in MCP digest (human-pending)
+- #303: Verify: Full adaptive scaling lifecycle over 24-hour soak (human-pending)
+- #315: Implement multi-session CC support (needs design decision)
+- #392: infra: fix RTX 5090 GPU passthrough to Docker Desktop
 
 ## Start Here (Cold Start Protocol)
 

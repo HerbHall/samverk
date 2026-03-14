@@ -179,6 +179,11 @@ func registerTools(srv *gosdk.Server, h *Handler) {
 		Name:        "reject_action",
 		Description: "Reject a pending Tier 3 action",
 	}, h.handleRejectAction)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "get_failure_summary",
+		Description: "Get failure analysis summary: failure counts by class, top failing issues, looping issues, provider health, and circuit breaker status",
+	}, h.handleGetFailureSummary)
 }
 
 // handleGetDigest builds and formats a check-in digest.

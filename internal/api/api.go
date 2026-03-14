@@ -92,6 +92,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/workers", a.handleListWorkers)
 	mux.HandleFunc("POST /api/v1/workers/register", a.handleRegisterWorker)
 	mux.HandleFunc("POST /api/v1/workers/heartbeat", a.handleWorkerHeartbeat)
+	mux.HandleFunc("GET /api/v1/failures", a.handleFailureSummary)
 }
 
 // errorResponse is the JSON body returned for error responses.

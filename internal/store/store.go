@@ -49,6 +49,17 @@ type Store interface {
 	SaveMetricSnapshot(ctx context.Context, m MetricSnapshot) error
 	LatestMetricSnapshot(ctx context.Context) (*MetricSnapshot, error)
 
+	// Failure events (written by dispatcher and runner, read by API, MCP, and CLI)
+	SaveFailureEvent(ctx context.Context, e *models.FailureEvent) error
+	ListFailureEvents(ctx context.Context, since time.Time, limit int) ([]*models.FailureEvent, error)
+	CountFailuresByIssue(ctx context.Context, issueNumber int) (int, error)
+	GetFailureSummary(ctx context.Context, since time.Time) (*models.FailureSummary, error)
+
+	// Persisted issue failure counter (survives restarts, unlike in-memory map)
+	GetIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
+	IncrementIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
+	ClearIssueFailureCount(ctx context.Context, issueNumber int) error
+
 	Close() error
 }
 
@@ -176,6 +187,30 @@ CREATE TABLE IF NOT EXISTS metric_snapshots (
 	total_events_processed INTEGER NOT NULL DEFAULT 0,
 	avg_poll_latency_ms    REAL NOT NULL DEFAULT 0,
 	last_poll_at           TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS failure_events (
+	id             TEXT PRIMARY KEY,
+	issue_number   INTEGER NOT NULL,
+	session_id     TEXT NOT NULL DEFAULT '',
+	failure_class  TEXT NOT NULL,
+	error_message  TEXT NOT NULL DEFAULT '',
+	agent_type     TEXT NOT NULL DEFAULT '',
+	provider       TEXT NOT NULL DEFAULT '',
+	attempt_number INTEGER NOT NULL DEFAULT 1,
+	duration_ms    INTEGER NOT NULL DEFAULT 0,
+	timestamp      TEXT NOT NULL,
+	created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_failure_issue ON failure_events(issue_number);
+CREATE INDEX IF NOT EXISTS idx_failure_class ON failure_events(failure_class);
+CREATE INDEX IF NOT EXISTS idx_failure_ts ON failure_events(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS issue_failure_counts (
+	issue_number INTEGER PRIMARY KEY,
+	count        INTEGER NOT NULL DEFAULT 0,
+	updated_at   TEXT NOT NULL
 );
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
