@@ -249,6 +249,9 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		)
 	}
 
+	// Step 9b: Log timeout accuracy (non-fatal, best-effort).
+	r.logTimeoutAccuracy(ctx, task)
+
 	return nil
 }
 
@@ -455,6 +458,26 @@ func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
 			zap.String("error", err.Error()),
 		)
 	}
+}
+
+// logTimeoutAccuracy compares the estimated timeout against actual session
+// duration and logs the ratio. This data feeds into timeout calibration (#246).
+func (r *Runner) logTimeoutAccuracy(ctx context.Context, task Task) {
+	session, err := r.store.GetSession(ctx, task.SessionID)
+	if err != nil {
+		return
+	}
+	if session.EstimatedTimeout <= 0 || session.FinishedAt == nil {
+		return
+	}
+	actual := session.FinishedAt.Sub(session.StartedAt)
+	ratio := float64(actual) / float64(session.EstimatedTimeout)
+	r.logger.Info("timeout accuracy",
+		zap.Int("issue", task.Issue.Number),
+		zap.Duration("estimated", session.EstimatedTimeout),
+		zap.Duration("actual", actual),
+		zap.Float64("ratio", ratio),
+	)
 }
 
 // saveCheckpoint posts a CHECKPOINT comment on the issue if the session has

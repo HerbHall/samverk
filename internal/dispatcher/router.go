@@ -174,8 +174,14 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 
 	providerKey, reason := selectProviderKey(issue, agentType)
 
-	// Estimate per-issue timeout from complexity signals or frontmatter override.
-	timeout := EstimateTimeout(issue, fm, agentType, providerKey)
+	// Estimate per-issue timeout: use calibrated (historical) when available,
+	// fall back to heuristic signals or frontmatter override.
+	var timeout time.Duration
+	if d.store != nil {
+		timeout = CalibratedTimeout(ctx, d.store, d.logger, issue, fm, agentType, providerKey)
+	} else {
+		timeout = EstimateTimeout(issue, fm, agentType, providerKey)
+	}
 	d.logger.Info("timeout estimated",
 		zap.Int("issue", issue.Number),
 		zap.Duration("timeout", timeout),
@@ -207,13 +213,14 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	if d.pool != nil && d.store != nil {
 		sessionID := fmt.Sprintf("sess_%d_%d", issue.Number, time.Now().Unix())
 		session := &models.Session{
-			ID:          sessionID,
-			IssueNumber: issue.Number,
-			AgentType:   string(agentType),
-			Status:      models.SessionStatusPending,
-			StartedAt:   time.Now(),
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			ID:               sessionID,
+			IssueNumber:      issue.Number,
+			AgentType:        string(agentType),
+			Status:           models.SessionStatusPending,
+			EstimatedTimeout: timeout,
+			StartedAt:        time.Now(),
+			CreatedAt:        time.Now(),
+			UpdatedAt:        time.Now(),
 		}
 		if err := d.store.CreateSession(ctx, session); err != nil {
 			return fmt.Errorf("create session for #%d: %w", issue.Number, err)

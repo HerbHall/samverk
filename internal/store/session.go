@@ -28,8 +28,8 @@ func (s *SQLiteStore) CreateSession(ctx context.Context, sess *models.Session) e
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, issue_number, agent_type, provider, model, status, started_at, finished_at, error, partial_output, checkpoint_hash, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO sessions (id, issue_number, agent_type, provider, model, status, started_at, finished_at, error, estimated_timeout_ms, partial_output, checkpoint_hash, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sess.ID,
 		sess.IssueNumber,
 		sess.AgentType,
@@ -39,6 +39,7 @@ func (s *SQLiteStore) CreateSession(ctx context.Context, sess *models.Session) e
 		sess.StartedAt.Format(time.RFC3339),
 		finishedAt,
 		sess.Error,
+		sess.EstimatedTimeout.Milliseconds(),
 		sess.PartialOutput,
 		sess.CheckpointHash,
 		sess.CreatedAt.Format(time.RFC3339),
@@ -53,7 +54,7 @@ func (s *SQLiteStore) CreateSession(ctx context.Context, sess *models.Session) e
 // GetSession retrieves a session by ID. Returns ErrNotFound if no row matches.
 func (s *SQLiteStore) GetSession(ctx context.Context, id string) (*models.Session, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, issue_number, agent_type, provider, model, status, started_at, finished_at, error, partial_output, checkpoint_hash, created_at, updated_at
+		`SELECT id, issue_number, agent_type, provider, model, status, started_at, finished_at, error, estimated_timeout_ms, partial_output, checkpoint_hash, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id)
 
 	sess, err := scanSession(row)
@@ -73,7 +74,7 @@ func (s *SQLiteStore) UpdateSession(ctx context.Context, sess *models.Session) e
 	}
 
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET issue_number=?, agent_type=?, provider=?, model=?, status=?, started_at=?, finished_at=?, error=?, partial_output=?, checkpoint_hash=?, updated_at=?
+		`UPDATE sessions SET issue_number=?, agent_type=?, provider=?, model=?, status=?, started_at=?, finished_at=?, error=?, estimated_timeout_ms=?, partial_output=?, checkpoint_hash=?, updated_at=?
 		 WHERE id=?`,
 		sess.IssueNumber,
 		sess.AgentType,
@@ -83,6 +84,7 @@ func (s *SQLiteStore) UpdateSession(ctx context.Context, sess *models.Session) e
 		sess.StartedAt.Format(time.RFC3339),
 		finishedAt,
 		sess.Error,
+		sess.EstimatedTimeout.Milliseconds(),
 		sess.PartialOutput,
 		sess.CheckpointHash,
 		sess.UpdatedAt.Format(time.RFC3339),
@@ -112,11 +114,11 @@ func (s *SQLiteStore) ListSessions(ctx context.Context, status models.SessionSta
 
 	if status != "" {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, issue_number, agent_type, provider, model, status, started_at, finished_at, error, partial_output, checkpoint_hash, created_at, updated_at
+			`SELECT id, issue_number, agent_type, provider, model, status, started_at, finished_at, error, estimated_timeout_ms, partial_output, checkpoint_hash, created_at, updated_at
 			 FROM sessions WHERE status = ? ORDER BY created_at DESC`, string(status))
 	} else {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, issue_number, agent_type, provider, model, status, started_at, finished_at, error, partial_output, checkpoint_hash, created_at, updated_at
+			`SELECT id, issue_number, agent_type, provider, model, status, started_at, finished_at, error, estimated_timeout_ms, partial_output, checkpoint_hash, created_at, updated_at
 			 FROM sessions ORDER BY created_at DESC`)
 	}
 	if err != nil {
@@ -138,17 +140,18 @@ func (s *SQLiteStore) ListSessions(ctx context.Context, status models.SessionSta
 // scanSession scans a single session from a *sql.Row.
 func scanSession(row *sql.Row) (*models.Session, error) {
 	var (
-		sess       models.Session
-		status     string
-		startedAt  string
-		finishedAt sql.NullString
-		createdAt  string
-		updatedAt  string
+		sess               models.Session
+		status             string
+		startedAt          string
+		finishedAt         sql.NullString
+		estimatedTimeoutMs int64
+		createdAt          string
+		updatedAt          string
 	)
 
 	err := row.Scan(
 		&sess.ID, &sess.IssueNumber, &sess.AgentType, &sess.Provider, &sess.Model,
-		&status, &startedAt, &finishedAt, &sess.Error, &sess.PartialOutput, &sess.CheckpointHash, &createdAt, &updatedAt,
+		&status, &startedAt, &finishedAt, &sess.Error, &estimatedTimeoutMs, &sess.PartialOutput, &sess.CheckpointHash, &createdAt, &updatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -158,6 +161,7 @@ func scanSession(row *sql.Row) (*models.Session, error) {
 	}
 
 	sess.Status = models.SessionStatus(status)
+	sess.EstimatedTimeout = time.Duration(estimatedTimeoutMs) * time.Millisecond
 	if sess.StartedAt, err = time.Parse(time.RFC3339, startedAt); err != nil {
 		return nil, fmt.Errorf("parse started_at: %w", err)
 	}
@@ -180,23 +184,25 @@ func scanSession(row *sql.Row) (*models.Session, error) {
 // scanSessionRows scans a single session from *sql.Rows.
 func scanSessionRows(rows *sql.Rows) (*models.Session, error) {
 	var (
-		sess       models.Session
-		status     string
-		startedAt  string
-		finishedAt sql.NullString
-		createdAt  string
-		updatedAt  string
+		sess               models.Session
+		status             string
+		startedAt          string
+		finishedAt         sql.NullString
+		estimatedTimeoutMs int64
+		createdAt          string
+		updatedAt          string
 	)
 
 	err := rows.Scan(
 		&sess.ID, &sess.IssueNumber, &sess.AgentType, &sess.Provider, &sess.Model,
-		&status, &startedAt, &finishedAt, &sess.Error, &sess.PartialOutput, &sess.CheckpointHash, &createdAt, &updatedAt,
+		&status, &startedAt, &finishedAt, &sess.Error, &estimatedTimeoutMs, &sess.PartialOutput, &sess.CheckpointHash, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan session row: %w", err)
 	}
 
 	sess.Status = models.SessionStatus(status)
+	sess.EstimatedTimeout = time.Duration(estimatedTimeoutMs) * time.Millisecond
 	if sess.StartedAt, err = time.Parse(time.RFC3339, startedAt); err != nil {
 		return nil, fmt.Errorf("parse started_at: %w", err)
 	}
