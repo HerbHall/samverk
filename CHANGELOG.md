@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.13](https://github.com/HerbHall/samverk/compare/v0.1.12...v0.1.13) (2026-03-14)
+
+
+### Features
+
+* **#243:** streaming progress detection with heartbeat reset on active output ([#405](https://github.com/HerbHall/samverk/issues/405)) ([2d10b64](https://github.com/HerbHall/samverk/commit/2d10b6406afbc800800c95aef0ab611ebc76e43e)), closes [#243](https://github.com/HerbHall/samverk/issues/243)
+* **#244:** session checkpoint and resume — carry partial work across retries ([#406](https://github.com/HerbHall/samverk/issues/406)) ([9ad7b95](https://github.com/HerbHall/samverk/commit/9ad7b95e536662f9f74c6b059ba9863ed3f05c62)), closes [#244](https://github.com/HerbHall/samverk/issues/244)
+* **#412:** cross-model QC routing via dedicated provider chain ([#416](https://github.com/HerbHall/samverk/issues/416)) ([b3b68c2](https://github.com/HerbHall/samverk/commit/b3b68c22e1dc1e2cbc0abeeac86f1b6b56c86c49)), closes [#412](https://github.com/HerbHall/samverk/issues/412)
+* **#413:** PROGRESS comment protocol for periodic mid-task state ([#418](https://github.com/HerbHall/samverk/issues/418)) ([1238233](https://github.com/HerbHall/samverk/commit/1238233950004712007feeda43103dfc6a85dd0d))
+* **#414:** per-issue token aggregation with outlier detection ([#417](https://github.com/HerbHall/samverk/issues/417)) ([b68fa73](https://github.com/HerbHall/samverk/commit/b68fa7399f413cf84e7af0478dfcdeaa632903ac)), closes [#414](https://github.com/HerbHall/samverk/issues/414)
+* **auth:** add scoped worker identity to KeyStore ([#410](https://github.com/HerbHall/samverk/issues/410)) ([#422](https://github.com/HerbHall/samverk/issues/422)) ([af28a78](https://github.com/HerbHall/samverk/commit/af28a78f9b268ebb2675bfec525e8a2708f8aa0c))
+* **dashboard:** inject auth token into SPA for API access ([#409](https://github.com/HerbHall/samverk/issues/409)) ([#421](https://github.com/HerbHall/samverk/issues/421)) ([fa5e386](https://github.com/HerbHall/samverk/commit/fa5e386fda22b1f6cca64840c63289fdf94debe4))
+* **dispatcher:** dynamic per-issue timeout based on complexity ([#402](https://github.com/HerbHall/samverk/issues/402)) ([7b880c8](https://github.com/HerbHall/samverk/commit/7b880c8fffb03180188c48fc0474b9316f3c0f09))
+
+
+### Bug Fixes
+
+* **#399:** bridge cross-process metrics gap between dispatch and serve ([#423](https://github.com/HerbHall/samverk/issues/423)) ([746b081](https://github.com/HerbHall/samverk/commit/746b0819744a2633a4fab93f352dcadea0c2d4f2)), closes [#399](https://github.com/HerbHall/samverk/issues/399)
+* Copilot [#402](https://github.com/HerbHall/samverk/issues/402) followup + multi-agent research docs ([#415](https://github.com/HerbHall/samverk/issues/415)) ([ea1c728](https://github.com/HerbHall/samverk/commit/ea1c728b63adad654e2112851c47717a9f670f4f))
+* **forge:** query check runs API for GitHub Actions CI status ([#401](https://github.com/HerbHall/samverk/issues/401)) ([#403](https://github.com/HerbHall/samverk/issues/403)) ([8b79f3a](https://github.com/HerbHall/samverk/commit/8b79f3a0a87814ee9c33b1e14f3818123f03e797))
+* **server:** protect API routes with BearerAuth middleware ([#407](https://github.com/HerbHall/samverk/issues/407), [#408](https://github.com/HerbHall/samverk/issues/408)) ([#420](https://github.com/HerbHall/samverk/issues/420)) ([7af1a7c](https://github.com/HerbHall/samverk/commit/7af1a7c07f91d2862648e53fca6c14ec99a7610d))
+
 ## [0.1.12](https://github.com/HerbHall/samverk/compare/v0.1.11...v0.1.12) (2026-03-09)
 
 
