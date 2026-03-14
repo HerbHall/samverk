@@ -192,6 +192,9 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	}
 	d.mu.Unlock()
 
+	d.metrics.IssueClaimed()
+	d.metrics.IssueRouted()
+
 	d.logger.Info("routed",
 		zap.Int("issue", issue.Number),
 		zap.String("agent", string(agentType)),

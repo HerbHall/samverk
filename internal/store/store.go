@@ -45,6 +45,10 @@ type Store interface {
 	ListTaskProfiles(ctx context.Context) ([]*models.TaskProfile, error)
 	GetTaskProfile(ctx context.Context, agentType, provider string) (*models.TaskProfile, error)
 
+	// Metric snapshots (written by dispatch, read by serve for cross-process metrics)
+	SaveMetricSnapshot(ctx context.Context, m MetricSnapshot) error
+	LatestMetricSnapshot(ctx context.Context) (*MetricSnapshot, error)
+
 	Close() error
 }
 
@@ -151,6 +155,26 @@ CREATE TABLE IF NOT EXISTS task_profiles (
 	avg_tokens      INTEGER NOT NULL DEFAULT 0,
 	updated_at      TEXT NOT NULL,
 	PRIMARY KEY (agent_type, provider)
+);
+
+CREATE TABLE IF NOT EXISTS metric_snapshots (
+	id                     INTEGER PRIMARY KEY CHECK (id = 1),
+	collected_at           TEXT NOT NULL,
+	total_workers          INTEGER NOT NULL DEFAULT 0,
+	active_workers         INTEGER NOT NULL DEFAULT 0,
+	idle_workers           INTEGER NOT NULL DEFAULT 0,
+	queue_depth            INTEGER NOT NULL DEFAULT 0,
+	tasks_completed        INTEGER NOT NULL DEFAULT 0,
+	tasks_failed           INTEGER NOT NULL DEFAULT 0,
+	avg_task_duration_ms   REAL NOT NULL DEFAULT 0,
+	p95_task_duration_ms   REAL NOT NULL DEFAULT 0,
+	disp_collected_at      TEXT NOT NULL,
+	claimed_count          INTEGER NOT NULL DEFAULT 0,
+	total_routed           INTEGER NOT NULL DEFAULT 0,
+	total_requeued         INTEGER NOT NULL DEFAULT 0,
+	total_events_processed INTEGER NOT NULL DEFAULT 0,
+	avg_poll_latency_ms    REAL NOT NULL DEFAULT 0,
+	last_poll_at           TEXT NOT NULL
 );
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {

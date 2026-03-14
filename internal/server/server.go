@@ -151,7 +151,7 @@ func (s *Server) registerRoutes() {
 	}
 
 	// Serve embedded SPA for all unmatched routes.
-	s.mux.Handle("/", spaHandler())
+	s.mux.Handle("/", spaHandler(s.cfg.AuthToken))
 }
 
 // healthResponse is the JSON body returned by /healthz.

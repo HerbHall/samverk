@@ -164,6 +164,14 @@ func (m *mockStore) GetTaskProfile(_ context.Context, _, _ string) (*models.Task
 	return nil, nil
 }
 
+func (m *mockStore) SaveMetricSnapshot(_ context.Context, _ store.MetricSnapshot) error {
+	return nil
+}
+
+func (m *mockStore) LatestMetricSnapshot(_ context.Context) (*store.MetricSnapshot, error) {
+	return nil, errors.New("no snapshot")
+}
+
 func (m *mockStore) Close() error { return nil }
 
 // Compile-time check: mockStore implements store.Store.

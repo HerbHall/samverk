@@ -3,8 +3,11 @@ package server_test
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/herbhall/samverk/internal/server"
 )
 
 func TestSPAServesIndexAtRoot(t *testing.T) {
@@ -80,6 +83,70 @@ func TestAPIRoutesPriority(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotImplemented {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotImplemented)
+	}
+}
+
+func TestSPATokenInjection(t *testing.T) {
+	const token = "test-dashboard-token"
+
+	s := server.New(server.Config{
+		Addr:      "localhost:0",
+		AuthToken: token,
+	}, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"root", "/"},
+		{"index.html", "/index.html"},
+		{"client route fallback", "/settings"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := get(t, ts.URL+tt.path)
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+			}
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			html := string(body)
+
+			wantTag := `<script>window.__SAMVERK_TOKEN__="test-dashboard-token";</script>`
+			if !strings.Contains(html, wantTag) {
+				t.Errorf("token script tag not found in response:\n%s", html)
+			}
+			// Tag must appear before </head>.
+			tagIdx := strings.Index(html, wantTag)
+			headIdx := strings.Index(html, "</head>")
+			if tagIdx > headIdx {
+				t.Errorf("token tag at %d appears after </head> at %d", tagIdx, headIdx)
+			}
+		})
+	}
+}
+
+func TestSPANoTokenWhenEmpty(t *testing.T) {
+	// When AuthToken is empty, no script tag should be injected.
+	ts := newTestServer(t) // uses empty Config
+
+	resp := get(t, ts.URL+"/")
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if strings.Contains(string(body), "__SAMVERK_TOKEN__") {
+		t.Errorf("token tag should not be present when AuthToken is empty:\n%s", body)
 	}
 }
 

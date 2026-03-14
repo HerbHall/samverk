@@ -11,6 +11,7 @@ import (
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/store"
 )
 
@@ -33,6 +34,7 @@ type Dispatcher struct {
 	config        *Config
 	claimed       map[int]*claimedIssue
 	issueFailures map[int]int // persists failure counts across re-queue cycles
+	metrics       *metrics.DispatcherMetrics
 	mu            sync.Mutex
 	logger        *zap.Logger
 	stop          context.CancelFunc
@@ -55,13 +57,20 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 		config:        cfg,
 		claimed:       make(map[int]*claimedIssue),
 		issueFailures: make(map[int]int),
+		metrics:       metrics.NewDispatcherMetrics(),
 		logger:        logger,
 	}
+}
+
+// Snapshot returns a point-in-time snapshot of dispatcher metrics.
+func (d *Dispatcher) Snapshot() metrics.DispatcherSnapshot {
+	return d.metrics.Snapshot()
 }
 
 // handleTaskComplete is called by the agent pool when a task finishes.
 // It removes the issue from the claimed map and updates labels.
 func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
+	d.metrics.IssueUnclaimed()
 	d.mu.Lock()
 	delete(d.claimed, result.IssueNumber)
 	if result.Success {
@@ -117,9 +126,11 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		case err := <-errCh:
 			return fmt.Errorf("watch stopped: %w", err)
 		case <-ticker.C:
+			pollStart := time.Now()
 			if err := d.checkTimeouts(ctx); err != nil {
 				d.logger.Error("heartbeat check", zap.String("error", err.Error()))
 			}
+			d.metrics.PollCompleted(time.Since(pollStart))
 		}
 	}
 }
@@ -133,6 +144,7 @@ func (d *Dispatcher) Stop() {
 
 // handleEvent dispatches a forge event to the correct handler.
 func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
+	d.metrics.EventProcessed()
 	var err error
 	switch ev.Type {
 	case forge.EventIssueOpened:
