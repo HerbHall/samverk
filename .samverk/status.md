@@ -1,6 +1,6 @@
 ---
 phase: execution
-updated: 2026-03-08T22:00:00Z
+updated: 2026-03-14T01:12:36Z
 updated_by: claude-code
 ---
 
@@ -8,93 +8,83 @@ updated_by: claude-code
 
 ## Phase
 
-Phase 5 complete: agent runtime, provider integration, SPA embedding, PR watcher.
-Q2 2026 execution plan: 62 issues across 3 streams. Windows 1-2 agent work in progress.
+Phase 5 complete. Q2 2026 execution: 3 streams (B/W/P), 62 issues. Security batch (#407-#410, #399) done. Auth middleware, dashboard token injection, and cross-process metrics fix deployed.
 
 ## What Is Running
 
-- Samverk server: CT 202 (192.168.1.162:8080) -- healthy
-- MCP endpoint: POST /mcp (Streamable HTTP, auth required)
-- Dispatcher: running continuously (systemd, 30s poll, 3 workers)
+- Samverk server: CT 202 (192.168.1.162:8080) -- healthy, API auth enabled
+- MCP endpoint: POST /mcp (Streamable HTTP, bearer auth)
+- Dispatcher: running continuously (systemd, 30s poll, 3 workers, autoscaling 1-5)
 - PR watcher: runs concurrently with dispatcher (auto-merge eligible PRs)
 - Gitea: CT 200 (192.168.1.160:3000 / gitea.herbhall.net) -- primary runtime forge
 
-## Dual-Forge Status
+## Recent Completions
 
-| Item | Status |
-|------|--------|
-| Gitea instance (CT 200) | Running -- 1.23.7 |
-| samverk/samverk repo | Created on Gitea |
-| Gitea adapter (IssueTracker + Repo + PR) | Merged (PRs #319, #322) |
-| Integration tests against Gitea | Merged (PR #322) |
-| Gitea Actions research | Merged (PR #321) |
-| Gitea CI workflow (.gitea/workflows/) | PR #331 (auto-merge) |
-| Gitea security.yml (govulncheck + trivy) | PR #331 (auto-merge) |
-| dual-forge server.yaml config | PR #326 (auto-merge) |
-| create-issues.sh --forge gitea | PR #327 (auto-merge) |
-| migrate-issues.py (GitHub -> Gitea) | PR #330 (auto-merge) |
-| ADR-031 dual-forge model | This session |
-| Gitea Actions runner (CT 201) | Pending (B14, human setup) |
-| Bidirectional git push remote | Pending (B24, human task) |
-| MCP tools for Gitea project switching | Pending (#277) |
+### Security Batch (2026-03-13 to 2026-03-14)
 
-## Windows 1-2 Progress (B-track)
+- PR #420: BearerAuth middleware on all API and MCP routes
+- PR #421: Dashboard auth token injection into SPA via `window.__SAMVERK_TOKEN__`
+- PR #422: Scoped worker identity in KeyStore (per-worker API keys)
+- PR #423: Cross-process metrics bridge between dispatch and serve
+- PR #425: Restored systemd hardening with `.claude` ReadWritePaths
 
-Completed B-track:
+### Dispatcher Improvements (2026-03-13)
 
-- B01-B09 (#256-#264): Gitea adapter implementation (PRs #316-#319, merged)
-- B10 (#265): PR manager implementation (PR #319, merged)
-- B13 (#268): Gitea Actions compatibility research (PR #321, merged)
-- B03/B08/B10 (#258,#263,#265): Integration tests (PR #322, merged)
-- B17 (#272): dual-forge server.yaml config (PR #326, auto-merge)
-- B18 (#273): create-issues.sh --forge gitea (PR #327, auto-merge)
-- B20 (#275): issue migration script (PR #330, auto-merge)
-- B14 (#269): gitea-ci.yml (PR #331, auto-merge)
-- B15/B16 (#270/271): security.yml (PR #331, auto-merge)
-- B25 (#280): ADR-031 dual-forge model (this session)
-- B26 (#281): CLAUDE.md + status.md update (this session)
+- PR #402: Dynamic per-issue timeout based on complexity
+- PR #416: Cross-model QC routing via dedicated provider chain
+- PR #417: Per-issue token aggregation with outlier detection
+- PR #418: PROGRESS comment protocol for periodic mid-task state
 
-Completed W-track (metrics/scaling):
+### Agent Runtime (2026-03-09)
 
-- W01 (#284): PoolMetrics ring buffer (merged, PR #323)
-- W02 (#285): DispatcherMetrics ring buffer + P95 (merged, PR #323)
-- W03 (#286): SystemCollector (merged, PR #323)
-- W04 (#287): Metrics load tests (PR #325, auto-merge)
+- PR #397: Migrated logging from slog to zap with dual-mode output
+- PR #398: Pagination for label cache, issue listing, and comments
+- PR #400: Inline SPA build in Gitea CI
+- PR #403: Query check runs API for GitHub Actions CI status
+- PR #405: Streaming progress detection with heartbeat reset
+- PR #406: Session checkpoint and resume
 
-Human tasks remaining:
+### Other
 
-- B11 (#266): Already done (Gitea repo created)
-- B12 (#267): Verify Gitea label + webhook health
-- B14 runner (#269): Provision CT 201 as Gitea Actions runner
-- B24 (#279): Configure bidirectional git push remote
-- B21-B22: Tag mirroring (deferred to after B24)
+- PR #415: Copilot #402 followup + multi-agent research docs
+- PR #419: Production pipeline design v0.9
+- PR #404: Release 0.1.13
 
-## Next Agent Tasks
+## Open Issues by Category
 
-W-track (ready, no blockers):
+### In Progress / Claimed
 
-- W05 (#288): Add /api/v1/metrics REST endpoint
-- W06 (#289): Add metrics dashboard page to React SPA
-- W07 (#290): Add metrics to MCP get_digest
-- W08 (#292): Refactor agent pool to support dynamic add/remove
+- #245: feat: pre-flight issue decomposition for oversized tasks (status:claimed, status:blocked)
 
-B-track (ready after PRs merge):
+### Blocked
 
-- B21 (#276): Tag mirroring GitHub -> Gitea
-- B22 (#277): MCP tools for Gitea project context switching
-- B23 (#278): Verify MCP tools vs Gitea (human verification)
+- #282: End-to-end validation: full agent loop on Gitea (agent:infra, status:blocked)
+- #314: Verify: PC agent runs autonomously for 2 hours (agent:pc, status:blocked)
+- #317: Verify: Multi-session PC agent processes a full batch (agent:pc, status:blocked)
 
-## Queued (pre-existing)
+### Needs Human / Human Pending
 
-- `#152`: dispatcher routes to Copilot as provider
-- `#153`: dispatch feedback loop (depends on #144 research)
-- `#157`: Claude Code Remote Control spike (human task)
-- `#186`: `samverk status --write` CLI automation
-- `#324`: fix panic on send-to-closed-channel in pool.Submit
+- #186: feat: samverk status --write CLI command (status:needs-human)
+- #246: feat: timeout calibration feedback loop (status:needs-human)
+- #248: docs: stale documentation vs actual deployed state (status:needs-human)
+- #250: epic: GitHub to Gitea migration strategy (agent:human, status:needs-human)
+- #251: epic: documentation integrity system (agent:human, status:needs-human)
+- #252: research: Samverk GitHub to Gitea migration requirements (agent:human, status:needs-human)
+- #283: End-to-end validation: conversational check-in via MCP (agent:human, status:human-pending)
+- #291: Verify: Metrics visible on dashboard and in MCP digest (agent:human, status:human-pending)
+- #303: Verify: Full adaptive scaling lifecycle over 24-hour soak (agent:human, status:human-pending)
+- #315: Implement multi-session CC support with concurrent worktrees (status:needs-human)
+- #323: epic: automated failure analysis loop (agent:human, status:needs-human)
+- #392: infra: fix RTX 5090 GPU passthrough to Docker Desktop (agent:human, status:needs-human)
+- #411: sec: ollama.herbhall.net exposed without authentication (agent:human, status:needs-human)
+
+### Queued
+
+- #359: test: Add FormatDuration helper to pkg/models (agent:code-gen, status:needs-qc)
 
 ## Start Here (Cold Start Protocol)
 
 1. Read this file
 2. Call `samverk get_digest --since 168h` if MCP is configured
-3. Read open issues if relevant to the task
+3. Check open issues if relevant to the task
 4. Proceed -- do not ask the user to explain project state

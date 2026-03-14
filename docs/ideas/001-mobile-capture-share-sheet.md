@@ -51,7 +51,7 @@ Research should investigate why no major AI chat (Claude, ChatGPT, Gemini, Copil
 4. **Business model**: AI chat companies monetize conversation turns, not information capture. A share target bypasses the conversation.
 5. **Privacy/security**: Automatically sending web content to an AI API raises different privacy concerns than a user manually pasting into a chat.
 
-Samverk is uniquely positioned because it HAS a server-side persistence layer (Gitea issues, shared memory), a project concept, and an agent pipeline that can act on captured content.
+Samverk is uniquely positioned because it HAS a server-side persistence layer (Gitea issues, Synapset semantic memory), a project concept, and an agent pipeline that can act on captured content.
 
 ## Suggested Research Questions
 
@@ -183,5 +183,5 @@ Parked. Requires research phase before any implementation decisions. The researc
 - [Mobile Experience](../mobile-experience.md) -- current mobile strategy (responsive web, no native app)
 - [Multi-Device Sync](../multi-device-sync.md) -- server-canonical state model this would use
 - [User Interface](../user-interface.md) -- device flexibility requirement (ADR-009)
-- [Shared Memory](../shared-memory.md) -- captured research could feed into shared memory
+- [Shared Memory](../shared-memory.md) -- captured research could feed into Synapset (see Synapset project at `D:\DevSpace\Synapset\`)
 - [MCP Server](../mcp-server.md) -- the /capture endpoint would be a new API surface
