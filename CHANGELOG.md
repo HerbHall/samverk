@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.14](https://github.com/HerbHall/samverk/compare/v0.1.13...v0.1.14) (2026-03-14)
+
+
+### Features
+
+* **#186:** add samverk status CLI command ([#427](https://github.com/HerbHall/samverk/issues/427)) ([7ff6d71](https://github.com/HerbHall/samverk/commit/7ff6d71a9d09fbf0a01b190bc303a5dbe521e142))
+* **#245:** pre-flight issue decomposition for oversized tasks ([#430](https://github.com/HerbHall/samverk/issues/430)) ([182c2f8](https://github.com/HerbHall/samverk/commit/182c2f82bca8e8be099bfb93882c8c9e87a8cab6))
+* **#246:** timeout calibration feedback loop with historical p90 auto-tuning ([#429](https://github.com/HerbHall/samverk/issues/429)) ([8c3a5d3](https://github.com/HerbHall/samverk/commit/8c3a5d363657a3b6ce58caf77c9377f1ca2c665e)), closes [#246](https://github.com/HerbHall/samverk/issues/246)
+* **#323:** automated failure analysis loop — classification, persistence, circuit breakers ([#431](https://github.com/HerbHall/samverk/issues/431)) ([e110215](https://github.com/HerbHall/samverk/commit/e110215986fb0942ebaa379d7a65260d5c3fe7cd)), closes [#323](https://github.com/HerbHall/samverk/issues/323)
+* **#359:** promote FormatDuration to public pkg/models helper ([#424](https://github.com/HerbHall/samverk/issues/424)) ([869033b](https://github.com/HerbHall/samverk/commit/869033b791fc7588abb7c9a254abd830c07eec94)), closes [#359](https://github.com/HerbHall/samverk/issues/359)
+
+
+### Bug Fixes
+
+* **#226:** restore systemd hardening with .claude ReadWritePaths ([#425](https://github.com/HerbHall/samverk/issues/425)) ([2a85469](https://github.com/HerbHall/samverk/commit/2a85469dbaf2c1024501c09cd842bbf769d364ef)), closes [#226](https://github.com/HerbHall/samverk/issues/226)
+
 ## [0.1.13](https://github.com/HerbHall/samverk/compare/v0.1.12...v0.1.13) (2026-03-14)
 
 
