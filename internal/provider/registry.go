@@ -95,6 +95,17 @@ func (r *Registry) Get(ctx context.Context, agentType string) (Provider, string,
 	return nil, "", ErrNoHealthyProvider
 }
 
+// Routing returns a copy of the routing table mapping chain names to provider names.
+func (r *Registry) Routing() map[string][]string {
+	out := make(map[string][]string, len(r.routing))
+	for k, v := range r.routing {
+		chain := make([]string, len(v))
+		copy(chain, v)
+		out[k] = chain
+	}
+	return out
+}
+
 // List returns info about all registered providers with their health status.
 func (r *Registry) List(ctx context.Context) []ProviderInfo {
 	infos := make([]ProviderInfo, 0, len(r.providers))

@@ -77,7 +77,7 @@ func run() int {
 }
 
 func serveCmd() *cobra.Command {
-	var addr, owner, repo, dbPath, projectsConfig, authKeysPath string
+	var addr, owner, repo, dbPath, projectsConfig, authKeysPath, providersConfigServe string
 	var budget float64
 
 	cmd := &cobra.Command{
@@ -248,6 +248,24 @@ func serveCmd() *cobra.Command {
 			} else {
 				apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
 			}
+			// Load provider config for capacity display (read-only, no provider instances).
+			if providersConfigServe != "" {
+				regCfg, pcErr := provider.LoadRegistryConfig(providersConfigServe)
+				if pcErr == nil {
+					pdtos := make([]api.ProviderDTO, 0, len(regCfg.Providers))
+					for name, pcfg := range regCfg.Providers {
+						pdtos = append(pdtos, api.ProviderDTO{
+							Name:  name,
+							Type:  pcfg.Type,
+							Model: pcfg.DefaultModel,
+						})
+					}
+					apiHandler.SetCapacity(pdtos, regCfg.Routing)
+					logger.Info("provider capacity loaded for dashboard", zap.Int("providers", len(pdtos)))
+				} else if !os.IsNotExist(pcErr) {
+					logger.Warn("could not load providers config for dashboard", zap.Error(pcErr))
+				}
+			}
 			cfg.APIHandler = apiHandler
 			cfg.PressureProvider = apiHandler
 			logger.Info("REST API enabled")
@@ -279,6 +297,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&projectsConfig, "projects-config", ".samverk/server.yaml", "Path to multi-project YAML config")
 	cmd.Flags().StringVar(&authKeysPath, "auth-keys", ".samverk/auth.yaml", "Path to API key YAML file")
 	cmd.Flags().Float64Var(&budget, "budget", 0, "Daily budget in USD (0 = unlimited)")
+	cmd.Flags().StringVar(&providersConfigServe, "providers-config", ".samverk/providers.yaml", "Path to provider registry YAML (read-only, for capacity display)")
 	return cmd
 }
 
