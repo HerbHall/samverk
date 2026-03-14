@@ -225,7 +225,12 @@ func serveCmd() *cobra.Command {
 				}
 
 				mcpHandler.SetProjects(registry)
-				mcpHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+				if st != nil {
+					poolM, dispM := api.NewStoreBackedMetrics(st)
+					mcpHandler.SetMetrics(poolM, dispM, metrics.NewSystemCollector())
+				} else {
+					mcpHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+				}
 				if st != nil {
 					mcpHandler.SetScalingEventReader(st)
 				}
@@ -233,7 +238,14 @@ func serveCmd() *cobra.Command {
 
 			// Wire REST API handler for dashboard.
 			apiHandler := api.New(tracker, st, costs, logger)
-			apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+			// Use store-backed metrics to bridge cross-process gap:
+			// dispatch process writes snapshots to SQLite, serve reads them here.
+			if st != nil {
+				poolM, dispM := api.NewStoreBackedMetrics(st)
+				apiHandler.SetMetrics(poolM, dispM, metrics.NewSystemCollector())
+			} else {
+				apiHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+			}
 			cfg.APIHandler = apiHandler
 			cfg.PressureProvider = apiHandler
 			logger.Info("REST API enabled")
@@ -404,6 +416,52 @@ func dispatchCmd() *cobra.Command {
 					zap.Int("min_workers", policyCfgS.MinWorkers),
 					zap.Int("max_workers", policyCfgS.MaxWorkers),
 				)
+			}
+
+			// Periodically persist pool + dispatcher metrics to SQLite
+			// so the serve process can read them via StoreBackedMetrics.
+			if st != nil {
+				g.Go(func() error {
+					tick := time.NewTicker(30 * time.Second)
+					defer tick.Stop()
+					for {
+						select {
+						case <-gctx.Done():
+							return nil
+						case <-tick.C:
+							snap := store.MetricSnapshot{
+								DispCollectedAt: time.Now(),
+								LastPollAt:      time.Now(),
+							}
+							if pool != nil {
+								ps := pool.Snapshot()
+								snap.CollectedAt = ps.CollectedAt
+								snap.TotalWorkers = ps.TotalWorkers
+								snap.ActiveWorkers = ps.ActiveWorkers
+								snap.IdleWorkers = ps.IdleWorkers
+								snap.QueueDepth = ps.QueueDepth
+								snap.TasksCompleted = ps.TasksCompleted
+								snap.TasksFailed = ps.TasksFailed
+								snap.AvgTaskDurationMs = float64(ps.AvgTaskDuration.Nanoseconds()) / 1e6
+								snap.P95TaskDurationMs = float64(ps.P95TaskDuration.Nanoseconds()) / 1e6
+							} else {
+								snap.CollectedAt = time.Now()
+							}
+							ds := disp.Snapshot()
+							snap.DispCollectedAt = ds.CollectedAt
+							snap.ClaimedCount = ds.ClaimedCount
+							snap.TotalRouted = ds.TotalRouted
+							snap.TotalRequeued = ds.TotalRequeued
+							snap.TotalEventsProcessed = ds.TotalEventsProcessed
+							snap.AvgPollLatencyMs = float64(ds.AvgPollLatency.Nanoseconds()) / 1e6
+							snap.LastPollAt = ds.LastPollAt
+							if err := st.SaveMetricSnapshot(gctx, snap); err != nil {
+								logger.Warn("save metric snapshot", zap.Error(err))
+							}
+						}
+					}
+				})
+				logger.Info("metric snapshot writer started (30s interval)")
 			}
 
 			// Start PR watcher if auto-merge is enabled.
