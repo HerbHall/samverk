@@ -97,7 +97,11 @@ func (w *Writer) Generate(ctx context.Context) (content string, err error) {
 // checkHealth performs an HTTP GET and returns a health status string.
 func checkHealth(url string) string {
 	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get(url) //nolint:gosec // G107: URL is from --health-url flag, not user input
+	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+	if reqErr != nil {
+		return "unreachable"
+	}
+	resp, err := client.Do(req) //nolint:gosec // G107: URL is from --health-url flag, not user input
 	if err != nil {
 		return "unreachable"
 	}

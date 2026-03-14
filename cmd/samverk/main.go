@@ -863,7 +863,7 @@ func statusCmd() *cobra.Command {
 			}
 
 			if write {
-				if writeErr := os.WriteFile(".samverk/status.md", []byte(content), 0644); writeErr != nil {
+				if writeErr := os.WriteFile(".samverk/status.md", []byte(content), 0600); writeErr != nil {
 					return fmt.Errorf("writing status.md: %w", writeErr)
 				}
 				fmt.Println("Updated .samverk/status.md")
