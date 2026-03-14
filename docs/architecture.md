@@ -120,6 +120,25 @@ The React SPA is embedded in the Go binary via `embed.FS`. Single binary deploym
 
 Dashboard scope: system health, agent monitoring, cost dashboards, structured log viewer, autonomy configuration, project settings, task timeline, and user profile management. See [Tech Stack](tech-stack.md) for full dashboard section details.
 
+## Authentication
+
+### BearerAuth Middleware
+
+All API (`/api/`) and MCP (`/mcp`) routes are wrapped with `BearerAuth` middleware. Supports two modes:
+
+- **Simple token**: Single `SAMVERK_AUTH_TOKEN` environment variable
+- **Key store**: YAML file with named keys, optional scope and worker identity
+
+Unauthenticated requests return 401. Health check (`/healthz`) and static SPA files (`/`) are exempt.
+
+### Per-Worker Identity
+
+Workers register with scoped API keys (`scope: worker`, `worker_id: <name>`). The `KeyStore` validates scope and worker ID on registration and heartbeat endpoints. This enables per-worker cost attribution and audit trails.
+
+### Dashboard Token Injection
+
+The SPA handler intercepts `index.html` to inject `window.__SAMVERK_TOKEN__` at serve time via a `<script>` tag. The React app reads this value and adds `Authorization: Bearer` headers to all API requests. This avoids exposing the token in client-side configuration files.
+
 ## The QC Mirror
 
 Every specialist agent has a parallel QC check:
