@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15](https://github.com/HerbHall/samverk/compare/v0.1.14...v0.1.15) (2026-03-14)
+
+
+### Bug Fixes
+
+* **dashboard:** rebuild SPA with auth token support ([5f55d53](https://github.com/HerbHall/samverk/commit/5f55d534147ed1fbacd6cc9c787d7d096dea5b92))
+
 ## [0.1.14](https://github.com/HerbHall/samverk/compare/v0.1.13...v0.1.14) (2026-03-14)
 
 
