@@ -15,15 +15,19 @@ type Config struct {
 	MaxConsecutiveFailures     int           `yaml:"max_consecutive_failures"`
 	DependencyRecheckInterval  time.Duration `yaml:"dependency_recheck_interval"`
 	HeartbeatCheckInterval     time.Duration `yaml:"heartbeat_check_interval"`
+	DecompositionThreshold     time.Duration `yaml:"decomposition_threshold"`
+	DecompositionModel         string        `yaml:"decomposition_model"`
 }
 
 // configFile is the on-disk YAML representation with friendly duration fields.
 type configFile struct {
-	HeartbeatIntervalMinutes   int     `yaml:"heartbeat_interval_minutes"`
-	HeartbeatTimeoutMultiplier float64 `yaml:"heartbeat_timeout_multiplier"`
-	MaxConsecutiveFailures     int     `yaml:"max_consecutive_failures"`
-	DependencyRecheckSeconds   int     `yaml:"dependency_recheck_seconds"`
-	HeartbeatCheckSeconds      int     `yaml:"heartbeat_check_seconds"`
+	HeartbeatIntervalMinutes       int     `yaml:"heartbeat_interval_minutes"`
+	HeartbeatTimeoutMultiplier     float64 `yaml:"heartbeat_timeout_multiplier"`
+	MaxConsecutiveFailures         int     `yaml:"max_consecutive_failures"`
+	DependencyRecheckSeconds       int     `yaml:"dependency_recheck_seconds"`
+	HeartbeatCheckSeconds          int     `yaml:"heartbeat_check_seconds"`
+	DecompositionThresholdMinutes  int     `yaml:"decomposition_threshold_minutes"`
+	DecompositionModel             string  `yaml:"decomposition_model"`
 }
 
 // DefaultConfig returns production-ready defaults for a self-hosted deployment.
@@ -66,6 +70,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cf.HeartbeatCheckSeconds > 0 {
 		cfg.HeartbeatCheckInterval = time.Duration(cf.HeartbeatCheckSeconds) * time.Second
+	}
+	if cf.DecompositionThresholdMinutes > 0 {
+		cfg.DecompositionThreshold = time.Duration(cf.DecompositionThresholdMinutes) * time.Minute
+	}
+	if cf.DecompositionModel != "" {
+		cfg.DecompositionModel = cf.DecompositionModel
 	}
 
 	return cfg, nil

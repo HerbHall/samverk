@@ -31,6 +31,7 @@ type Dispatcher struct {
 	policy        autonomy.AutonomyPolicy
 	store         store.Store
 	pool          *agent.Pool
+	decomposer    Decomposer
 	config        *Config
 	claimed       map[int]*claimedIssue
 	issueFailures map[int]int // persists failure counts across re-queue cycles
@@ -60,6 +61,13 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 		metrics:       metrics.NewDispatcherMetrics(),
 		logger:        logger,
 	}
+}
+
+// SetDecomposer configures the optional issue decomposer. When set and the
+// decomposition threshold is exceeded, oversized issues are split into
+// child issues before routing.
+func (d *Dispatcher) SetDecomposer(dec Decomposer) {
+	d.decomposer = dec
 }
 
 // Snapshot returns a point-in-time snapshot of dispatcher metrics.
@@ -217,6 +225,25 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		if blocked {
 			return d.blockIssue(ctx, issue.Number, blockers)
 		}
+	}
+
+	// Pre-flight decomposition: if the estimated timeout exceeds the
+	// configured threshold and this is not already a child issue, break
+	// it into smaller sub-tasks before routing.
+	providerKey, _ := selectProviderKey(issue, agentType)
+	var timeout time.Duration
+	if d.store != nil {
+		timeout = CalibratedTimeout(ctx, d.store, d.logger, issue, fm, agentType, providerKey)
+	} else {
+		timeout = EstimateTimeout(issue, fm, agentType, providerKey)
+	}
+
+	decomposed, decErr := d.decomposeAndCreateChildren(ctx, issue, fm, agentType, timeout)
+	if decErr != nil {
+		return fmt.Errorf("decompose #%d: %w", issue.Number, decErr)
+	}
+	if decomposed {
+		return nil // parent is now blocked on children; don't route it
 	}
 
 	return d.route(ctx, issue, agentType, fm)
