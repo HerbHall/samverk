@@ -172,6 +172,18 @@ func (m *mockStore) LatestMetricSnapshot(_ context.Context) (*store.MetricSnapsh
 	return nil, errors.New("no snapshot")
 }
 
+func (m *mockStore) SaveFailureEvent(_ context.Context, _ *models.FailureEvent) error { return nil }
+func (m *mockStore) ListFailureEvents(_ context.Context, _ time.Time, _ int) ([]*models.FailureEvent, error) {
+	return nil, nil
+}
+func (m *mockStore) CountFailuresByIssue(_ context.Context, _ int) (int, error) { return 0, nil }
+func (m *mockStore) GetFailureSummary(_ context.Context, _ time.Time) (*models.FailureSummary, error) {
+	return &models.FailureSummary{ByClass: map[models.FailureClass]int{}}, nil
+}
+func (m *mockStore) GetIssueFailureCount(_ context.Context, _ int) (int, error)      { return 0, nil }
+func (m *mockStore) IncrementIssueFailureCount(_ context.Context, _ int) (int, error) { return 1, nil }
+func (m *mockStore) ClearIssueFailureCount(_ context.Context, _ int) error            { return nil }
+
 func (m *mockStore) Close() error { return nil }
 
 // Compile-time check: mockStore implements store.Store.

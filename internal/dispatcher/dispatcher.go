@@ -27,18 +27,19 @@ type claimedIssue struct {
 // changes, classifies incoming work, resolves dependencies, and assigns
 // tasks to agent pools.
 type Dispatcher struct {
-	tracker       forge.IssueTracker
-	policy        autonomy.AutonomyPolicy
-	store         store.Store
-	pool          *agent.Pool
-	decomposer    Decomposer
-	config        *Config
-	claimed       map[int]*claimedIssue
-	issueFailures map[int]int // persists failure counts across re-queue cycles
-	metrics       *metrics.DispatcherMetrics
-	mu            sync.Mutex
-	logger        *zap.Logger
-	stop          context.CancelFunc
+	tracker        forge.IssueTracker
+	policy         autonomy.AutonomyPolicy
+	store          store.Store
+	pool           *agent.Pool
+	decomposer     Decomposer
+	config         *Config
+	claimed        map[int]*claimedIssue
+	issueFailures  map[int]int // in-memory fallback; persisted counter is authoritative when store is set
+	circuitBreaker *CircuitBreaker
+	metrics        *metrics.DispatcherMetrics
+	mu             sync.Mutex
+	logger         *zap.Logger
+	stop           context.CancelFunc
 }
 
 // New creates a Dispatcher with the given dependencies. The pool parameter
@@ -51,15 +52,16 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 		logger = zap.NewNop()
 	}
 	return &Dispatcher{
-		tracker:       tracker,
-		policy:        policy,
-		store:         st,
-		pool:          pool,
-		config:        cfg,
-		claimed:       make(map[int]*claimedIssue),
-		issueFailures: make(map[int]int),
-		metrics:       metrics.NewDispatcherMetrics(),
-		logger:        logger,
+		tracker:        tracker,
+		policy:         policy,
+		store:          st,
+		pool:           pool,
+		config:         cfg,
+		claimed:        make(map[int]*claimedIssue),
+		issueFailures:  make(map[int]int),
+		circuitBreaker: NewCircuitBreaker(logger),
+		metrics:        metrics.NewDispatcherMetrics(),
+		logger:         logger,
 	}
 }
 
@@ -77,6 +79,8 @@ func (d *Dispatcher) Snapshot() metrics.DispatcherSnapshot {
 
 // handleTaskComplete is called by the agent pool when a task finishes.
 // It removes the issue from the claimed map and updates labels.
+// On failure, it records a FailureEvent and checks the persisted failure
+// count for escalation — the counter survives restarts.
 func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 	d.metrics.IssueUnclaimed()
 	d.mu.Lock()
@@ -92,11 +96,19 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 	_ = d.tracker.RemoveLabel(ctx, result.IssueNumber, "status:in-progress")
 
 	if result.Success {
+		d.clearFailure(ctx, result.IssueNumber)
+		if d.circuitBreaker != nil {
+			d.circuitBreaker.RecordSuccess(result.ProviderKey)
+		}
 		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "needs-qc"), zap.String("error", err.Error()))
 		}
 		d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
 	} else {
+		// Record failure event with classification.
+		d.recordFailure(ctx, result.IssueNumber, result.SessionID,
+			string(result.AgentType), result.ProviderKey, result.Error, 0)
+
 		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:queued"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "queued"), zap.String("error", err.Error()))
 		}
@@ -205,6 +217,7 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 
 	agentType, fm, err := d.classify(ctx, issue)
 	if err != nil {
+		d.recordFailure(ctx, issue.Number, "", "", "", err.Error(), 0)
 		return d.escalate(ctx, issue.Number, "invalid_frontmatter", err.Error())
 	}
 
@@ -240,6 +253,7 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 
 	decomposed, decErr := d.decomposeAndCreateChildren(ctx, issue, fm, agentType, timeout)
 	if decErr != nil {
+		d.recordFailure(ctx, issue.Number, "", string(agentType), "", decErr.Error(), 0)
 		return fmt.Errorf("decompose #%d: %w", issue.Number, decErr)
 	}
 	if decomposed {
@@ -251,11 +265,13 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 
 // handleClosed processes a closed issue by unblocking dependents.
 func (d *Dispatcher) handleClosed(ctx context.Context, ev forge.Event) error {
-	// Remove from claimed map and clear persistent failure count if tracked.
+	// Remove from claimed map and clear both in-memory and persisted failure counts.
 	d.mu.Lock()
 	delete(d.claimed, ev.IssueNumber)
 	delete(d.issueFailures, ev.IssueNumber)
 	d.mu.Unlock()
+
+	d.clearFailure(ctx, ev.IssueNumber)
 
 	return d.unblockDependents(ctx, ev.IssueNumber)
 }
@@ -323,6 +339,9 @@ func (d *Dispatcher) escalate(ctx context.Context, issueNumber int, trigger, det
 func (d *Dispatcher) escalateCycle(ctx context.Context, cycle []int) error {
 	cyclePath := fmt.Sprintf("%v", cycle)
 	for _, num := range cycle {
+		errMsg := fmt.Sprintf("dependency_cycle: %s", cyclePath)
+		d.recordFailure(ctx, num, "", "", "", errMsg, 0)
+
 		comment := fmt.Sprintf(
 			"ESCALATE [dispatcher] [%s]\ntrigger: dependency_cycle\ndetails: Cycle detected: %s\naction_needed: Break the dependency cycle.",
 			time.Now().UTC().Format(time.RFC3339), cyclePath,

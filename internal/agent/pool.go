@@ -42,6 +42,7 @@ type TaskResult struct {
 	IssueNumber int
 	SessionID   string
 	AgentType   models.AgentType
+	ProviderKey string // routing chain key used for this task
 	Success     bool
 	Error       string
 }
@@ -346,6 +347,7 @@ func (p *Pool) processTask(task Task) {
 				IssueNumber: task.Issue.Number,
 				SessionID:   task.SessionID,
 				AgentType:   task.AgentType,
+				ProviderKey: routingKey,
 				Success:     false,
 				Error:       err.Error(),
 			})
@@ -364,6 +366,7 @@ func (p *Pool) processTask(task Task) {
 		IssueNumber: task.Issue.Number,
 		SessionID:   task.SessionID,
 		AgentType:   task.AgentType,
+		ProviderKey: routingKey,
 		Success:     runErr == nil,
 	}
 	if runErr != nil {

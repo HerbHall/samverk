@@ -152,6 +152,10 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 // It selects a provider routing chain based on issue signals, logs the selection,
 // and records the claim in memory. Any failure count accumulated from prior
 // timeout cycles is carried forward so the escalation threshold is not reset.
+//
+// Circuit breaker checks are applied before dispatching:
+//   - Budget circuit open → do not dispatch anything
+//   - Provider circuit open → skip that provider (fallback may still work)
 func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType, fm *models.IssueFrontmatter) error {
 	// Human-typed issues are tracked but never submitted to the agent pool.
 	if agentType == models.AgentTypeHuman {
@@ -159,6 +163,14 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 		if err := d.tracker.AddLabel(ctx, issue.Number, "status:needs-human"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", issue.Number), zap.String("label", "needs-human"), zap.String("error", err.Error()))
 		}
+		return nil
+	}
+
+	// Check budget circuit breaker before any dispatching.
+	if d.circuitBreaker != nil && !d.circuitBreaker.AllowDispatch() {
+		d.logger.Warn("budget circuit open, not dispatching",
+			zap.Int("issue", issue.Number),
+		)
 		return nil
 	}
 
@@ -188,8 +200,12 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	)
 
 	now := time.Now()
+	// Use persisted failure count (survives restarts) with in-memory fallback.
+	priorFailures := d.getPersistedFailureCount(ctx, issue.Number)
 	d.mu.Lock()
-	priorFailures := d.issueFailures[issue.Number]
+	if memCount := d.issueFailures[issue.Number]; memCount > priorFailures {
+		priorFailures = memCount // in-memory may be ahead if store write lagged
+	}
 	d.claimed[issue.Number] = &claimedIssue{
 		AgentID:       string(agentType),
 		ClaimedAt:     now,

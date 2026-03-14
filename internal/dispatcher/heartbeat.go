@@ -81,6 +81,8 @@ func (d *Dispatcher) checkTimeouts(ctx context.Context) error {
 }
 
 // releaseTimedOut unclaims a single timed-out issue and re-queues it.
+// Uses persisted failure counts (SQLite) so the counter survives restarts.
+// Falls back to in-memory counting when no store is configured.
 func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error {
 	d.mu.Lock()
 	claimed, ok := d.claimed[issueNumber]
@@ -88,18 +90,34 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 		d.mu.Unlock()
 		return nil
 	}
+	// Increment in-memory counter (always works, even without store).
 	claimed.FailureCount++
-	failureCount := claimed.FailureCount
+	inMemoryCount := claimed.FailureCount
 	agentID := claimed.AgentID
 	lastHB := claimed.LastHeartbeat
 	delete(d.claimed, issueNumber)
-	// Persist the incremented failure count so the next dispatch cycle picks it up.
-	d.issueFailures[issueNumber] = failureCount
+	d.issueFailures[issueNumber] = inMemoryCount
 	d.mu.Unlock()
 
+	// Record failure event (also increments the persisted counter).
+	elapsed := time.Since(lastHB)
+	errMsg := fmt.Sprintf("timeout: agent %s missed heartbeat, last seen %s ago", agentID, elapsed.Truncate(time.Second))
+	d.recordFailure(ctx, issueNumber, "", agentID, "", errMsg, elapsed)
+
+	// Use persisted count when available (survives restarts); fall back to in-memory.
+	failureCount := inMemoryCount
+	if d.store != nil {
+		if persisted := d.getPersistedFailureCount(ctx, issueNumber); persisted > failureCount {
+			failureCount = persisted
+			d.mu.Lock()
+			d.issueFailures[issueNumber] = failureCount
+			d.mu.Unlock()
+		}
+	}
+
 	comment := fmt.Sprintf(
-		"RELEASE [dispatcher] [%s] timeout\nAgent %s missed heartbeat. Last seen: %s.\nUnclaiming issue for re-queue.",
-		time.Now().UTC().Format(time.RFC3339), agentID, lastHB.UTC().Format(time.RFC3339),
+		"RELEASE [dispatcher] [%s] timeout\nAgent %s missed heartbeat. Last seen: %s.\nUnclaiming issue for re-queue. (attempt %d)",
+		time.Now().UTC().Format(time.RFC3339), agentID, lastHB.UTC().Format(time.RFC3339), failureCount,
 	)
 	if _, err := d.tracker.AddComment(ctx, issueNumber, comment); err != nil {
 		d.logger.Warn("add comment", zap.Int("issue", issueNumber), zap.String("context", "timeout-release"), zap.String("error", err.Error()))
@@ -116,7 +134,6 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 		d.logger.Warn("unassign", zap.Int("issue", issueNumber), zap.String("agent", agentID), zap.String("error", err.Error()))
 	}
 
-	elapsed := time.Since(lastHB)
 	d.logger.Warn("timeout released",
 		zap.Int("issue", issueNumber),
 		zap.String("agent", agentID),
