@@ -98,6 +98,59 @@ func TestGenerateAgentCLAUDEMD_EmptyBody(t *testing.T) {
 	}
 }
 
+func TestGenerateAgentCLAUDEMD_GitSafety(t *testing.T) {
+	types := []string{ProjectTypeGo, ProjectTypeFrontend, ProjectTypeFullstack}
+	for _, pt := range types {
+		got := GenerateAgentCLAUDEMD(pt, "some task")
+		if !strings.Contains(got, "## Git Workflow") {
+			t.Errorf("CLAUDE.md for project type %q missing git safety rules", pt)
+		}
+		if !strings.Contains(got, "Never force-push") {
+			t.Errorf("CLAUDE.md for project type %q missing force-push warning", pt)
+		}
+	}
+}
+
+func TestGenerateAgentCLAUDEMD_KnownGotchas(t *testing.T) {
+	got := GenerateAgentCLAUDEMD(ProjectTypeGo, "some task")
+	if !strings.Contains(got, "## Known Gotchas") {
+		t.Error("CLAUDE.md missing Known Gotchas section")
+	}
+	if !strings.Contains(got, "rangeValCopy") {
+		t.Error("CLAUDE.md missing rangeValCopy gotcha")
+	}
+}
+
+func TestDetectProjectType(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels []string
+		want   string
+	}{
+		{name: "no labels", labels: nil, want: ProjectTypeGo},
+		{name: "empty labels", labels: []string{}, want: ProjectTypeGo},
+		{name: "backend label", labels: []string{"area:agent", "priority:high"}, want: ProjectTypeGo},
+		{name: "frontend epic", labels: []string{"epic:frontend", "priority:high"}, want: ProjectTypeFrontend},
+		{name: "web label", labels: []string{"area:web"}, want: ProjectTypeFrontend},
+		{name: "ui label", labels: []string{"area:ui"}, want: ProjectTypeFrontend},
+		{name: "explicit fullstack", labels: []string{"fullstack"}, want: ProjectTypeFullstack},
+		{name: "full-stack hyphenated", labels: []string{"full-stack"}, want: ProjectTypeFullstack},
+		{name: "frontend+backend", labels: []string{"epic:frontend", "area:api"}, want: ProjectTypeFullstack},
+		{name: "frontend+server", labels: []string{"area:web", "area:server"}, want: ProjectTypeFullstack},
+		{name: "case insensitive", labels: []string{"EPIC:FRONTEND"}, want: ProjectTypeFrontend},
+		{name: "backend only", labels: []string{"area:api", "priority:high"}, want: ProjectTypeGo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DetectProjectType(tt.labels)
+			if got != tt.want {
+				t.Errorf("DetectProjectType(%v) = %q, want %q", tt.labels, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWriteMCPConfig(t *testing.T) {
 	dir := t.TempDir()
 
