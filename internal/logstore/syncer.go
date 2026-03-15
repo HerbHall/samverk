@@ -64,10 +64,11 @@ func (s *Syncer) Write(p []byte) (n int, err error) {
 }
 
 // Sync implements zapcore.WriteSyncer. It syncs stdout if it supports
-// the Sync method (e.g., os.File).
+// the Sync method (e.g., os.File). Errors from syncing stdout/stderr
+// are ignored because /dev/stdout cannot be fsynced on Linux.
 func (s *Syncer) Sync() error {
 	if f, ok := s.stdout.(*os.File); ok {
-		return f.Sync()
+		_ = f.Sync() // best-effort; /dev/stdout returns EINVAL on Linux
 	}
 	return nil
 }
