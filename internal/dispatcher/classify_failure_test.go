@@ -136,6 +136,11 @@ func TestClassifyFailure(t *testing.T) {
 			input: "provider returned status 401 with body: ...",
 			want:  models.FailureClassAuth,
 		},
+		{
+			name:  "not logged in is auth",
+			input: "claude-cli: exec: exit status 1: output: Not logged in · Please run /login",
+			want:  models.FailureClassAuth,
+		},
 
 		// --- budget ---
 		{
