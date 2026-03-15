@@ -499,6 +499,16 @@ func TestClassifyFailure(t *testing.T) {
 			input: "panic: runtime error: invalid memory address or nil pointer dereference",
 			want:  models.FailureClassPanic,
 		},
+		{
+			name:  "claude-cli hung with no output is provider_down",
+			input: "provider chat: claude-cli: hung: no output for 3m0s: output: ",
+			want:  models.FailureClassProviderDown,
+		},
+		{
+			name:  "hung no output generic",
+			input: "hung: no output for 5m0s",
+			want:  models.FailureClassProviderDown,
+		},
 	}
 
 	for _, tt := range tests {
@@ -609,6 +619,39 @@ func TestFailureClass_IsRetryableAndIsPermanentAreMutuallyExclusive(t *testing.T
 			t.Parallel()
 			if fc.IsRetryable() && fc.IsPermanent() {
 				t.Errorf("FailureClass(%q) is both retryable and permanent — impossible state", fc)
+			}
+		})
+	}
+}
+
+func TestFailureClass_IsProviderFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		fc   models.FailureClass
+		want bool
+	}{
+		{models.FailureClassProviderDown, true},
+		{models.FailureClassOOMKill, true},
+		{models.FailureClassTimeout, false},
+		{models.FailureClassAuth, false},
+		{models.FailureClassBudget, false},
+		{models.FailureClassPermanent, false},
+		{models.FailureClassShutdown, false},
+		{models.FailureClassPanic, false},
+		{models.FailureClassPostProcess, false},
+		{models.FailureClassClassify, false},
+		{models.FailureClassCycle, false},
+		{models.FailureClassDecompose, false},
+		{models.FailureClassUnknown, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.fc), func(t *testing.T) {
+			t.Parallel()
+			got := tt.fc.IsProviderFailure()
+			if got != tt.want {
+				t.Errorf("FailureClass(%q).IsProviderFailure() = %v, want %v", tt.fc, got, tt.want)
 			}
 		})
 	}

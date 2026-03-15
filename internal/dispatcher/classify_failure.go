@@ -44,10 +44,10 @@ func classifyFailure(errMsg string) models.FailureClass {
 		return models.FailureClassOOMKill
 	}
 
-	// Provider down: connection errors.
+	// Provider down: connection errors and provider hangs.
 	if strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "connection refused") ||
 		strings.Contains(lower, "no such host") || strings.Contains(lower, "i/o timeout") ||
-		strings.Contains(lower, "no healthy provider") {
+		strings.Contains(lower, "no healthy provider") || strings.Contains(lower, "hung: no output") {
 		return models.FailureClassProviderDown
 	}
 
