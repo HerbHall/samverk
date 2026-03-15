@@ -88,7 +88,7 @@ func TestEvaluateAlerts(t *testing.T) {
 			snap: Snapshot{
 				DiskTotalBytes: 100_000, DiskPercent: 50.0,
 				RAMTotalBytes: 100_000, RAMPercent: 50.0,
-				NumCPU: 4, LoadAvg1: 3.2, // 3.2/4 = 0.8 > 0.7
+				NumCPU: 4, LoadAvg1: 3.2, // ratio 0.8 exceeds warn threshold 0.7
 			},
 			wantCount: 1,
 			wantAlerts: []Alert{
@@ -100,7 +100,7 @@ func TestEvaluateAlerts(t *testing.T) {
 			snap: Snapshot{
 				DiskTotalBytes: 100_000, DiskPercent: 50.0,
 				RAMTotalBytes: 100_000, RAMPercent: 50.0,
-				NumCPU: 4, LoadAvg1: 3.8, // 3.8/4 = 0.95 > 0.9
+				NumCPU: 4, LoadAvg1: 3.8, // ratio 0.95 exceeds critical threshold 0.9
 			},
 			wantCount: 1,
 			wantAlerts: []Alert{

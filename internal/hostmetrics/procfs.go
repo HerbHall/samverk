@@ -28,8 +28,9 @@ func readDiskUsage(path string) (total, used uint64, err error) {
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, 0, err
 	}
-	total = stat.Blocks * uint64(stat.Bsize)
-	free := stat.Bfree * uint64(stat.Bsize)
+	bsize := uint64(stat.Bsize) //nolint:gosec // G115: Bsize is always positive on Linux
+	total = stat.Blocks * bsize
+	free := stat.Bfree * bsize
 	used = total - free
 	return total, used, nil
 }
