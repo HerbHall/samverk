@@ -24,7 +24,8 @@ func classifyFailure(errMsg string) models.FailureClass {
 	// Auth: OAuth/API key expiry or invalid credentials.
 	if strings.Contains(lower, "401") || strings.Contains(lower, "authentication_error") ||
 		strings.Contains(lower, "oauth token expired") || strings.Contains(lower, "unauthorized") ||
-		strings.Contains(lower, "invalid api key") || strings.Contains(lower, "invalid x-api-key") {
+		strings.Contains(lower, "invalid api key") || strings.Contains(lower, "invalid x-api-key") ||
+		strings.Contains(lower, "not logged in") {
 		return models.FailureClassAuth
 	}
 

@@ -157,8 +157,8 @@ func TestSearchMemory(t *testing.T) {
 		}
 		var a map[string]interface{}
 		_ = json.Unmarshal(args, &a)
-		if a["pool_name"] != "devkit" {
-			t.Errorf("pool_name = %v, want devkit", a["pool_name"])
+		if a["pool"] != "devkit" {
+			t.Errorf("pool = %v, want devkit", a["pool"])
 		}
 
 		memoriesJSON, _ := json.Marshal(memories)
@@ -224,8 +224,8 @@ func TestStoreMemory(t *testing.T) {
 	if capturedName != "store_memory" {
 		t.Errorf("tool name = %q, want store_memory", capturedName)
 	}
-	if capturedArgs["pool_name"] != "samverk" {
-		t.Errorf("pool_name = %v, want samverk", capturedArgs["pool_name"])
+	if capturedArgs["pool"] != "samverk" {
+		t.Errorf("pool = %v, want samverk", capturedArgs["pool"])
 	}
 	if capturedArgs["category"] != "decision" {
 		t.Errorf("category = %v, want decision", capturedArgs["category"])
