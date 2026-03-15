@@ -119,6 +119,9 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 	cmd := exec.CommandContext(ctx, c.claudeBin, args...) //nolint:gosec // G204: claudeBin is set internally
 	cmd.Stdin = strings.NewReader(prompt.String())        // prompt via stdin — argument mode hangs
+	if req.WorkingDir != "" {
+		cmd.Dir = req.WorkingDir
+	}
 	// Place the subprocess in its own process group so that signals sent to
 	// the parent's process group (e.g. from a misconfigured KillMode) do not
 	// propagate to claude-cli. Belt-and-suspenders alongside KillMode=process.

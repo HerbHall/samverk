@@ -43,6 +43,7 @@ type Runner struct {
 	progressInterval time.Duration   // interval between PROGRESS posts; 0 disables
 	synapset         *synapset.Client // optional; nil disables memory enrichment
 	policy           autonomy.AutonomyPolicy // optional; nil disables tier enforcement
+	repoDir          string // local repo path; when set, enables workspace isolation
 }
 
 // NewRunner creates a runner bound to a specific provider and model.
@@ -89,6 +90,12 @@ func (r *Runner) SetSynapset(sc *synapset.Client) {
 // When nil, all actions are allowed (backward compatible).
 func (r *Runner) SetPolicy(p autonomy.AutonomyPolicy) {
 	r.policy = p
+}
+
+// SetRepoDir configures the local repository path for workspace isolation.
+// When set, code-gen and test agents execute in isolated git worktrees.
+func (r *Runner) SetRepoDir(dir string) {
+	r.repoDir = dir
 }
 
 // Run processes a single task through the AI provider pipeline.
@@ -143,8 +150,30 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		)
 	}
 
+	// Step 3b: Create isolated workspace for code-gen/test agents.
+	var workDir string
+	if r.repoDir != "" {
+		switch task.AgentType {
+		case models.AgentTypeCodeGen, models.AgentTypeTest:
+			ws, wsCleanup, wsErr := CreateWorkspace(r.repoDir, task.SessionID, task.Issue.Number, r.logger)
+			if wsErr != nil {
+				r.logger.Warn("workspace creation failed; continuing without isolation",
+					zap.Int("issue", task.Issue.Number),
+					zap.Error(wsErr),
+				)
+			} else {
+				workDir = ws
+				defer wsCleanup()
+			}
+		case models.AgentTypeDocs, models.AgentTypeResearch, models.AgentTypeQC,
+			models.AgentTypeHuman, models.AgentTypeOrchestrator, models.AgentTypeDispatcher,
+			models.AgentTypeInfra, models.AgentTypePC:
+			// Non-code agents don't need workspace isolation.
+		}
+	}
+
 	// Step 4: Build chat request.
-	fileContext := r.extractFileContext(task.Issue.Body)
+	fileContext := r.extractFileContext(task.Issue.Body, workDir)
 	systemPrompt := BuildSystemPrompt(task, fileContext)
 	messages := []provider.Message{
 		{Role: provider.RoleSystem, Content: systemPrompt},
@@ -160,8 +189,9 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 
 	messages = append(messages, provider.Message{Role: provider.RoleUser, Content: task.Issue.Body})
 	req := provider.ChatRequest{
-		Model:    r.model,
-		Messages: messages,
+		Model:      r.model,
+		Messages:   messages,
+		WorkingDir: workDir,
 	}
 
 	// Step 5: Call provider (with heartbeat and streaming activity detection).
@@ -252,7 +282,7 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	}
 
 	// Step 7: Post-process response based on agent type.
-	if err = r.postProcess(ctx, task, resp.Message.Content); err != nil {
+	if err = r.postProcess(ctx, task, resp.Message.Content, workDir); err != nil {
 		r.failTask(ctx, task, fmt.Sprintf("post-process error: %v", err))
 		return fmt.Errorf("post-process: %w", err)
 	}
@@ -300,9 +330,25 @@ func (r *Runner) postProgress(ctx context.Context, task Task, lastHash *string) 
 }
 
 // postProcess routes the provider response to the appropriate output handler.
-// Code-gen and test agents open PRs when EDIT blocks are present and forge
-// write access is configured; all others post comments.
-func (r *Runner) postProcess(ctx context.Context, task Task, response string) error {
+// When a workspace has changes (CLI provider flow), it commits, pushes, and
+// creates a PR directly from the worktree. Otherwise, code-gen and test agents
+// open PRs when EDIT blocks are present and forge write access is configured;
+// all others post comments.
+func (r *Runner) postProcess(ctx context.Context, task Task, response, workDir string) error {
+	// CLI-based flow: if workspace has changes, commit and create PR.
+	if workDir != "" {
+		changed, err := r.commitWorkspaceChanges(ctx, task, workDir)
+		if err != nil {
+			return err
+		}
+		if changed {
+			// Post the agent's response as an informational comment.
+			_ = r.postComment(ctx, task, response)
+			return nil
+		}
+		// No workspace changes — fall through to standard post-processing.
+	}
+
 	switch task.AgentType {
 	case models.AgentTypeCodeGen, models.AgentTypeTest:
 		if r.repoWriter != nil && r.prManager != nil {
@@ -428,30 +474,96 @@ func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) e
 	return nil
 }
 
+// commitWorkspaceChanges checks for changes in the workspace, commits them,
+// pushes the branch, and creates a PR. Returns true if changes were committed.
+func (r *Runner) commitWorkspaceChanges(ctx context.Context, task Task, workDir string) (bool, error) {
+	// Tier checks for branch and file operations.
+	if err := r.checkTier(task, autonomy.ActionCreateBranch); err != nil {
+		return false, err
+	}
+	if err := r.checkTier(task, autonomy.ActionEditFile); err != nil {
+		return false, err
+	}
+
+	msg := fmt.Sprintf("agent: resolve issue #%d", task.Issue.Number)
+	changed, err := CommitAndPush(workDir, msg)
+	if err != nil {
+		return false, fmt.Errorf("workspace commit: %w", err)
+	}
+	if !changed {
+		return false, nil
+	}
+
+	r.logger.Info("workspace changes committed and pushed",
+		zap.Int("issue", task.Issue.Number),
+		zap.String("session", task.SessionID),
+	)
+
+	// Tier check for creating PR.
+	if prErr := r.checkTier(task, autonomy.ActionCreatePR); prErr != nil {
+		return true, prErr
+	}
+
+	if r.prManager != nil {
+		branch := fmt.Sprintf("agent/%d", task.Issue.Number)
+		pr, prErr := r.prManager.CreatePullRequest(ctx, &forge.CreatePRRequest{
+			Title: fmt.Sprintf("agent: resolve issue #%d", task.Issue.Number),
+			Body:  fmt.Sprintf("Closes #%d\n\nAgent-generated implementation.", task.Issue.Number),
+			Head:  branch,
+			Base:  "main",
+		})
+		if prErr != nil {
+			return true, fmt.Errorf("create PR: %w", prErr)
+		}
+		comment := fmt.Sprintf("PR opened: #%d", pr.Number)
+		if _, commentErr := r.tracker.AddComment(ctx, task.Issue.Number, comment); commentErr != nil {
+			r.logger.Error("failed to post PR link",
+				zap.Int("issue", task.Issue.Number),
+				zap.Error(commentErr),
+			)
+		}
+	}
+
+	return true, nil
+}
+
 // filePathRe matches file paths in issue bodies that look like project source files.
 var filePathRe = regexp.MustCompile(`(?:^|\s)((?:internal|cmd|pkg|docs)/[\w/.\-]+\.\w+)`)
 
 // extractFileContext scans the issue body for file paths matching project
-// source directories and returns a placeholder map. In a future iteration
-// this will fetch actual file contents from the repo; for now it records
-// which paths were referenced so BuildSystemPrompt can include them.
-func (r *Runner) extractFileContext(body string) map[string]string {
+// source directories and returns a map of path to content. When a workspace
+// or repo directory is available, actual file contents are read (up to the
+// maxFileContextBytes cap). Otherwise, paths are recorded with empty content.
+func (r *Runner) extractFileContext(body, workDir string) map[string]string {
 	matches := filePathRe.FindAllStringSubmatch(body, -1)
 	if len(matches) == 0 {
 		return nil
 	}
 
+	// Deduplicate paths.
 	seen := make(map[string]bool, len(matches))
-	result := make(map[string]string, len(matches))
+	var paths []string
 	for _, m := range matches {
 		path := strings.TrimSpace(m[1])
-		if seen[path] {
-			continue
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
 		}
-		seen[path] = true
-		// TODO(#194): fetch actual file contents from the repo via forge or local checkout.
-		// For now, leave content empty — the prompt builder handles empty values gracefully.
-		result[path] = ""
+	}
+
+	// If we have a directory, read actual file contents.
+	dir := workDir
+	if dir == "" {
+		dir = r.repoDir
+	}
+	if dir != "" {
+		return ReadWorkspaceFiles(dir, paths, maxFileContextBytes)
+	}
+
+	// No directory available — return paths with empty content.
+	result := make(map[string]string, len(paths))
+	for _, p := range paths {
+		result[p] = ""
 	}
 	return result
 }
