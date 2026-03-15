@@ -722,6 +722,36 @@ func TestResize_RapidSequential(t *testing.T) {
 	}
 }
 
+func TestPoolSetRepoDir(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 1, mp)
+	defer pool.Shutdown()
+
+	if pool.repoDir != "" {
+		t.Errorf("repoDir should be empty initially, got %q", pool.repoDir)
+	}
+
+	pool.SetRepoDir("/tmp/test-repo")
+	if pool.repoDir != "/tmp/test-repo" {
+		t.Errorf("repoDir = %q, want /tmp/test-repo", pool.repoDir)
+	}
+}
+
+func TestPoolFetchLatest_EmptyRepoDir(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 1, mp)
+	defer pool.Shutdown()
+
+	// Should be a no-op, not panic.
+	pool.fetchLatest()
+}
+
 // --- mock types for pool tests ---
 
 type mockProvider struct {

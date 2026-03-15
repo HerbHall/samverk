@@ -278,6 +278,50 @@ func TestGitExec_Error(t *testing.T) {
 	}
 }
 
+func TestFetchLatest(t *testing.T) {
+	repoDir := setupTestRepoWithRemote(t)
+
+	// Add a new commit to the bare remote via a temporary clone so that
+	// the local repo is behind.
+	tmpClone := t.TempDir()
+	bareDir := strings.TrimSpace(mustGit(t, repoDir, "remote", "get-url", "origin"))
+	mustGit(t, tmpClone, "clone", bareDir, ".")
+	mustGit(t, tmpClone, "config", "user.email", "test@test.com")
+	mustGit(t, tmpClone, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(tmpClone, "new.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, tmpClone, "add", ".")
+	mustGit(t, tmpClone, "commit", "-m", "remote commit")
+	mustGit(t, tmpClone, "push", "origin", "HEAD")
+
+	// Record HEAD before fetch.
+	headBefore := strings.TrimSpace(mustGit(t, repoDir, "rev-parse", "HEAD"))
+
+	FetchLatest(repoDir, zap.NewNop())
+
+	// HEAD should have advanced.
+	headAfter := strings.TrimSpace(mustGit(t, repoDir, "rev-parse", "HEAD"))
+	if headBefore == headAfter {
+		t.Error("FetchLatest did not advance HEAD to match remote")
+	}
+
+	// The new file should exist after reset.
+	if _, err := os.Stat(filepath.Join(repoDir, "new.go")); err != nil {
+		t.Error("new.go not found after FetchLatest")
+	}
+}
+
+func TestFetchLatest_EmptyDir(t *testing.T) {
+	// Should be a no-op, not panic.
+	FetchLatest("", zap.NewNop())
+}
+
+func TestFetchLatest_NilLogger(t *testing.T) {
+	// Should not panic with nil logger.
+	FetchLatest("", nil)
+}
+
 func TestExtractFileContext_WithWorkDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "internal", "agent"), 0o755); err != nil {
