@@ -17,6 +17,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/api"
+	"github.com/herbhall/samverk/internal/hostmetrics"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/digest"
@@ -272,6 +273,16 @@ func serveCmd() *cobra.Command {
 			cfg.APIHandler = apiHandler
 			cfg.PressureProvider = apiHandler
 			logger.Info("REST API enabled")
+
+			// Start host metrics collector.
+			hm := hostmetrics.NewCollector("/")
+			apiHandler.SetHostMetrics(hm)
+			go func() {
+				if hmErr := hm.Run(ctx); hmErr != nil && hmErr != context.Canceled {
+					logger.Warn("host metrics collector stopped", zap.Error(hmErr))
+				}
+			}()
+			logger.Info("host metrics collector started")
 
 			// Wire worker lister from API into MCP digest so the get_digest tool
 			// shows registered PC agent workers in the RUNTIME METRICS section.
