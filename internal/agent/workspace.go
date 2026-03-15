@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -165,8 +166,11 @@ func ReadWorkspaceFiles(dir string, paths []string, maxBytes int) map[string]str
 // gitExec runs a git command in the given directory and returns combined output.
 // It strips GIT_DIR and GIT_WORK_TREE from the environment to prevent
 // interference when running inside git hooks or other git-managed contexts.
+// Uses a generous 60-second timeout per command.
 func gitExec(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...) //nolint:gosec // G204: args are internally constructed
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204: args are internally constructed
 	cmd.Dir = dir
 	cmd.Env = cleanGitEnv()
 	out, err := cmd.CombinedOutput()

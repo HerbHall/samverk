@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +17,9 @@ import (
 // tests run inside git hooks (e.g. pre-push).
 func mustGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...) //nolint:gosec // G204: test helper
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204: test helper
 	cmd.Dir = dir
 	cmd.Env = cleanGitEnv()
 	out, err := cmd.CombinedOutput()
@@ -49,7 +52,9 @@ func setupTestRepoWithRemote(t *testing.T) string {
 	t.Helper()
 
 	bareDir := filepath.Join(t.TempDir(), "remote.git")
-	cmd := exec.Command("git", "init", "--bare", bareDir) //nolint:gosec // G204: test setup
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "init", "--bare", bareDir) //nolint:gosec // G204: test setup
 	cmd.Env = cleanGitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init --bare: %v: %s", err, out)
