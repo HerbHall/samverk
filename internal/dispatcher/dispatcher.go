@@ -117,10 +117,11 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		d.recordFailure(ctx, result.IssueNumber, result.SessionID,
 			string(result.AgentType), result.ProviderKey, result.Error, 0)
 
-		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:queued"); err != nil {
-			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "queued"), zap.String("error", err.Error()))
-		}
-		d.logger.Warn("task failed re-queued", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID), zap.String("error", result.Error))
+		// Use correction engine to decide response instead of blind re-queue.
+		fc := classifyFailure(result.Error)
+		attempt := d.getPersistedFailureCount(ctx, result.IssueNumber)
+		decision := decideCorrection(fc, result.IssueNumber, attempt, 0)
+		d.applyCorrection(ctx, result, decision)
 	}
 }
 
