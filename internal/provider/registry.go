@@ -19,6 +19,7 @@ type ProviderConfig struct {
 	BaseURL        string `yaml:"base_url"`        // override base URL (for ollama or custom endpoints)
 	DefaultModel   string `yaml:"default_model"`   // default model for this provider
 	TimeoutSeconds int    `yaml:"timeout_seconds"` // per-provider timeout; 0 means use provider default
+	AccountURL     string `yaml:"account_url"`     // billing/credits page URL
 }
 
 // RegistryConfig is the top-level YAML structure for provider configuration.

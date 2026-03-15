@@ -256,9 +256,10 @@ func serveCmd() *cobra.Command {
 					pdtos := make([]api.ProviderDTO, 0, len(regCfg.Providers))
 					for name, pcfg := range regCfg.Providers {
 						pdtos = append(pdtos, api.ProviderDTO{
-							Name:  name,
-							Type:  pcfg.Type,
-							Model: pcfg.DefaultModel,
+							Name:       name,
+							Type:       pcfg.Type,
+							Model:      pcfg.DefaultModel,
+							AccountURL: pcfg.AccountURL,
 						})
 					}
 					apiHandler.SetCapacity(pdtos, regCfg.Routing)
