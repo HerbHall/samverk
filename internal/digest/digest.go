@@ -28,6 +28,7 @@ type DigestData struct {
 	QueuedCount      int
 	BlockedCount     int
 	Cost             CostSummary
+	HostWarnings     []string // host-level resource warnings (future integration)
 	LastCheckIn      time.Time
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/hostmetrics"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/store"
 )
@@ -35,6 +36,7 @@ type API struct {
 	pool           poolMetricsSource       // may be nil if pool not yet started
 	dispatcher     dispatcherMetricsSource // may be nil if dispatcher not started
 	system         systemMetricsSource     // may be nil; created via SetMetrics
+	hostMetrics    *hostmetrics.Collector   // may be nil if collector not started
 	capacity       *capacityDTO            // may be nil if no providers configured
 	workers        *workerRegistry         // in-memory registry of PC agent workers
 	scalingEnabled bool                    // true when autoscaler was configured
@@ -103,6 +105,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/workers", a.handleListWorkers)
 	mux.HandleFunc("POST /api/v1/workers/register", a.handleRegisterWorker)
 	mux.HandleFunc("POST /api/v1/workers/heartbeat", a.handleWorkerHeartbeat)
+	mux.HandleFunc("GET /api/v1/metrics/host", a.handleHostMetrics)
 	mux.HandleFunc("GET /api/v1/failures", a.handleFailureSummary)
 }
 
