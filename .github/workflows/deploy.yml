@@ -1,0 +1,127 @@
+name: Deploy
+
+# Deploys Samverk to CT 202 after merge to main.
+#
+# Prerequisites:
+#   - Self-hosted runner with LAN access to the deploy target (CT 202).
+#     GitHub-hosted runners cannot reach private LAN addresses.
+#     Set up a runner on the Proxmox host or another LAN machine:
+#       https://docs.github.com/en/actions/hosting-your-own-runners
+#   - Repository secrets:
+#       DEPLOY_SSH_KEY  - SSH private key for root@<deploy host>
+#       DEPLOY_HOST     - Target IP (e.g. 192.168.1.162)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "pkg/**"
+      - "web/**"
+      - "deploy/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to CT 202
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Build SPA
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Copy SPA dist to embed directory
+        run: cp -r web/dist/* internal/server/static/
+
+      - name: Cross-compile for Linux
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          PKG="github.com/herbhall/samverk/internal/version"
+          go build -ldflags "-s -w \
+            -X ${PKG}.Version=${VERSION} \
+            -X ${PKG}.GitCommit=${COMMIT} \
+            -X ${PKG}.BuildDate=${DATE}" \
+            -o bin/samverk-linux-amd64 ./cmd/samverk/
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Stop services
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            root@${{ secrets.DEPLOY_HOST }} \
+            'systemctl stop samverk-dispatch samverk-serve 2>/dev/null || true'
+
+      - name: Upload binary
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            bin/samverk-linux-amd64 \
+            root@${{ secrets.DEPLOY_HOST }}:/usr/local/bin/samverk
+
+      - name: Upload service files and run installer
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            deploy/samverk-serve.service \
+            deploy/samverk-dispatch.service \
+            deploy/install.sh \
+            root@${{ secrets.DEPLOY_HOST }}:/tmp/
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            root@${{ secrets.DEPLOY_HOST }} \
+            'sed -i "s/\r$//" /tmp/install.sh && bash /tmp/install.sh'
+
+      - name: Start services
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            root@${{ secrets.DEPLOY_HOST }} \
+            'systemctl start samverk-serve samverk-dispatch'
+
+      - name: Health check
+        run: |
+          echo "Waiting for server to start..."
+          sleep 5
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            root@${{ secrets.DEPLOY_HOST }} \
+            'curl -sf http://localhost:8080/healthz'
+          echo ""
+          echo "Health check passed."
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
