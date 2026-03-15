@@ -138,6 +138,13 @@ func (s *Server) registerRoutes() {
 		s.mux.HandleFunc("POST /mcp", s.handleNotImplemented)
 	}
 
+	// Handle non-POST methods on /mcp explicitly so the SPA catch-all
+	// doesn't swallow them and return HTML to MCP clients probing the endpoint.
+	s.mux.HandleFunc("GET /mcp", s.handleMCPMethodNotAllowed)
+	s.mux.HandleFunc("DELETE /mcp", s.handleMCPMethodNotAllowed)
+	s.mux.HandleFunc("PUT /mcp", s.handleMCPMethodNotAllowed)
+	s.mux.HandleFunc("PATCH /mcp", s.handleMCPMethodNotAllowed)
+
 	if s.cfg.APIHandler != nil {
 		apiMux := http.NewServeMux()
 		s.cfg.APIHandler.RegisterRoutes(apiMux)
@@ -178,6 +185,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // handleNotImplemented returns 501 {"error":"not implemented"}.
 func (s *Server) handleNotImplemented(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, errorResponse{Error: "not implemented"})
+}
+
+// handleMCPMethodNotAllowed returns 405 for non-POST requests to /mcp.
+// Without this, the SPA catch-all returns HTML to MCP clients probing
+// the endpoint with GET, which breaks mobile MCP connectivity.
+func (s *Server) handleMCPMethodNotAllowed(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Allow", "POST")
+	writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "MCP endpoint accepts POST only"})
 }
 
 // writeJSON encodes v as JSON and writes it with the given status code.
