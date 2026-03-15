@@ -136,6 +136,7 @@ export interface ProviderInfo {
   type: string
   model: string
   healthy: boolean
+  account_url?: string
 }
 
 export interface CapacityInfo {

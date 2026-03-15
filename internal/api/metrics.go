@@ -20,10 +20,11 @@ type metricsResponse struct {
 
 // ProviderDTO describes a single registered AI provider.
 type ProviderDTO struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Model   string `json:"model"`
-	Healthy bool   `json:"healthy"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Model      string `json:"model"`
+	Healthy    bool   `json:"healthy"`
+	AccountURL string `json:"account_url,omitempty"`
 }
 
 // capacityDTO describes the available AI providers and routing configuration.
