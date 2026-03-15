@@ -23,7 +23,7 @@ func (m *mockProvider) Name() string                   { return m.name }
 
 func TestNewRegistry_RegisterAndGet(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	p := &mockProvider{name: "test-claude", healthy: true}
 	reg.Register("claude", "claude", p, "claude-sonnet-4-20250514")
@@ -45,7 +45,7 @@ func TestNewRegistry_RegisterAndGet(t *testing.T) {
 
 func TestGet_FallbackToHealthy(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	unhealthy := &mockProvider{name: "claude", healthy: false}
 	healthy := &mockProvider{name: "openai", healthy: true}
@@ -70,7 +70,7 @@ func TestGet_FallbackToHealthy(t *testing.T) {
 
 func TestGet_NoHealthyProvider(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	reg.Register("claude", "claude", &mockProvider{name: "claude", healthy: false}, "model-a")
 	reg.Register("openai", "openai", &mockProvider{name: "openai", healthy: false}, "model-b")
@@ -86,7 +86,7 @@ func TestGet_NoHealthyProvider(t *testing.T) {
 
 func TestGet_FallbackToDefaultRouting(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	p := &mockProvider{name: "ollama", healthy: true}
 	reg.Register("ollama", "ollama", p, "qwen2.5-coder:14b")
@@ -108,7 +108,7 @@ func TestGet_FallbackToDefaultRouting(t *testing.T) {
 
 func TestGet_SpecificAgentTypeRouting(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	claude := &mockProvider{name: "claude", healthy: true}
 	ollama := &mockProvider{name: "ollama", healthy: true}
@@ -134,7 +134,7 @@ func TestGet_SpecificAgentTypeRouting(t *testing.T) {
 
 func TestGet_NoRoutingConfigured(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	reg.Register("claude", "claude", &mockProvider{name: "claude", healthy: true}, "model-a")
 	// No routing set at all.
@@ -147,7 +147,7 @@ func TestGet_NoRoutingConfigured(t *testing.T) {
 
 func TestGet_SkipsMissingProviderName(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	p := &mockProvider{name: "openai", healthy: true}
 	reg.Register("openai", "openai", p, "gpt-4o")
@@ -166,7 +166,7 @@ func TestGet_SkipsMissingProviderName(t *testing.T) {
 
 func TestList_ReturnsAllProviders(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	reg.Register("claude", "claude", &mockProvider{name: "claude", healthy: true}, "claude-sonnet-4-20250514")
 	reg.Register("openai", "openai", &mockProvider{name: "openai", healthy: false}, "gpt-4o")
@@ -334,7 +334,7 @@ routing:
 		return &mockProvider{name: name, healthy: true}, nil
 	}
 
-	reg, err := LoadRegistry(path, factory)
+	reg, err := LoadRegistry(path, factory, nil)
 	if err != nil {
 		t.Fatalf("LoadRegistry: %v", err)
 	}
@@ -374,7 +374,7 @@ routing:
 		return nil, errors.New("unsupported provider type")
 	}
 
-	_, err := LoadRegistry(path, factory)
+	_, err := LoadRegistry(path, factory, nil)
 	if err == nil {
 		t.Fatal("LoadRegistry: expected error from factory")
 	}
