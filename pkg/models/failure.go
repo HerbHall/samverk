@@ -35,6 +35,18 @@ func (fc FailureClass) IsRetryable() bool {
 	}
 }
 
+// IsProviderFailure returns true if the failure is an infrastructure problem
+// (provider unreachable, unhealthy, or hung) rather than an issue-specific problem.
+// Provider failures should NOT count toward per-issue escalation thresholds.
+func (fc FailureClass) IsProviderFailure() bool {
+	switch fc {
+	case FailureClassProviderDown, FailureClassOOMKill:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsPermanent returns true if retrying will never succeed.
 func (fc FailureClass) IsPermanent() bool {
 	switch fc {

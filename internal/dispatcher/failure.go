@@ -28,14 +28,28 @@ func (d *Dispatcher) recordFailure(ctx context.Context, issueNumber int, session
 		return
 	}
 
-	// Increment persisted counter and use it as the attempt number.
-	attempt, err := d.store.IncrementIssueFailureCount(ctx, issueNumber)
-	if err != nil {
-		d.logger.Error("increment failure count",
+	// Provider failures are infrastructure problems, not issue problems.
+	// Record the event for analysis but do NOT increment the per-issue
+	// failure counter, so provider outages can't escalate issues to needs-human.
+	var attempt int
+	if fc.IsProviderFailure() {
+		d.logger.Warn("provider failure -- not counting toward issue escalation",
 			zap.Int("issue", issueNumber),
-			zap.Error(err),
+			zap.String("class", string(fc)),
+			zap.String("error", errMsg),
 		)
-		attempt = 1 // fallback
+		attempt = d.getPersistedFailureCount(ctx, issueNumber)
+	} else {
+		// Increment persisted counter for task-specific failures.
+		var err error
+		attempt, err = d.store.IncrementIssueFailureCount(ctx, issueNumber)
+		if err != nil {
+			d.logger.Error("increment failure count",
+				zap.Int("issue", issueNumber),
+				zap.Error(err),
+			)
+			attempt = 1 // fallback
+		}
 	}
 
 	event := &models.FailureEvent{
@@ -50,7 +64,7 @@ func (d *Dispatcher) recordFailure(ctx context.Context, issueNumber int, session
 		Timestamp:    time.Now().UTC(),
 	}
 
-	if err = d.store.SaveFailureEvent(ctx, event); err != nil {
+	if err := d.store.SaveFailureEvent(ctx, event); err != nil {
 		d.logger.Error("save failure event",
 			zap.Int("issue", issueNumber),
 			zap.String("class", string(fc)),
