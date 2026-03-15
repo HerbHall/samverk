@@ -181,7 +181,9 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 		return fmt.Errorf("add claimed label to #%d: %w", issue.Number, err)
 	}
 	if err := d.tracker.Assign(ctx, issue.Number, string(agentType)); err != nil {
-		return fmt.Errorf("assign #%d to %s: %w", issue.Number, agentType, err)
+		// Best-effort: Gitea requires assignee to be a repo collaborator,
+		// GitHub silently ignores invalid assignees. Don't block routing.
+		d.logger.Warn("assign issue (non-fatal)", zap.Int("issue", issue.Number), zap.String("agent", string(agentType)), zap.Error(err))
 	}
 
 	providerKey, reason := selectProviderKey(issue, agentType)
