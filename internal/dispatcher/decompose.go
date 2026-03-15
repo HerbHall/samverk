@@ -157,7 +157,7 @@ func (d *Dispatcher) createChildIssues(
 
 // buildChildBody constructs the issue body with frontmatter linking to parent.
 func buildChildBody(parentNumber int, agentType models.AgentType, description string, dependsOn []int) string {
-	fm := fmt.Sprintf("---\nschema_version: \"%s\"\ntype: task\nagent_type: %s\nparent_issue: %d\n", models.SchemaVersion, agentType, parentNumber)
+	fm := fmt.Sprintf("---\nschema_version: %q\ntype: task\nagent_type: %s\nparent_issue: %d\n", models.SchemaVersion, agentType, parentNumber)
 	if len(dependsOn) > 0 {
 		fm += "depends_on:\n"
 		for _, dep := range dependsOn {
