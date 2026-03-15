@@ -152,7 +152,7 @@ func (s *LogStore) Query(ctx context.Context, f QueryFilter) ([]LogEntry, error)
 
 	query := "SELECT id, ts, level, msg, component, session_id, issue_number, fields FROM logs"
 	if len(clauses) > 0 {
-		query += " WHERE " + strings.Join(clauses, " AND ")
+		query += " WHERE " + strings.Join(clauses, " AND ") //nolint:gosec // G202: clauses are static strings, user input is parameterized via ?
 	}
 	query += " ORDER BY ts DESC, id DESC"
 
