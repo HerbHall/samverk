@@ -155,6 +155,36 @@ export interface MetricsResponse {
   capacity: CapacityInfo | null
 }
 
+export interface HistoryEntry {
+  timestamp: string
+  pool: PoolMetrics | null
+  dispatcher: DispatcherMetrics | null
+  system: SystemMetrics | null
+  pressure: PressureMetrics
+}
+
+export interface HistoryResponse {
+  duration: string
+  entries: HistoryEntry[]
+}
+
+export interface FailureEvent {
+  issue_number: number
+  issue_title: string
+  agent_type: string
+  provider: string
+  error_category: string
+  error_message: string
+  timestamp: string
+}
+
+export interface FailureSummary {
+  total_failures: number
+  by_category: Record<string, number>
+  by_provider: Record<string, number>
+  recent: FailureEvent[]
+}
+
 export const api = {
   listIssues: (params?: { state?: string; page?: number }) =>
     fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
@@ -173,4 +203,10 @@ export const api = {
 
   getMetrics: () =>
     fetchJSON<MetricsResponse>('/metrics'),
+
+  getMetricsHistory: (duration?: string) =>
+    fetchJSON<HistoryResponse>(`/metrics/history${duration ? '?duration=' + duration : ''}`),
+
+  getFailures: (hours?: number) =>
+    fetchJSON<FailureSummary>(`/failures${hours ? '?hours=' + hours : ''}`),
 }
