@@ -23,6 +23,7 @@ import (
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/dispatcher"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/logstore"
 	giteaadapter "github.com/herbhall/samverk/internal/forge/gitea"
 	"github.com/herbhall/samverk/internal/forge/github"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
@@ -123,6 +124,29 @@ func serveCmd() *cobra.Command {
 					costs = digest.NewStoreCostSource(s, budget)
 					defer func() { _ = s.Close() }()
 					logger.Info("database opened", zap.String("path", dbPath))
+				}
+			}
+
+			// Create log store for structured log persistence (separate DB).
+			var ls *logstore.LogStore
+			if dbPath != "" {
+				logsDBPath := strings.TrimSuffix(dbPath, ".db") + "-logs.db"
+				var lsErr error
+				ls, lsErr = logstore.New(logsDBPath)
+				if lsErr != nil {
+					logger.Warn("could not open log store", zap.String("path", logsDBPath), zap.Error(lsErr))
+				} else {
+					defer func() { _ = ls.Close() }()
+					// Upgrade logger to tee to SQLite.
+					teeLogger, teeErr := logging.NewWithTee(ls)
+					if teeErr != nil {
+						logger.Warn("could not create tee logger", zap.Error(teeErr))
+					} else {
+						logger = teeLogger
+					}
+					// Start log pruner (30 day retention).
+					go logstore.StartPruner(ctx, ls, 30*24*time.Hour, logger)
+					logger.Info("log store enabled", zap.String("path", logsDBPath))
 				}
 			}
 
@@ -270,6 +294,9 @@ func serveCmd() *cobra.Command {
 					logger.Warn("could not load providers config for dashboard", zap.Error(pcErr))
 				}
 			}
+			if ls != nil {
+				apiHandler.SetLogStore(ls)
+			}
 			cfg.APIHandler = apiHandler
 			cfg.PressureProvider = apiHandler
 			logger.Info("REST API enabled")
@@ -392,6 +419,25 @@ func dispatchCmd() *cobra.Command {
 				} else {
 					st = s
 					defer func() { _ = s.Close() }()
+				}
+			}
+
+			// Create log store for structured log persistence (separate DB).
+			if dbPath != "" {
+				logsDBPath := strings.TrimSuffix(dbPath, ".db") + "-logs.db"
+				dispLS, lsErr := logstore.New(logsDBPath)
+				if lsErr != nil {
+					logger.Warn("could not open log store", zap.String("path", logsDBPath), zap.Error(lsErr))
+				} else {
+					defer func() { _ = dispLS.Close() }()
+					teeLogger, teeErr := logging.NewWithTee(dispLS)
+					if teeErr != nil {
+						logger.Warn("could not create tee logger", zap.Error(teeErr))
+					} else {
+						logger = teeLogger
+					}
+					go logstore.StartPruner(ctx, dispLS, 30*24*time.Hour, logger)
+					logger.Info("log store enabled", zap.String("path", logsDBPath))
 				}
 			}
 
