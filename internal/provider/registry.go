@@ -20,6 +20,8 @@ type ProviderConfig struct {
 	DefaultModel   string `yaml:"default_model"`   // default model for this provider
 	TimeoutSeconds int    `yaml:"timeout_seconds"` // per-provider timeout; 0 means use provider default
 	AccountURL     string `yaml:"account_url"`     // billing/credits page URL
+	AllowedTools   string `yaml:"allowed_tools"`   // claude-cli: comma-separated tool list (e.g. "Bash,Read,Edit,Write,Glob,Grep")
+	MaxTurns       int    `yaml:"max_turns"`       // claude-cli: max agentic turns per session; 0 means no limit
 }
 
 // RegistryConfig is the top-level YAML structure for provider configuration.

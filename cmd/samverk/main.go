@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -984,12 +985,32 @@ func providerFactory(name string, cfg provider.ProviderConfig) (provider.Provide
 		}
 		return ollama.New(baseURL), nil
 	case "claude-cli":
-		model := cfg.DefaultModel
-		if cfg.TimeoutSeconds > 0 {
-			return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second), nil
+		if cfg.MaxTurns < 0 {
+			return nil, fmt.Errorf("provider %q: max_turns must be non-negative, got %d", name, cfg.MaxTurns)
 		}
-		return claudecli.New(model), nil
+		model := cfg.DefaultModel
+		opts := claudecli.Options{
+			AllowedTools: normalizeCSV(cfg.AllowedTools),
+			MaxTurns:     cfg.MaxTurns,
+		}
+		if cfg.TimeoutSeconds > 0 {
+			return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second, opts), nil
+		}
+		return claudecli.New(model, opts), nil
 	default:
 		return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 	}
+}
+
+// normalizeCSV trims whitespace around comma-separated values to prevent
+// incidental YAML whitespace from causing invalid tool names.
+func normalizeCSV(s string) string {
+	if s == "" {
+		return ""
+	}
+	parts := strings.Split(s, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return strings.Join(parts, ",")
 }
