@@ -1,1 +1,3 @@
 # Auto-generated files exempt from markdownlint
+.claude/
+**/node_modules
