@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import type {
   PoolMetrics, DispatcherMetrics, SystemMetrics, PressureMetrics,
   ScalingEvent, ScalingConfig, CapacityInfo, Issue, Session, HistoryEntry,
+  HostMetricsDTO,
 } from '../lib/api'
 
 function formatBytes(bytes: number): string {
@@ -29,6 +30,114 @@ function formatRelative(dateStr: string): string {
   if (h < 24) return `${h}h ago`
   if (d < 30) return `${d}d ago`
   return new Date(dateStr).toLocaleDateString()
+}
+
+function formatBytesHost(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`
+}
+
+function estimateDaysToThreshold(history: HostMetricsDTO[], currentPct: number, thresholdPct: number): string {
+  if (history.length < 2 || currentPct >= thresholdPct) return ''
+  const first = history[0]
+  const last = history[history.length - 1]
+  const firstTime = new Date(first.collected_at).getTime()
+  const lastTime = new Date(last.collected_at).getTime()
+  const daysDiff = (lastTime - firstTime) / (1000 * 60 * 60 * 24)
+  if (daysDiff < 0.01) return ''
+  const pctDiff = last.disk_percent - first.disk_percent
+  const dailyRate = pctDiff / daysDiff
+  if (dailyRate <= 0.001) return 'stable'
+  const daysToThreshold = (thresholdPct - currentPct) / dailyRate
+  return `~${Math.round(daysToThreshold)} days to ${thresholdPct}%`
+}
+
+function GaugeCard({ label, percent, usedLabel, totalLabel, warnPct, critPct }: {
+  label: string
+  percent: number
+  usedLabel: string
+  totalLabel: string
+  warnPct: number
+  critPct: number
+}) {
+  const color = percent >= critPct ? 'text-red-600' : percent >= warnPct ? 'text-amber-600' : 'text-green-600'
+  const bgColor = percent >= critPct ? 'bg-red-100' : percent >= warnPct ? 'bg-amber-100' : 'bg-green-100'
+  const barColor = percent >= critPct ? 'bg-red-500' : percent >= warnPct ? 'bg-amber-500' : 'bg-green-500'
+
+  return (
+    <div className={`rounded-lg border p-4 ${bgColor}`}>
+      <div className="text-xs font-medium text-gray-500 uppercase">{label}</div>
+      <div className={`text-2xl font-bold ${color}`}>{percent.toFixed(1)}%</div>
+      <div className="mt-2 h-2 rounded-full bg-gray-200">
+        <div className={`h-2 rounded-full ${barColor}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+      </div>
+      <div className="mt-1 text-xs text-gray-500">{usedLabel} / {totalLabel}</div>
+    </div>
+  )
+}
+
+function HostSection({ current, history }: { current: HostMetricsDTO; history: HostMetricsDTO[] }) {
+  const cpuPercent = current.num_cpu > 0 ? (current.load_avg_1 / current.num_cpu) * 100 : 0
+  const diskTrend = estimateDaysToThreshold(history, current.disk_percent, 70)
+
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <h3 className="mb-3 text-sm font-semibold text-gray-900">Host Resources</h3>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <GaugeCard
+          label="Disk"
+          percent={current.disk_percent}
+          usedLabel={formatBytesHost(current.disk_used_bytes)}
+          totalLabel={formatBytesHost(current.disk_total_bytes)}
+          warnPct={70}
+          critPct={85}
+        />
+        <GaugeCard
+          label="RAM"
+          percent={current.ram_percent}
+          usedLabel={formatBytesHost(current.ram_used_bytes)}
+          totalLabel={formatBytesHost(current.ram_total_bytes)}
+          warnPct={80}
+          critPct={90}
+        />
+        <GaugeCard
+          label="Swap"
+          percent={current.swap_percent}
+          usedLabel={formatBytesHost(current.swap_used_bytes)}
+          totalLabel={formatBytesHost(current.swap_total_bytes)}
+          warnPct={25}
+          critPct={50}
+        />
+        <GaugeCard
+          label="CPU Load"
+          percent={cpuPercent}
+          usedLabel={current.load_avg_1.toFixed(2)}
+          totalLabel={`${current.num_cpu} cores`}
+          warnPct={70}
+          critPct={90}
+        />
+      </div>
+      {current.alerts != null && current.alerts.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {current.alerts.map((a, i) => (
+            <div
+              key={i}
+              className={`rounded px-3 py-1 text-xs ${a.level === 'critical' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}
+            >
+              {a.message}
+            </div>
+          ))}
+        </div>
+      )}
+      {history.length > 1 && (
+        <div className="mt-2 text-xs text-gray-500">
+          Disk trend: {diskTrend || 'stable'}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function MetricRow({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
@@ -446,6 +555,12 @@ export function Metrics() {
     refetchInterval: 30_000,
   })
 
+  const hostMetrics = useQuery({
+    queryKey: ['host-metrics'],
+    queryFn: api.getHostMetrics,
+    refetchInterval: 30_000,
+  })
+
   // Compute top-line stats
   const openCount = issues.data?.filter((i) => i.state === 'open').length ?? 0
   const closedCount = issues.data?.filter((i) => i.state === 'closed').length ?? 0
@@ -511,6 +626,14 @@ export function Metrics() {
             <DispatcherSection dispatcher={metrics.data.dispatcher} />
             <SystemSection system={metrics.data.system} />
           </div>
+
+          {/* Host Resources */}
+          {hostMetrics.data != null && (
+            <HostSection
+              current={hostMetrics.data.current}
+              history={hostMetrics.data.history}
+            />
+          )}
 
           {/* Scaling + Capacity */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
