@@ -85,6 +85,55 @@ Frontend:
 4. JSX unknown type: use ` + "`!= null`" + ` check, not bare ` + "`&&`" + `
 5. Verify all imports are used (ESLint catches what tsc misses)`
 
+// gitSafetyRules is the git workflow block for CLI agents operating in worktrees.
+const gitSafetyRules = `## Git Workflow
+
+You are running in an isolated git worktree on a dedicated branch.
+
+- Do NOT commit directly to main. Your worktree is already on an agent branch.
+- Make your changes, then let the runner handle commit and push.
+- If you need to run git commands, stay on the current branch.
+- Never force-push, skip hooks, or use --no-verify.
+- Never commit secrets, credentials, or API keys.`
+
+// knownGotchas is a curated subset of high-frequency gotchas for agents.
+const knownGotchas = `## Known Gotchas
+
+- gosec G101: Constants near credential code get flagged as hardcoded credentials. Add nolint annotation.
+- gocritic rangeValCopy: Iterating large structs by value copies them. Use index-based access.
+- Build-tag files (!windows): Lint errors in platform-specific files only appear in Linux CI.
+- go:embed cache: Go build cache does not detect changes to embedded files. Use make build.
+- Swagger drift: Any change to Go types in swagger-annotated handlers requires regenerating the spec.
+- context.WithTimeout: Cancels ALL downstream operations including cleanup. Use separate cleanup context.`
+
+// DetectProjectType infers the project type from issue labels. Labels are
+// checked for frontend/fullstack indicators. Falls back to Go (the primary
+// language of Samverk).
+func DetectProjectType(labels []string) string {
+	hasFrontend := false
+	hasBackend := false
+
+	for _, label := range labels {
+		lower := strings.ToLower(label)
+		switch {
+		case strings.Contains(lower, "frontend") || strings.Contains(lower, "web") || strings.Contains(lower, "ui"):
+			hasFrontend = true
+		case strings.Contains(lower, "backend") || strings.Contains(lower, "api") || strings.Contains(lower, "server"):
+			hasBackend = true
+		case strings.Contains(lower, "fullstack") || strings.Contains(lower, "full-stack"):
+			return ProjectTypeFullstack
+		}
+	}
+
+	if hasFrontend && hasBackend {
+		return ProjectTypeFullstack
+	}
+	if hasFrontend {
+		return ProjectTypeFrontend
+	}
+	return ProjectTypeGo
+}
+
 // mcpConfig is the JSON config for CLI agent MCP servers.
 var mcpConfig = map[string]interface{}{
 	"mcpServers": map[string]interface{}{
@@ -100,13 +149,15 @@ var mcpConfig = map[string]interface{}{
 }
 
 // GenerateAgentCLAUDEMD builds a per-worktree CLAUDE.md for agents. It includes
-// core principles, a CI checklist selected by project type, and the issue body
-// as task context.
+// core principles, git safety rules, a CI checklist selected by project type,
+// known gotchas, and the issue body as task context.
 func GenerateAgentCLAUDEMD(projectType, issueBody string) string {
 	var b strings.Builder
 
 	b.WriteString("# Agent Task\n\n")
 	b.WriteString(corePrinciples)
+	b.WriteString("\n\n")
+	b.WriteString(gitSafetyRules)
 	b.WriteString("\n\n")
 
 	switch projectType {
@@ -117,6 +168,9 @@ func GenerateAgentCLAUDEMD(projectType, issueBody string) string {
 	default: // "go" and any unrecognized type default to Go checklist
 		b.WriteString(goCIChecklist)
 	}
+
+	b.WriteString("\n\n")
+	b.WriteString(knownGotchas)
 
 	if issueBody != "" {
 		b.WriteString("\n\n## Task Context\n\n")

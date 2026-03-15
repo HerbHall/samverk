@@ -175,7 +175,8 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 						zap.Error(mcpErr),
 					)
 				}
-				claudeMD := GenerateAgentCLAUDEMD(ProjectTypeGo, task.Issue.Body)
+				projectType := DetectProjectType(task.Issue.Labels)
+				claudeMD := GenerateAgentCLAUDEMD(projectType, task.Issue.Body)
 				if writeErr := os.WriteFile(filepath.Join(workDir, "CLAUDE.md"), []byte(claudeMD), 0o600); writeErr != nil {
 					r.logger.Warn("failed to write CLAUDE.md to workspace",
 						zap.Int("issue", task.Issue.Number),
