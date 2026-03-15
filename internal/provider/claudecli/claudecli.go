@@ -103,7 +103,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		}
 	}
 
-	args := []string{"--print", "--dangerously-skip-permissions"}
+	args := []string{"--print", "--dangerously-skip-permissions", "--no-session-persistence"}
 	if c.allowedTools != "" {
 		args = append(args, "--allowedTools", c.allowedTools)
 	}
