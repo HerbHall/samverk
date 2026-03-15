@@ -17,6 +17,31 @@ const (
 	staleWorktreeAge = 2 * time.Hour
 )
 
+// FetchLatest pulls the latest code from origin into the shared clone and
+// resets local main to match. This ensures new worktrees branch from current
+// code. Errors are logged as warnings and do not block task execution.
+func FetchLatest(repoDir string, logger *zap.Logger) {
+	if repoDir == "" {
+		return
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	if _, err := gitExec(repoDir, "fetch", "origin", "--prune"); err != nil {
+		logger.Warn("fetch origin failed", zap.Error(err))
+		return
+	}
+	// Reset local main to match remote (worktrees branch from HEAD).
+	if _, err := gitExec(repoDir, "reset", "--hard", "origin/main"); err != nil {
+		logger.Warn("reset to origin/main failed", zap.Error(err))
+		return
+	}
+	// Log HEAD SHA so operators can verify freshness from logs.
+	if out, err := gitExec(repoDir, "rev-parse", "--short", "HEAD"); err == nil {
+		logger.Info("repo updated", zap.String("head", strings.TrimSpace(out)))
+	}
+}
+
 // CreateWorkspace creates an isolated git worktree for agent task execution.
 // The worktree is branched from HEAD at agent/<issueNumber>.
 // Returns the workspace path and a cleanup function that removes the worktree

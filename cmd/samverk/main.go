@@ -305,7 +305,7 @@ func serveCmd() *cobra.Command {
 }
 
 func dispatchCmd() *cobra.Command {
-	var owner, repo, dbPath, providersConfig, scalingConfig string
+	var owner, repo, dbPath, providersConfig, scalingConfig, repoDir string
 	var forgeName, giteaURL string
 	var pollSeconds, workers, scalingMin, scalingMax int
 	var budget float64
@@ -396,6 +396,15 @@ func dispatchCmd() *cobra.Command {
 					defer pool.Shutdown()
 					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(registry.List(ctx))))
 				}
+			}
+
+			// Wire repo directory for worktree-based workspace isolation.
+			if pool != nil && repoDir == "" {
+				repoDir = os.Getenv("SAMVERK_REPO_DIR")
+			}
+			if pool != nil && repoDir != "" {
+				pool.SetRepoDir(repoDir)
+				logger.Info("workspace isolation enabled", zap.String("repo_dir", repoDir))
 			}
 
 			// Wire Synapset memory client if configured (optional, best-effort).
@@ -529,6 +538,7 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&scalingConfig, "scaling-config", "", "Path to scaling policy YAML config (optional)")
 	cmd.Flags().IntVar(&scalingMin, "scaling-min", 0, "Override min workers from scaling config (0 = use config value)")
 	cmd.Flags().IntVar(&scalingMax, "scaling-max", 0, "Override max workers from scaling config (0 = use config value)")
+	cmd.Flags().StringVar(&repoDir, "repo-dir", "", "Local git clone path for agent worktree isolation (env: SAMVERK_REPO_DIR)")
 
 	return cmd
 }
