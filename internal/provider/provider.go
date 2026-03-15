@@ -21,9 +21,10 @@ type Message struct {
 
 // ChatRequest contains the parameters for a chat completion.
 type ChatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream"` // always false for now
+	Model      string    `json:"model"`
+	Messages   []Message `json:"messages"`
+	Stream     bool      `json:"stream"`      // always false for now
+	WorkingDir string    `json:"-"`            // workspace directory for CLI providers; not serialized
 }
 
 // ChatResponse contains the result of a chat completion.

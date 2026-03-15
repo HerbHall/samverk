@@ -203,7 +203,7 @@ func TestTierEnforcement(t *testing.T) {
 				SessionID: "sess-tier-test",
 			}
 
-			err := runner.postProcess(context.Background(), task, tt.response)
+			err := runner.postProcess(context.Background(), task, tt.response, "")
 
 			if tt.wantErr && err == nil {
 				t.Fatal("expected error, got nil")
