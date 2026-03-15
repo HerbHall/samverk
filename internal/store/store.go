@@ -75,28 +75,13 @@ type SQLiteStore struct {
 // New opens (or creates) an SQLite database at dbPath, runs migrations,
 // and enables WAL mode and foreign keys.
 func New(dbPath string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	// Set pragmas via DSN so they apply to ALL pooled connections,
+	// not just the first one. PRAGMA statements only affect the connection
+	// they execute on, which causes SQLITE_BUSY on other pool connections.
+	dsn := dbPath + "?_pragma=busy_timeout%3d5000&_pragma=journal_mode%3dWAL&_pragma=foreign_keys%3dON"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
-	}
-
-	// Enable WAL mode for concurrent read performance.
-	if _, err = db.ExecContext(context.Background(), "PRAGMA journal_mode=WAL"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("enable WAL: %w", err)
-	}
-
-	// Enable foreign key enforcement.
-	if _, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys=ON"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
-	}
-
-	// Set busy timeout so concurrent readers/writers (serve + dispatch) retry
-	// instead of returning SQLITE_BUSY immediately.
-	if _, err = db.ExecContext(context.Background(), "PRAGMA busy_timeout=5000"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
 
 	s := &SQLiteStore{db: db}
