@@ -258,7 +258,7 @@ func (c *Client) doRequestWithSession(ctx context.Context, rpcReq jsonRPCRequest
 		httpReq.Header.Set("Mcp-Session-Id", session)
 	}
 
-	httpResp, err := c.httpClient.Do(httpReq)
+	httpResp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: URL is from trusted baseURL config
 	if err != nil {
 		return nil, "", fmt.Errorf("http request: %w", err)
 	}
