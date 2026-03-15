@@ -57,9 +57,10 @@ func classifyFailure(errMsg string) models.FailureClass {
 		return models.FailureClassTimeout
 	}
 
-	// Post-process: PR creation or comment posting errors.
+	// Post-process: PR creation, comment posting, or validation failures.
 	if strings.Contains(lower, "post-process error") || strings.Contains(lower, "create pr:") ||
-		strings.Contains(lower, "create branch") || strings.Contains(lower, "add comment:") {
+		strings.Contains(lower, "create branch") || strings.Contains(lower, "add comment:") ||
+		strings.Contains(lower, "validation failed") || strings.Contains(lower, "validation retry failed") {
 		return models.FailureClassPostProcess
 	}
 
