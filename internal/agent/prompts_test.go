@@ -150,7 +150,7 @@ func TestExtractFileContext(t *testing.T) {
 cmd/samverk/main.go. Also check pkg/models/issue.go and docs/architecture.md.
 Ignore random/path.go and node_modules/foo.js.`
 
-	got := r.extractFileContext(body)
+	got := r.extractFileContext(body, "")
 
 	want := []string{
 		"internal/agent/runner.go",
