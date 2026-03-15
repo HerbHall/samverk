@@ -43,21 +43,12 @@ type LogStore struct {
 // New opens (or creates) a SQLite database at dbPath for log storage,
 // enables WAL mode and busy_timeout, and runs migrations.
 func New(dbPath string) (*LogStore, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	// Set busy_timeout via DSN so it applies to ALL pooled connections,
+	// not just the first one (PRAGMA only affects the connection it runs on).
+	dsn := dbPath + "?_pragma=busy_timeout%3d5000&_pragma=journal_mode%3dWAL"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open log database: %w", err)
-	}
-
-	// Enable WAL mode for concurrent read performance.
-	if _, err = db.ExecContext(context.Background(), "PRAGMA journal_mode=WAL"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("enable WAL: %w", err)
-	}
-
-	// Set busy timeout to avoid SQLITE_BUSY during concurrent writes.
-	if _, err = db.ExecContext(context.Background(), "PRAGMA busy_timeout=5000"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("set busy_timeout: %w", err)
 	}
 
 	s := &LogStore{db: db}
