@@ -131,7 +131,7 @@ func GenerateAgentCLAUDEMD(projectType, issueBody string) string {
 // directory, configuring Samverk and Synapset MCP endpoints for CLI agents.
 func WriteMCPConfig(worktreeDir string) error {
 	dir := filepath.Join(worktreeDir, ".claude")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create .claude dir: %w", err)
 	}
 
@@ -141,7 +141,7 @@ func WriteMCPConfig(worktreeDir string) error {
 	}
 
 	path := filepath.Join(dir, ".mcp.json")
-	if err = os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	if err = os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write mcp config: %w", err)
 	}
 
