@@ -9,6 +9,7 @@ import (
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/hostmetrics"
+	"github.com/herbhall/samverk/internal/logstore"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/store"
 )
@@ -42,7 +43,8 @@ type API struct {
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
 	scalingMax     int
-	history        []historyEntry // ring buffer of recent snapshots; guarded by historyMu
+	logStore       *logstore.LogStore // may be nil; for log query API
+	history        []historyEntry    // ring buffer of recent snapshots; guarded by historyMu
 	logger         *zap.Logger
 }
 
@@ -78,6 +80,11 @@ func (a *API) SetCapacity(providers []ProviderDTO, routing map[string][]string) 
 	}
 }
 
+// SetLogStore attaches the log store for the log query API endpoint.
+func (a *API) SetLogStore(ls *logstore.LogStore) {
+	a.logStore = ls
+}
+
 // SetScalingConfig records the active scaling policy limits so the metrics endpoint
 // can expose them alongside events read from the store. Call before serving.
 // If not called, scaling_events and scaling_config in /api/v1/metrics will be null.
@@ -107,6 +114,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/workers/heartbeat", a.handleWorkerHeartbeat)
 	mux.HandleFunc("GET /api/v1/metrics/host", a.handleHostMetrics)
 	mux.HandleFunc("GET /api/v1/failures", a.handleFailureSummary)
+	mux.HandleFunc("GET /api/v1/logs", a.handleListLogs)
 }
 
 // errorResponse is the JSON body returned for error responses.
