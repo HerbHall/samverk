@@ -1,6 +1,10 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { PoolMetrics, DispatcherMetrics, SystemMetrics, PressureMetrics, ScalingEvent, ScalingConfig, CapacityInfo } from '../lib/api'
+import type {
+  PoolMetrics, DispatcherMetrics, SystemMetrics, PressureMetrics,
+  ScalingEvent, ScalingConfig, CapacityInfo, Issue, Session, HistoryEntry,
+} from '../lib/api'
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`
@@ -13,6 +17,18 @@ function formatMs(ms: number): string {
   if (ms === 0) return '—'
   if (ms >= 1_000) return `${(ms / 1_000).toFixed(2)}s`
   return `${ms.toFixed(1)}ms`
+}
+
+function formatRelative(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime()
+  const m = Math.floor(diffMs / 60_000)
+  const h = Math.floor(diffMs / 3_600_000)
+  const d = Math.floor(diffMs / 86_400_000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  if (h < 24) return `${h}h ago`
+  if (d < 30) return `${d}d ago`
+  return new Date(dateStr).toLocaleDateString()
 }
 
 function MetricRow({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
@@ -55,6 +71,161 @@ function NullSection({ title }: { title: string }) {
   )
 }
 
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+  return (
+    <div className="rounded-lg border bg-white px-4 py-3">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${color ?? 'text-gray-900'}`}>{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
+    </div>
+  )
+}
+
+// Sparkline renders an inline SVG sparkline chart from numeric values.
+function Sparkline({ data, color = '#3b82f6', height = 32 }: { data: number[]; color?: string; height?: number }) {
+  if (data.length < 2) return null
+  const width = 120
+  const max = Math.max(...data)
+  const min = Math.min(...data)
+  const range = max - min || 1
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * width
+      const y = height - ((v - min) / range) * (height - 4) - 2
+      return `${x},${y}`
+    })
+    .join(' ')
+
+  return (
+    <svg width={width} height={height} className="inline-block">
+      <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} />
+    </svg>
+  )
+}
+
+// --- Issue Summary ---
+
+function IssueSummary({ issues }: { issues: Issue[] }) {
+  const openCount = issues.filter((i) => i.state === 'open').length
+  const closedCount = issues.filter((i) => i.state === 'closed').length
+
+  const queued = issues.filter((i) => i.state === 'open' && i.labels.includes('status:queued')).length
+  const inProgress = issues.filter((i) => i.state === 'open' && i.labels.includes('status:in-progress')).length
+  const blocked = issues.filter((i) => i.state === 'open' && i.labels.includes('status:blocked')).length
+  const needsHuman = issues.filter((i) =>
+    i.state === 'open' && i.labels.some((l) => ['agent:human', 'status:needs-human', 'status:human-pending'].includes(l))
+  ).length
+
+  // Closed in last 24h / 7d
+  const now = Date.now()
+  const closed24h = issues.filter((i) => i.closed_at && now - new Date(i.closed_at).getTime() < 86_400_000).length
+  const closed7d = issues.filter((i) => i.closed_at && now - new Date(i.closed_at).getTime() < 7 * 86_400_000).length
+
+  return (
+    <SectionCard title="Issues">
+      <div className="grid grid-cols-2 gap-3 py-2">
+        <div>
+          <MetricRow label="Total Open" value={openCount.toString()} />
+          <MetricRow label="Total Closed" value={closedCount.toString()} />
+          <MetricRow label="Closed (24h)" value={closed24h.toString()} />
+          <MetricRow label="Closed (7d)" value={closed7d.toString()} />
+        </div>
+        <div>
+          <MetricRow label="Queued" value={queued.toString()} />
+          <MetricRow label="In Progress" value={inProgress.toString()} />
+          <MetricRow label="Blocked" value={blocked.toString()} />
+          <MetricRow label="Needs Human" value={needsHuman.toString()} />
+        </div>
+      </div>
+    </SectionCard>
+  )
+}
+
+// --- Activity Feed ---
+
+function ActivityFeed({ sessions }: { sessions: Session[] }) {
+  const recent = useMemo(() => {
+    return [...sessions]
+      .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+      .slice(0, 15)
+  }, [sessions])
+
+  const statusColor: Record<string, string> = {
+    completed: 'bg-green-100 text-green-700',
+    running: 'bg-blue-100 text-blue-700',
+    failed: 'bg-red-100 text-red-700',
+    timeout: 'bg-orange-100 text-orange-700',
+  }
+
+  return (
+    <SectionCard title="Recent Activity">
+      {recent.length === 0 ? (
+        <div className="py-6 text-center text-sm text-gray-400">No sessions recorded</div>
+      ) : (
+        <div className="max-h-80 overflow-auto">
+          {recent.map((s) => (
+            <div key={s.id} className="flex items-center gap-3 border-b py-2 last:border-b-0">
+              <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[s.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                {s.status}
+              </span>
+              <span className="text-sm text-gray-900 font-medium">#{s.issue_number}</span>
+              <span className="text-xs text-gray-500">{s.agent_type}</span>
+              <span className="text-xs text-gray-400 font-mono">{s.provider}</span>
+              <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">{formatRelative(s.started_at)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+// --- Trending Sparklines ---
+
+function TrendingSection({ entries }: { entries: HistoryEntry[] }) {
+  if (entries.length < 2) {
+    return (
+      <SectionCard title="Trending (30m)">
+        <div className="py-6 text-center text-sm text-gray-400">Collecting data...</div>
+      </SectionCard>
+    )
+  }
+
+  const workers = entries.map((e) => e.pool?.active_workers ?? 0)
+  const queue = entries.map((e) => e.pool?.queue_depth ?? 0)
+  const goroutines = entries.map((e) => e.system?.goroutines ?? 0)
+  const heap = entries.map((e) => (e.system?.heap_alloc_bytes ?? 0) / 1_048_576)
+  const latency = entries.map((e) => e.dispatcher?.avg_poll_latency_ms ?? 0)
+  const events = entries.map((e) => e.dispatcher?.total_events_processed ?? 0)
+  // Compute deltas for events (cumulative counter)
+  const eventDeltas = events.slice(1).map((v, i) => Math.max(0, v - events[i]))
+
+  const rows: { label: string; data: number[]; color: string; current: string }[] = [
+    { label: 'Active Workers', data: workers, color: '#3b82f6', current: workers[workers.length - 1].toString() },
+    { label: 'Queue Depth', data: queue, color: '#f59e0b', current: queue[queue.length - 1].toString() },
+    { label: 'Goroutines', data: goroutines, color: '#8b5cf6', current: goroutines[goroutines.length - 1].toString() },
+    { label: 'Heap (MB)', data: heap, color: '#10b981', current: heap[heap.length - 1].toFixed(1) },
+    { label: 'Poll Latency (ms)', data: latency, color: '#ef4444', current: latency[latency.length - 1].toFixed(1) },
+    { label: 'Events/interval', data: eventDeltas, color: '#06b6d4', current: eventDeltas.length > 0 ? eventDeltas[eventDeltas.length - 1].toString() : '0' },
+  ]
+
+  return (
+    <SectionCard title="Trending (30m)">
+      <div className="space-y-1 py-1">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center justify-between py-1.5 border-b last:border-b-0">
+            <span className="text-sm text-gray-600 w-36">{r.label}</span>
+            <Sparkline data={r.data} color={r.color} />
+            <span className="text-sm font-medium text-gray-900 font-mono w-16 text-right">{r.current}</span>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  )
+}
+
+// --- Existing Section Components (unchanged) ---
+
 const pressureColors: Record<string, string> = {
   low: 'bg-green-50 border-green-200 text-green-800',
   moderate: 'bg-yellow-50 border-yellow-200 text-yellow-800',
@@ -90,15 +261,15 @@ function PoolSection({ pool }: { pool: PoolMetrics | null }) {
 
   return (
     <SectionCard title="Agent Pool">
-      <MetricRow label="Total Workers" value={pool.total_workers.toString()} tooltip="Current number of worker goroutines in the agent pool. Autoscaler adjusts this between min and max based on queue pressure." />
-      <MetricRow label="Active Workers" value={pool.active_workers.toString()} tooltip="Workers currently executing a task. Each active worker is running an AI provider session." />
-      <MetricRow label="Idle Workers" value={pool.idle_workers.toString()} tooltip="Workers waiting for tasks. Idle workers are ready to pick up work immediately." />
-      <MetricRow label="Utilization" value={`${utilization}%`} tooltip="Percentage of workers currently active (active / total). High utilization with queued tasks triggers scale-up." />
-      <MetricRow label="Queue Depth" value={pool.queue_depth.toString()} tooltip="Tasks waiting in the queue for an available worker. Non-zero means all workers are busy." />
-      <MetricRow label="Tasks Completed" value={pool.tasks_completed.toLocaleString()} tooltip="Total tasks successfully completed since the dispatcher started." />
-      <MetricRow label="Tasks Failed" value={pool.tasks_failed.toLocaleString()} tooltip="Total tasks that failed (provider error, timeout, budget exceeded). Failed tasks may be requeued." />
-      <MetricRow label="Avg Task Duration" value={formatMs(pool.avg_task_duration_ms)} tooltip="Average wall-clock time per completed task, including provider API calls and issue updates." />
-      <MetricRow label="P95 Task Duration" value={formatMs(pool.p95_task_duration_ms)} tooltip="95th percentile task duration. Tasks above this are unusually slow (complex issues or provider latency)." />
+      <MetricRow label="Total Workers" value={pool.total_workers.toString()} tooltip="Current number of worker goroutines in the agent pool." />
+      <MetricRow label="Active Workers" value={pool.active_workers.toString()} tooltip="Workers currently executing a task." />
+      <MetricRow label="Idle Workers" value={pool.idle_workers.toString()} tooltip="Workers waiting for tasks." />
+      <MetricRow label="Utilization" value={`${utilization}%`} tooltip="Percentage of workers currently active." />
+      <MetricRow label="Queue Depth" value={pool.queue_depth.toString()} tooltip="Tasks waiting for an available worker." />
+      <MetricRow label="Tasks Completed" value={pool.tasks_completed.toLocaleString()} tooltip="Total tasks successfully completed since startup." />
+      <MetricRow label="Tasks Failed" value={pool.tasks_failed.toLocaleString()} tooltip="Total tasks that failed. Failed tasks may be requeued." />
+      <MetricRow label="Avg Task Duration" value={formatMs(pool.avg_task_duration_ms)} tooltip="Average wall-clock time per completed task." />
+      <MetricRow label="P95 Task Duration" value={formatMs(pool.p95_task_duration_ms)} tooltip="95th percentile task duration." />
     </SectionCard>
   )
 }
@@ -113,12 +284,12 @@ function DispatcherSection({ dispatcher }: { dispatcher: DispatcherMetrics | nul
 
   return (
     <SectionCard title="Dispatcher">
-      <MetricRow label="Claimed Issues" value={dispatcher.claimed_count.toString()} tooltip="Issues currently claimed by the dispatcher via optimistic locking. These are in-flight or queued for processing." />
-      <MetricRow label="Total Routed" value={dispatcher.total_routed.toLocaleString()} tooltip="Total issues routed to the agent pool since startup. Includes issues that were later requeued." />
-      <MetricRow label="Total Requeued" value={dispatcher.total_requeued.toLocaleString()} tooltip="Issues that failed and were returned to the queue for retry. High counts may indicate provider issues." />
-      <MetricRow label="Events Processed" value={dispatcher.total_events_processed.toLocaleString()} tooltip="Total forge events (issue opened, closed, labeled, commented) processed by the dispatcher." />
-      <MetricRow label="Avg Poll Latency" value={formatMs(dispatcher.avg_poll_latency_ms)} tooltip="Average time to poll the forge for new events. High latency may indicate forge API rate limiting." />
-      <MetricRow label="Last Poll" value={lastPoll} tooltip="Timestamp of the most recent forge poll. Polls occur at the configured interval (default 30s)." />
+      <MetricRow label="Claimed Issues" value={dispatcher.claimed_count.toString()} tooltip="Issues currently claimed for processing." />
+      <MetricRow label="Total Routed" value={dispatcher.total_routed.toLocaleString()} tooltip="Total issues routed since startup." />
+      <MetricRow label="Total Requeued" value={dispatcher.total_requeued.toLocaleString()} tooltip="Issues returned to queue for retry." />
+      <MetricRow label="Events Processed" value={dispatcher.total_events_processed.toLocaleString()} tooltip="Total forge events processed." />
+      <MetricRow label="Avg Poll Latency" value={formatMs(dispatcher.avg_poll_latency_ms)} tooltip="Average time to poll the forge." />
+      <MetricRow label="Last Poll" value={lastPoll} tooltip="Most recent forge poll timestamp." />
     </SectionCard>
   )
 }
@@ -128,11 +299,11 @@ function SystemSection({ system }: { system: SystemMetrics | null }) {
 
   return (
     <SectionCard title="System">
-      <MetricRow label="Goroutines" value={system.goroutines.toString()} tooltip="Active Go goroutines. Each worker, the dispatcher, and HTTP handlers each use goroutines." />
-      <MetricRow label="Heap Allocated" value={formatBytes(system.heap_alloc_bytes)} tooltip="Memory currently allocated on the Go heap. Rises during task execution and drops after GC." />
-      <MetricRow label="OS Memory" value={formatBytes(system.sys_bytes_total)} tooltip="Total memory obtained from the OS. Includes heap, stacks, and GC metadata. This is the process RSS." />
-      <MetricRow label="GC Cycles" value={system.gc_cycles.toString()} tooltip="Number of garbage collection cycles completed since process start." />
-      <MetricRow label="Next GC Target" value={formatBytes(system.next_gc_bytes)} tooltip="Heap size that will trigger the next garbage collection cycle." />
+      <MetricRow label="Goroutines" value={system.goroutines.toString()} />
+      <MetricRow label="Heap Allocated" value={formatBytes(system.heap_alloc_bytes)} />
+      <MetricRow label="OS Memory" value={formatBytes(system.sys_bytes_total)} />
+      <MetricRow label="GC Cycles" value={system.gc_cycles.toString()} />
+      <MetricRow label="Next GC Target" value={formatBytes(system.next_gc_bytes)} />
     </SectionCard>
   )
 }
@@ -148,10 +319,10 @@ function ScalingSection({
 
   return (
     <SectionCard title="Adaptive Scaling">
-      <MetricRow label="Status" value={config.enabled ? 'Enabled' : 'Disabled'} tooltip="Whether the autoscaler is actively adjusting worker count based on queue pressure." />
-      <MetricRow label="Min Workers" value={config.min_workers.toString()} tooltip="Minimum worker count the autoscaler will maintain, even when idle." />
-      <MetricRow label="Max Workers" value={config.max_workers.toString()} tooltip="Maximum worker count the autoscaler can scale to under high pressure." />
-      <MetricRow label="Current Target" value={config.current_target.toString()} tooltip="The autoscaler's target worker count. The pool adjusts toward this value." />
+      <MetricRow label="Status" value={config.enabled ? 'Enabled' : 'Disabled'} />
+      <MetricRow label="Min Workers" value={config.min_workers.toString()} />
+      <MetricRow label="Max Workers" value={config.max_workers.toString()} />
+      <MetricRow label="Current Target" value={config.current_target.toString()} />
       {events != null && events.length > 0 && (
         <div className="mt-3">
           <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -196,9 +367,9 @@ function CapacitySection({ capacity, maxWorkers }: { capacity: CapacityInfo | nu
 
   return (
     <SectionCard title="Capacity">
-      <MetricRow label="AI Providers" value={`${healthyCount} / ${capacity.providers.length}`} tooltip="Registered AI providers (healthy / total). Each provider represents a model that can execute agent tasks." />
-      <MetricRow label="Max Concurrent Sessions" value={maxWorkers.toString()} tooltip="Maximum number of agent sessions that can run simultaneously, set by the autoscaler's max-workers limit." />
-      <MetricRow label="Routing Chains" value={routingChainNames.length.toString()} tooltip="Number of routing chains (triage, default, complex, local, etc.). Each chain maps task types to a priority-ordered list of providers." />
+      <MetricRow label="AI Providers" value={`${healthyCount} / ${capacity.providers.length}`} />
+      <MetricRow label="Max Concurrent Sessions" value={maxWorkers.toString()} />
+      <MetricRow label="Routing Chains" value={routingChainNames.length.toString()} />
       {capacity.providers.length > 0 && (
         <div className="mt-3">
           <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -236,12 +407,51 @@ function CapacitySection({ capacity, maxWorkers }: { capacity: CapacityInfo | nu
   )
 }
 
+// --- Main Page ---
+
 export function Metrics() {
   const metrics = useQuery({
     queryKey: ['metrics'],
     queryFn: api.getMetrics,
     refetchInterval: 5_000,
   })
+
+  const history = useQuery({
+    queryKey: ['metrics-history'],
+    queryFn: () => api.getMetricsHistory('30m'),
+    refetchInterval: 30_000,
+  })
+
+  const issues = useQuery({
+    queryKey: ['issues', 'all-for-metrics'],
+    queryFn: async () => {
+      const [open, closed] = await Promise.all([
+        api.listIssues({ state: 'open' }),
+        api.listIssues({ state: 'closed' }),
+      ])
+      return [...open, ...closed]
+    },
+    refetchInterval: 60_000,
+  })
+
+  const sessions = useQuery({
+    queryKey: ['sessions'],
+    queryFn: api.listSessions,
+    refetchInterval: 15_000,
+  })
+
+  const costs = useQuery({
+    queryKey: ['costs'],
+    queryFn: api.getCosts,
+    refetchInterval: 30_000,
+  })
+
+  // Compute top-line stats
+  const openCount = issues.data?.filter((i) => i.state === 'open').length ?? 0
+  const closedCount = issues.data?.filter((i) => i.state === 'closed').length ?? 0
+  const totalSessions = sessions.data?.length ?? 0
+  const completedSessions = sessions.data?.filter((s) => s.status === 'completed').length ?? 0
+  const costUsd = costs.data?.total_cost_usd ?? 0
 
   return (
     <div>
@@ -265,12 +475,44 @@ export function Metrics() {
 
       {metrics.data != null && (
         <div className="space-y-6">
+          {/* Top-line stats */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+            <StatCard label="Open Issues" value={openCount.toString()} color="text-blue-700" sub={`${closedCount} closed`} />
+            <StatCard label="Sessions" value={totalSessions.toString()} sub={`${completedSessions} completed`} />
+            <StatCard
+              label="Tasks Completed"
+              value={(metrics.data.pool?.tasks_completed ?? 0).toLocaleString()}
+              sub={`${metrics.data.pool?.tasks_failed ?? 0} failed`}
+            />
+            <StatCard
+              label="Events Processed"
+              value={(metrics.data.dispatcher?.total_events_processed ?? 0).toLocaleString()}
+              sub={`${metrics.data.dispatcher?.total_routed ?? 0} routed`}
+            />
+            <StatCard
+              label="Total Cost"
+              value={`$${costUsd.toFixed(2)}`}
+              sub={`${(costs.data?.total_input_tokens ?? 0).toLocaleString()} tokens`}
+            />
+          </div>
+
           <PressureSection pressure={metrics.data.pressure} />
+
+          {/* Trending + Activity + Issues */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <TrendingSection entries={history.data?.entries ?? []} />
+            {sessions.data != null && <ActivityFeed sessions={sessions.data} />}
+            {issues.data != null && <IssueSummary issues={issues.data} />}
+          </div>
+
+          {/* Core metrics */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <PoolSection pool={metrics.data.pool} />
             <DispatcherSection dispatcher={metrics.data.dispatcher} />
             <SystemSection system={metrics.data.system} />
           </div>
+
+          {/* Scaling + Capacity */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <CapacitySection
               capacity={metrics.data.capacity}
