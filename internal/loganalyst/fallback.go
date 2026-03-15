@@ -12,26 +12,26 @@ func buildFallbackSummary(entries []logstore.LogEntry, scope ScopeFilter) string
 	stats := computeStats(entries)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Analyzed %d log entries", stats.total))
+	fmt.Fprintf(&b, "Analyzed %d log entries", stats.total)
 
 	switch scope.Type {
 	case ScopeSession:
-		b.WriteString(fmt.Sprintf(" for session %s.", scope.ID))
+		fmt.Fprintf(&b, " for session %s.", scope.ID)
 	case ScopeIssue:
-		b.WriteString(fmt.Sprintf(" for issue #%s.", scope.ID))
+		fmt.Fprintf(&b, " for issue #%s.", scope.ID)
 	case ScopeTimeRange:
-		b.WriteString(fmt.Sprintf(" from %s to %s.",
+		fmt.Fprintf(&b, " from %s to %s.",
 			scope.Since.Format("2006-01-02 15:04"),
 			scope.Until.Format("2006-01-02 15:04"),
-		))
+		)
 	case ScopeFailures:
-		b.WriteString(fmt.Sprintf(" (failures since %s).", scope.Since.Format("2006-01-02 15:04")))
+		fmt.Fprintf(&b, " (failures since %s).", scope.Since.Format("2006-01-02 15:04"))
 	}
 
-	b.WriteString(fmt.Sprintf(" Found %d errors and %d warnings", stats.errors, stats.warnings))
+	fmt.Fprintf(&b, " Found %d errors and %d warnings", stats.errors, stats.warnings)
 
 	if len(stats.components) > 0 {
-		b.WriteString(fmt.Sprintf(" across components: %s.", strings.Join(stats.components, ", ")))
+		fmt.Fprintf(&b, " across components: %s.", strings.Join(stats.components, ", "))
 	} else {
 		b.WriteString(".")
 	}
@@ -39,7 +39,7 @@ func buildFallbackSummary(entries []logstore.LogEntry, scope ScopeFilter) string
 	// Include the most recent error message if present.
 	for i := range entries {
 		if entries[i].Level == "error" {
-			b.WriteString(fmt.Sprintf(" Most recent error: %q.", entries[i].Message))
+			fmt.Fprintf(&b, " Most recent error: %q.", entries[i].Message)
 			break
 		}
 	}

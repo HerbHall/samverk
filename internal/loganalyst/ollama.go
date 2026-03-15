@@ -59,7 +59,7 @@ func (c *OllamaAnalystHTTP) Generate(ctx context.Context, prompt string) (text s
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(req) //nolint:gosec // G704: URL is from trusted SAMVERK_OLLAMA_URL config
 	if err != nil {
 		return "", fmt.Errorf("ollama request: %w", err)
 	}
