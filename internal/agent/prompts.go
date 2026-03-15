@@ -24,9 +24,9 @@ You do not have access to the local source tree. To read source files, use the G
 Always read the actual source before drawing conclusions.`
 
 // BuildSystemPrompt dispatches to per-agent-type prompt builders and appends
-// file context when available. Agent types that are not AI-driven (human,
-// orchestrator, dispatcher) return an empty string.
-func BuildSystemPrompt(task Task, fileContext map[string]string) string {
+// file context and known patterns when available. Agent types that are not
+// AI-driven (human, orchestrator, dispatcher) return an empty string.
+func BuildSystemPrompt(task Task, fileContext map[string]string, patterns ...string) string {
 	var base string
 	switch task.AgentType {
 	case models.AgentTypeCodeGen:
@@ -46,10 +46,29 @@ func BuildSystemPrompt(task Task, fileContext map[string]string) string {
 	}
 
 	ctx := buildFileContext(fileContext)
-	if ctx == "" {
-		return base
+	if ctx != "" {
+		base += "\n\n" + ctx
 	}
-	return base + "\n\n" + ctx
+
+	if patternSection := buildPatternContext(patterns); patternSection != "" {
+		base += "\n\n" + patternSection
+	}
+
+	return base
+}
+
+// buildPatternContext renders fetched Synapset patterns into a prompt section.
+func buildPatternContext(patterns []string) string {
+	if len(patterns) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("## Known Patterns\n\n")
+	for _, p := range patterns {
+		fmt.Fprintf(&b, "- %s\n", p)
+	}
+	return b.String()
 }
 
 func buildCodeGenPrompt(task Task) string {

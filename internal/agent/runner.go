@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/cost"
@@ -164,6 +167,21 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 			} else {
 				workDir = ws
 				defer wsCleanup()
+
+				// Write MCP config and CLAUDE.md into the worktree.
+				if mcpErr := WriteMCPConfig(workDir); mcpErr != nil {
+					r.logger.Warn("failed to write MCP config to workspace",
+						zap.Int("issue", task.Issue.Number),
+						zap.Error(mcpErr),
+					)
+				}
+				claudeMD := GenerateAgentCLAUDEMD(ProjectTypeGo, task.Issue.Body)
+				if writeErr := os.WriteFile(filepath.Join(workDir, "CLAUDE.md"), []byte(claudeMD), 0o644); writeErr != nil {
+					r.logger.Warn("failed to write CLAUDE.md to workspace",
+						zap.Int("issue", task.Issue.Number),
+						zap.Error(writeErr),
+					)
+				}
 			}
 		case models.AgentTypeDocs, models.AgentTypeResearch, models.AgentTypeQC,
 			models.AgentTypeHuman, models.AgentTypeOrchestrator, models.AgentTypeDispatcher,
@@ -172,9 +190,22 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		}
 	}
 
+	// Step 3c: Fetch Synapset patterns for API agent enrichment.
+	var patterns []string
+	if r.synapset != nil && task.Issue.Title != "" {
+		var fetchErr error
+		patterns, fetchErr = FetchRelevantPatterns(ctx, r.synapset, task.Issue.Title, maxMemoryResults)
+		if fetchErr != nil {
+			r.logger.Warn("failed to fetch relevant patterns",
+				zap.Int("issue", task.Issue.Number),
+				zap.Error(fetchErr),
+			)
+		}
+	}
+
 	// Step 4: Build chat request.
 	fileContext := r.extractFileContext(task.Issue.Body, workDir)
-	systemPrompt := BuildSystemPrompt(task, fileContext)
+	systemPrompt := BuildSystemPrompt(task, fileContext, patterns...)
 	messages := []provider.Message{
 		{Role: provider.RoleSystem, Content: systemPrompt},
 	}
