@@ -13,6 +13,7 @@ import (
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
+	"github.com/herbhall/samverk/internal/synapset"
 	"github.com/herbhall/samverk/pkg/models"
 )
 
@@ -39,6 +40,7 @@ type Runner struct {
 	logger           *zap.Logger
 	cleanupCtx       context.Context // used for session updates and failure comments; survives task timeout
 	progressInterval time.Duration   // interval between PROGRESS posts; 0 disables
+	synapset         *synapset.Client // optional; nil disables memory enrichment
 }
 
 // NewRunner creates a runner bound to a specific provider and model.
@@ -73,6 +75,12 @@ func (r *Runner) SetRepoWriter(rw forge.RepoWriter) {
 // SetPRManager configures pull request operations.
 func (r *Runner) SetPRManager(pm forge.PullRequestManager) {
 	r.prManager = pm
+}
+
+// SetSynapset configures the Synapset memory client for context enrichment.
+// When nil, memory enrichment is disabled.
+func (r *Runner) SetSynapset(sc *synapset.Client) {
+	r.synapset = sc
 }
 
 // Run processes a single task through the AI provider pipeline.
@@ -136,6 +144,12 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	if resumePrompt != "" {
 		messages = append(messages, provider.Message{Role: provider.RoleSystem, Content: resumePrompt})
 	}
+
+	// Step 4b: Enrich with Synapset memory context (best-effort, non-fatal).
+	if memoryContext := r.fetchMemoryContext(ctx, task); memoryContext != "" {
+		messages = append(messages, provider.Message{Role: provider.RoleSystem, Content: memoryContext})
+	}
+
 	messages = append(messages, provider.Message{Role: provider.RoleUser, Content: task.Issue.Body})
 	req := provider.ChatRequest{
 		Model:    r.model,
@@ -234,6 +248,9 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		r.failTask(ctx, task, fmt.Sprintf("post-process error: %v", err))
 		return fmt.Errorf("post-process: %w", err)
 	}
+
+	// Step 7b: Store task outcome in Synapset memory (best-effort, non-fatal).
+	r.storeTaskMemory(r.safeCtx(ctx), task, resp.Message.Content)
 
 	// Step 8: Mark session completed (use cleanup context to survive timeout).
 	if err = r.completeSession(r.safeCtx(ctx), task.SessionID); err != nil {
@@ -478,6 +495,95 @@ func (r *Runner) logTimeoutAccuracy(ctx context.Context, task Task) {
 		zap.Duration("actual", actual),
 		zap.Float64("ratio", ratio),
 	)
+}
+
+// maxMemoryResults is the number of Synapset results to include in the prompt.
+const maxMemoryResults = 5
+
+// fetchMemoryContext queries Synapset for relevant learnings and returns a
+// prompt section. Returns empty string if Synapset is not configured or the
+// search fails.
+func (r *Runner) fetchMemoryContext(ctx context.Context, task Task) string {
+	if r.synapset == nil {
+		return ""
+	}
+
+	query := task.Issue.Title
+	if query == "" {
+		return ""
+	}
+
+	// Search the devkit pool for patterns/gotchas relevant to this task.
+	memories, err := r.synapset.SearchMemory(ctx, "devkit", query, maxMemoryResults)
+	if err != nil {
+		r.logger.Warn("synapset: devkit search failed",
+			zap.Int("issue", task.Issue.Number),
+			zap.Error(err),
+		)
+		return ""
+	}
+
+	// Also search the agent's own pool for prior learnings.
+	agentMemories, err := r.synapset.SearchMemory(ctx, r.synapset.Pool(), query, maxMemoryResults)
+	if err != nil {
+		r.logger.Warn("synapset: agent pool search failed",
+			zap.Int("issue", task.Issue.Number),
+			zap.Error(err),
+		)
+		// Continue with devkit results only.
+	} else {
+		memories = append(memories, agentMemories...)
+	}
+
+	if len(memories) == 0 {
+		return ""
+	}
+
+	// Cap at maxMemoryResults total.
+	if len(memories) > maxMemoryResults {
+		memories = memories[:maxMemoryResults]
+	}
+
+	var b strings.Builder
+	b.WriteString("## Relevant Learnings from Past Sessions\n\n")
+	for i := range memories {
+		m := &memories[i]
+		fmt.Fprintf(&b, "- [%s] %s\n", m.Category, m.Content)
+	}
+	return b.String()
+}
+
+// storeTaskMemory saves a summary of the completed task to Synapset for
+// future reference. Best-effort: failures are logged but do not affect
+// the task outcome.
+func (r *Runner) storeTaskMemory(ctx context.Context, task Task, response string) {
+	if r.synapset == nil {
+		return
+	}
+
+	// Build a concise summary from the task and response.
+	summary := fmt.Sprintf("Issue #%d (%s): %s",
+		task.Issue.Number, task.AgentType, task.Issue.Title)
+	if len(response) > 200 {
+		summary += "\nOutcome: " + response[:200] + "..."
+	} else if response != "" {
+		summary += "\nOutcome: " + response
+	}
+
+	category := "completion"
+	tags := []string{
+		string(task.AgentType),
+		fmt.Sprintf("issue-%d", task.Issue.Number),
+	}
+	source := fmt.Sprintf("session:%s", task.SessionID)
+
+	if err := r.synapset.StoreMemory(ctx, r.synapset.Pool(), summary, category, tags, source); err != nil {
+		r.logger.Warn("synapset: store memory failed",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("session", task.SessionID),
+			zap.Error(err),
+		)
+	}
 }
 
 // saveCheckpoint posts a CHECKPOINT comment on the issue if the session has

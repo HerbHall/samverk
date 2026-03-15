@@ -35,6 +35,7 @@ import (
 	"github.com/herbhall/samverk/internal/server"
 	"github.com/herbhall/samverk/internal/status"
 	"github.com/herbhall/samverk/internal/store"
+	"github.com/herbhall/samverk/internal/synapset"
 	"github.com/herbhall/samverk/internal/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
@@ -392,6 +393,19 @@ func dispatchCmd() *cobra.Command {
 					pool = agent.NewPool(registry, tracker, st, costs, workers, logger)
 					defer pool.Shutdown()
 					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(registry.List(ctx))))
+				}
+			}
+
+			// Wire Synapset memory client if configured (optional, best-effort).
+			if pool != nil {
+				synCfg := synapset.ConfigFromEnv(synapset.Config{})
+				if synCfg.URL != "" {
+					synClient := synapset.New(synCfg, logger)
+					pool.SetSynapset(synClient)
+					logger.Info("synapset memory enabled",
+						zap.String("url", synCfg.URL),
+						zap.String("pool", synCfg.Pool),
+					)
 				}
 			}
 
