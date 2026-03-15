@@ -17,6 +17,7 @@ import (
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
+	"github.com/herbhall/samverk/internal/synapset"
 	"github.com/herbhall/samverk/pkg/models"
 )
 
@@ -69,6 +70,7 @@ type Pool struct {
 	active     atomic.Int32                        // currently processing workers
 	onComplete atomic.Pointer[func(TaskResult)]   // callback to notify dispatcher; atomic to avoid mu deadlock
 	workerQuit chan struct{}                        // each send causes one worker to exit after its current task
+	synapset   *synapset.Client                    // optional Synapset memory client; nil disables enrichment
 }
 
 // NewPool creates a pool with the given number of worker goroutines and starts
@@ -275,6 +277,13 @@ func (p *Pool) Done() <-chan struct{} {
 	return p.done
 }
 
+// SetSynapset configures a Synapset memory client for all runners in the pool.
+// When set, runners enrich prompts with relevant memories before provider calls
+// and store task outcomes after completion.
+func (p *Pool) SetSynapset(sc *synapset.Client) {
+	p.synapset = sc
+}
+
 // SetOnComplete registers a callback invoked after each task finishes.
 func (p *Pool) SetOnComplete(fn func(TaskResult)) {
 	p.onComplete.Store(&fn)
@@ -357,6 +366,7 @@ func (p *Pool) processTask(task Task) {
 
 	runner := NewRunner(prov, model, p.tracker, p.store, p.costs, p.logger)
 	runner.cleanupCtx = cleanupCtx
+	runner.synapset = p.synapset
 	start := time.Now()
 	runErr := runner.Run(ctx, task)
 	duration := time.Since(start)
