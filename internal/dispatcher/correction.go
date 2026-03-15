@@ -187,7 +187,7 @@ func backoffWithJitter(attempt int) time.Time {
 	}
 	base := float64(backoffBase) * math.Pow(2, float64(attempt-1))
 	// Add jitter: +-25% of the base duration.
-	jitter := base * 0.25 * (2*rand.Float64() - 1)
+	jitter := base * 0.25 * (2*rand.Float64() - 1) //nolint:gosec // G404: jitter for backoff timing, not security-sensitive
 	return time.Now().Add(time.Duration(base + jitter))
 }
 
