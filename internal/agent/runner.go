@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/provider"
@@ -41,6 +42,7 @@ type Runner struct {
 	cleanupCtx       context.Context // used for session updates and failure comments; survives task timeout
 	progressInterval time.Duration   // interval between PROGRESS posts; 0 disables
 	synapset         *synapset.Client // optional; nil disables memory enrichment
+	policy           autonomy.AutonomyPolicy // optional; nil disables tier enforcement
 }
 
 // NewRunner creates a runner bound to a specific provider and model.
@@ -81,6 +83,12 @@ func (r *Runner) SetPRManager(pm forge.PullRequestManager) {
 // When nil, memory enrichment is disabled.
 func (r *Runner) SetSynapset(sc *synapset.Client) {
 	r.synapset = sc
+}
+
+// SetPolicy configures the autonomy policy for tier enforcement.
+// When nil, all actions are allowed (backward compatible).
+func (r *Runner) SetPolicy(p autonomy.AutonomyPolicy) {
+	r.policy = p
 }
 
 // Run processes a single task through the AI provider pipeline.
@@ -315,8 +323,50 @@ func (r *Runner) postProcess(ctx context.Context, task Task, response string) er
 	}
 }
 
+// checkTier evaluates the autonomy policy for the given action. Returns nil
+// if the action is allowed, ErrTierBlocked if blocked. When no policy is set,
+// all actions are allowed (backward compatible).
+func (r *Runner) checkTier(task Task, action autonomy.ActionType) error {
+	if r.policy == nil {
+		return nil
+	}
+
+	decision := autonomy.Evaluate(r.policy, action)
+
+	switch decision.Verdict {
+	case autonomy.VerdictAllow:
+		r.logger.Debug("tier: allow",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("action", string(action)),
+			zap.String("tier", decision.Tier.String()),
+		)
+	case autonomy.VerdictAllowWithLog:
+		r.logger.Info("tier: allow with audit log",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("session", task.SessionID),
+			zap.String("action", string(action)),
+			zap.String("tier", decision.Tier.String()),
+			zap.String("agent", string(task.AgentType)),
+		)
+	case autonomy.VerdictBlock:
+		r.logger.Warn("tier: BLOCKED",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("session", task.SessionID),
+			zap.String("action", string(action)),
+			zap.String("tier", decision.Tier.String()),
+			zap.String("agent", string(task.AgentType)),
+		)
+		return fmt.Errorf("%w: %s requires %s", autonomy.ErrTierBlocked, action, decision.Tier)
+	}
+
+	return nil
+}
+
 // postComment posts the response as an issue comment.
 func (r *Runner) postComment(ctx context.Context, task Task, response string) error {
+	if err := r.checkTier(task, autonomy.ActionCommentIssue); err != nil {
+		return err
+	}
 	if _, err := r.tracker.AddComment(ctx, task.Issue.Number, response); err != nil {
 		return fmt.Errorf("add comment: %w", err)
 	}
@@ -324,15 +374,22 @@ func (r *Runner) postComment(ctx context.Context, task Task, response string) er
 }
 
 // openPR creates a branch, writes files, and opens a pull request.
+// Each step is gated by the autonomy policy tier check.
 func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) error {
 	branch := BranchSlug(task.Issue.Number, task.Issue.Title)
 
-	// Create branch from main.
+	// Tier check: create_branch (Tier 1 default).
+	if err := r.checkTier(task, autonomy.ActionCreateBranch); err != nil {
+		return err
+	}
 	if err := r.repoWriter.CreateBranch(ctx, branch); err != nil {
 		return fmt.Errorf("create branch %q: %w", branch, err)
 	}
 
-	// Write each file edit to the branch.
+	// Tier check: edit_file (Tier 2 default) — checked once for the batch.
+	if err := r.checkTier(task, autonomy.ActionEditFile); err != nil {
+		return err
+	}
 	for _, edit := range parsed.Edits {
 		msg := fmt.Sprintf("agent: update %s for issue #%d", edit.Path, task.Issue.Number)
 		if err := r.repoWriter.CreateOrUpdateFile(ctx, branch, edit.Path, edit.Content, msg); err != nil {
@@ -340,13 +397,14 @@ func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) e
 		}
 	}
 
-	// Determine PR title.
+	// Tier check: create_pr (Tier 2 default).
+	if err := r.checkTier(task, autonomy.ActionCreatePR); err != nil {
+		return err
+	}
 	prTitle := parsed.PRTitle
 	if prTitle == "" {
 		prTitle = fmt.Sprintf("agent: resolve issue #%d", task.Issue.Number)
 	}
-
-	// Open PR.
 	pr, err := r.prManager.CreatePullRequest(ctx, &forge.CreatePRRequest{
 		Title: prTitle,
 		Body:  fmt.Sprintf("Closes #%d\n\nAgent-generated implementation.", task.Issue.Number),
@@ -357,7 +415,7 @@ func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) e
 		return fmt.Errorf("create PR: %w", err)
 	}
 
-	// Post comment on issue with PR link.
+	// Post comment on issue with PR link (tier check inside postComment).
 	comment := fmt.Sprintf("PR opened: #%d", pr.Number)
 	if _, err = r.tracker.AddComment(ctx, task.Issue.Number, comment); err != nil {
 		r.logger.Error("failed to post PR link comment",
