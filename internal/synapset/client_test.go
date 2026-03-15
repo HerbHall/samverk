@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,6 +40,15 @@ func newTestServer(t *testing.T, toolHandler func(name string, args json.RawMess
 
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
+
+		case "tools/list":
+			w.Header().Set("Content-Type", "application/json")
+			resp := jsonRPCResponse{
+				JSONRPC: "2.0",
+				Result:  json.RawMessage(`{"tools":[]}`),
+				ID:      req.ID,
+			}
+			_ = json.NewEncoder(w).Encode(resp)
 
 		case "tools/call":
 			raw, _ := json.Marshal(req.Params)
@@ -100,6 +110,11 @@ func TestSessionInitialization(t *testing.T) {
 
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
+
+		case "tools/list":
+			w.Header().Set("Content-Type", "application/json")
+			resp := jsonRPCResponse{JSONRPC: "2.0", Result: json.RawMessage(`{"tools":[]}`), ID: req.ID}
+			_ = json.NewEncoder(w).Encode(resp)
 
 		case "tools/call":
 			result := toolResult{Content: []toolContent{{Type: "text", Text: "[]"}}}
@@ -254,6 +269,11 @@ func TestSessionReconnection(t *testing.T) {
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 
+		case "tools/list":
+			w.Header().Set("Content-Type", "application/json")
+			resp := jsonRPCResponse{JSONRPC: "2.0", Result: json.RawMessage(`{"tools":[]}`), ID: req.ID}
+			_ = json.NewEncoder(w).Encode(resp)
+
 		case "tools/call":
 			count := toolCalls.Add(1)
 			if count == 1 {
@@ -337,3 +357,144 @@ func TestPool(t *testing.T) {
 		t.Errorf("Pool() = %q, want my-pool", got)
 	}
 }
+
+func TestNonJSONResponseHandling(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		wantContain string
+	}{
+		{
+			name:        "html error page",
+			contentType: "text/html",
+			body:        "<html><body>Page not found</body></html>",
+			wantContain: "unexpected content-type",
+		},
+		{
+			name:        "plain text error",
+			contentType: "text/plain",
+			body:        "please authenticate first",
+			wantContain: "unexpected content-type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req jsonRPCRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, "bad request", http.StatusBadRequest)
+					return
+				}
+
+				switch req.Method {
+				case "initialize":
+					w.Header().Set("Mcp-Session-Id", "sess-ct")
+					w.Header().Set("Content-Type", "application/json")
+					resp := jsonRPCResponse{
+						JSONRPC: "2.0",
+						Result:  json.RawMessage(`{"protocolVersion":"2025-03-26"}`),
+						ID:      req.ID,
+					}
+					_ = json.NewEncoder(w).Encode(resp)
+				case "notifications/initialized":
+					w.WriteHeader(http.StatusAccepted)
+				case "tools/list":
+					w.Header().Set("Content-Type", "application/json")
+					resp := jsonRPCResponse{
+						JSONRPC: "2.0",
+						Result:  json.RawMessage(`{"tools":[]}`),
+						ID:      req.ID,
+					}
+					_ = json.NewEncoder(w).Encode(resp)
+				case "tools/call":
+					w.Header().Set("Content-Type", tt.contentType)
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(tt.body))
+				}
+			}))
+			defer srv.Close()
+
+			client := New(Config{URL: srv.URL, Pool: "test"}, zap.NewNop())
+			_, err := client.SearchMemory(context.Background(), "test", "query", 5)
+			if err == nil {
+				t.Fatal("expected error for non-JSON response, got nil")
+			}
+			if got := err.Error(); !contains(got, tt.wantContain) {
+				t.Errorf("error = %q, want it to contain %q", got, tt.wantContain)
+			}
+			if got := err.Error(); !contains(got, tt.body) {
+				t.Errorf("error = %q, want it to contain body preview %q", got, tt.body)
+			}
+		})
+	}
+}
+
+func TestResponseBodyPreviewInParseError(t *testing.T) {
+	srv := newTestServer(t, func(_ string, _ json.RawMessage) (interface{}, error) {
+		// Return a tool result with non-JSON text content.
+		return toolResult{Content: []toolContent{{Type: "text", Text: "please retry later"}}}, nil
+	})
+	defer srv.Close()
+
+	client := New(Config{URL: srv.URL, Pool: "test"}, zap.NewNop())
+	_, err := client.SearchMemory(context.Background(), "test", "query", 5)
+	if err == nil {
+		t.Fatal("expected error for non-JSON tool text, got nil")
+	}
+	if got := err.Error(); !contains(got, "parse memories") {
+		t.Errorf("error = %q, want it to contain 'parse memories'", got)
+	}
+	if got := err.Error(); !contains(got, "please retry later") {
+		t.Errorf("error = %q, want it to contain body preview", got)
+	}
+}
+
+func TestSessionInitDelay(t *testing.T) {
+	srv := newTestServer(t, func(_ string, _ json.RawMessage) (interface{}, error) {
+		return toolResult{Content: []toolContent{{Type: "text", Text: "[]"}}}, nil
+	})
+	defer srv.Close()
+
+	client := New(Config{URL: srv.URL, Pool: "test"}, zap.NewNop())
+
+	start := time.Now()
+	_, err := client.SearchMemory(context.Background(), "test", "hello", 5)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("SearchMemory failed: %v", err)
+	}
+	// The post-init delay should be at least postInitDelay (150ms).
+	if elapsed < postInitDelay {
+		t.Errorf("elapsed %v < postInitDelay %v; init delay not applied", elapsed, postInitDelay)
+	}
+}
+
+func TestBodyPreview(t *testing.T) {
+	short := "short string"
+	if got := bodyPreview([]byte(short)); got != short {
+		t.Errorf("bodyPreview(%q) = %q", short, got)
+	}
+
+	long := strings.Repeat("x", 300)
+	got := bodyPreview([]byte(long))
+	if len(got) > bodyPreviewLen+3 { // +3 for "..."
+		t.Errorf("bodyPreview of long string too long: %d chars", len(got))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("bodyPreview of long string should end with '...': %q", got)
+	}
+
+	// Whitespace trimming.
+	if got := bodyPreview([]byte("  hello  ")); got != "hello" {
+		t.Errorf("bodyPreview with whitespace = %q, want 'hello'", got)
+	}
+}
+
+// contains is a helper to check substring presence.
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}
+

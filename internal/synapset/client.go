@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,15 @@ const DefaultPool = "samverk"
 
 // defaultTimeout is the HTTP request timeout for Synapset calls.
 const defaultTimeout = 10 * time.Second
+
+// postInitDelay is a small pause after session initialization to allow
+// the MCP server (behind Cloudflare tunnels) to stabilize before the
+// first tool call. The user explicitly prefers accuracy over speed.
+const postInitDelay = 150 * time.Millisecond
+
+// bodyPreviewLen is the max number of bytes to include from a response
+// body when reporting parse errors, for diagnostic purposes.
+const bodyPreviewLen = 200
 
 // Memory represents a single memory entry returned by Synapset.
 type Memory struct {
@@ -210,6 +220,26 @@ func (c *Client) ensureSession(ctx context.Context) error {
 		c.logger.Warn("synapset: initialized notification failed", zap.Error(err))
 	}
 
+	// Step 3: Brief pause to let the server (and any tunnel layer) stabilize.
+	select {
+	case <-time.After(postInitDelay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	// Step 4: Validate session with a tools/list ping before real work.
+	listID := c.allocID()
+	listReq := jsonRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "tools/list",
+		ID:      &listID,
+	}
+	if listResp, _, listErr := c.doRequestWithSession(ctx, listReq, sessionID); listErr != nil {
+		c.logger.Warn("synapset: tools/list validation ping failed", zap.Error(listErr))
+	} else if listResp != nil && listResp.Error != nil {
+		c.logger.Warn("synapset: tools/list returned error", zap.String("error", listResp.Error.Message))
+	}
+
 	return nil
 }
 
@@ -273,12 +303,25 @@ func (c *Client) doRequestWithSession(ctx context.Context, rpcReq jsonRPCRequest
 
 	if httpResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(httpResp.Body)
-		return nil, sessionID, fmt.Errorf("http %d: %s", httpResp.StatusCode, string(respBody))
+		return nil, sessionID, fmt.Errorf("http %d: %s", httpResp.StatusCode, bodyPreview(respBody))
+	}
+
+	// Read the full body so we can include a preview in error messages.
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, sessionID, fmt.Errorf("read response body: %w", err)
+	}
+
+	// Check Content-Type: if not JSON, report the body rather than
+	// letting json.Decode produce a cryptic "invalid character" error.
+	ct := httpResp.Header.Get("Content-Type")
+	if ct != "" && !strings.Contains(ct, "application/json") {
+		return nil, sessionID, fmt.Errorf("unexpected content-type %q: %s", ct, bodyPreview(respBody))
 	}
 
 	var result jsonRPCResponse
-	if err = json.NewDecoder(httpResp.Body).Decode(&result); err != nil {
-		return nil, sessionID, fmt.Errorf("decode response: %w", err)
+	if err = json.Unmarshal(respBody, &result); err != nil {
+		return nil, sessionID, fmt.Errorf("decode response: %w (body: %s)", err, bodyPreview(respBody))
 	}
 	return &result, sessionID, nil
 }
@@ -406,9 +449,19 @@ func parseMemories(result *toolResult) ([]Memory, error) {
 			if singleErr := json.Unmarshal([]byte(result.Content[i].Text), &single); singleErr == nil && single.Content != "" {
 				return []Memory{single}, nil
 			}
-			return nil, fmt.Errorf("parse memories: %w", err)
+			return nil, fmt.Errorf("parse memories: %w (body: %s)", err, bodyPreview([]byte(result.Content[i].Text)))
 		}
 		return memories, nil
 	}
 	return nil, nil
+}
+
+// bodyPreview returns the first bodyPreviewLen bytes of data as a string,
+// trimmed of whitespace, for inclusion in error messages.
+func bodyPreview(data []byte) string {
+	s := strings.TrimSpace(string(data))
+	if len(s) > bodyPreviewLen {
+		return s[:bodyPreviewLen] + "..."
+	}
+	return s
 }
