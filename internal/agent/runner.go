@@ -312,6 +312,22 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		}
 	}
 
+	// Step 6c: Validate output before posting (code-gen/test agents).
+	valResult := ValidateBeforePost(ctx, task.AgentType, workDir, resp.Message.Content, r.logger)
+	if valResult != nil && !valResult.Pass {
+		if !valResult.Retryable {
+			r.failTask(ctx, task, fmt.Sprintf("validation failed (not retryable): %s", valResult.Errors[0].Message))
+			return fmt.Errorf("validation: %s", valResult.Errors[0].Message)
+		}
+		// Code error — retry once with validation errors as context.
+		retryResp, retryErr := r.retryWithValidationErrors(ctx, task, req, workDir, valResult)
+		if retryErr != nil {
+			r.failTask(ctx, task, fmt.Sprintf("validation retry failed: %v", retryErr))
+			return fmt.Errorf("validation retry: %w", retryErr)
+		}
+		resp = retryResp // use the retry response for postProcess
+	}
+
 	// Step 7: Post-process response based on agent type.
 	if err = r.postProcess(ctx, task, resp.Message.Content, workDir); err != nil {
 		r.failTask(ctx, task, fmt.Sprintf("post-process error: %v", err))
@@ -339,6 +355,59 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	r.logTimeoutAccuracy(ctx, task)
 
 	return nil
+}
+
+// retryWithValidationErrors re-prompts the provider with validation error
+// context, giving it one chance to self-correct. Costs are attributed to the
+// same session. Returns the retry response or error.
+func (r *Runner) retryWithValidationErrors(
+	ctx context.Context,
+	task Task,
+	originalReq provider.ChatRequest,
+	workDir string,
+	valResult *ValidationResult,
+) (*provider.ChatResponse, error) {
+	// Build error context from validation errors.
+	var errMsg strings.Builder
+	errMsg.WriteString("Your previous output failed validation. Fix these errors:\n\n")
+	for _, ve := range valResult.Errors {
+		fmt.Fprintf(&errMsg, "## %s error\n%s\n", ve.Phase, ve.Message)
+		if ve.Output != "" {
+			fmt.Fprintf(&errMsg, "```\n%s\n```\n", ve.Output)
+		}
+	}
+
+	// Append error context as a new user message.
+	// Copy the original Messages slice to avoid mutating it.
+	retryReq := originalReq
+	retryReq.Messages = append(append([]provider.Message{}, originalReq.Messages...), provider.Message{
+		Role:    provider.RoleUser,
+		Content: errMsg.String(),
+	})
+
+	r.logger.Info("retrying with validation errors",
+		zap.Int("issue", task.Issue.Number),
+		zap.Int("error_count", len(valResult.Errors)),
+	)
+
+	// Re-call provider.
+	retryResp, err := r.provider.Chat(ctx, retryReq)
+	if err != nil {
+		return nil, fmt.Errorf("retry provider call: %w", err)
+	}
+
+	// Record cost for retry (same session).
+	if costErr := r.costs.RecordUsage(ctx, task.SessionID, r.provider.Name(), r.model, retryResp); costErr != nil {
+		r.logger.Error("retry cost recording failed", zap.Error(costErr))
+	}
+
+	// Re-validate the retry output.
+	retryVal := ValidateBeforePost(ctx, task.AgentType, workDir, retryResp.Message.Content, r.logger)
+	if retryVal != nil && !retryVal.Pass {
+		return nil, fmt.Errorf("validation failed after retry: %s", retryVal.Errors[0].Message)
+	}
+
+	return retryResp, nil
 }
 
 // postProgress posts a PROGRESS comment if the session has new partial output

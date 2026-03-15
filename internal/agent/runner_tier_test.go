@@ -292,7 +292,7 @@ func TestFullRunWithTier3PolicyBlocksPostProcess(t *testing.T) {
 			return &provider.ChatResponse{
 				Message: provider.Message{
 					Role:    provider.RoleAssistant,
-					Content: "I'll fix this bug.",
+					Content: "This is a sufficiently long research response that passes the analytical validation gate minimum length check.",
 				},
 			}, nil
 		},

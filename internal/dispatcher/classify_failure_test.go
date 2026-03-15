@@ -329,6 +329,16 @@ func TestClassifyFailure(t *testing.T) {
 			input: "CREATE PR: cannot create pull request",
 			want:  models.FailureClassPostProcess,
 		},
+		{
+			name:  "validation failed is post_process",
+			input: "validation failed (not retryable): go build failed",
+			want:  models.FailureClassPostProcess,
+		},
+		{
+			name:  "validation retry failed is post_process",
+			input: "validation retry failed: validation failed after retry: go test failed",
+			want:  models.FailureClassPostProcess,
+		},
 
 		// --- classify ---
 		{
