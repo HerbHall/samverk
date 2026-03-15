@@ -88,3 +88,16 @@ type IssueFailureCount struct {
 	IssueNumber int `json:"issue_number"`
 	Count       int `json:"count"`
 }
+
+// CorrectionEvent records a correction decision made by the failure response engine.
+type CorrectionEvent struct {
+	ID           string       `json:"id"`
+	IssueNumber  int          `json:"issue_number"`
+	FailureClass FailureClass `json:"failure_class"`
+	Action       string       `json:"action"`
+	Scope        string       `json:"scope"`
+	Reason       string       `json:"reason"`
+	NewProvider  string       `json:"new_provider,omitempty"`
+	Outcome      string       `json:"outcome"` // pending, applied, failed
+	CreatedAt    time.Time    `json:"created_at"`
+}
