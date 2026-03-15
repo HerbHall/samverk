@@ -66,8 +66,18 @@ func ValidateBeforePost(ctx context.Context, agentType models.AgentType, workDir
 }
 
 // validateWorktree runs `go build ./...` and `go test ./...` in the worktree.
+// If the `go` tool is not installed on the host, validation is skipped gracefully.
 func validateWorktree(ctx context.Context, workDir string, logger *zap.Logger) *ValidationResult {
 	result := &ValidationResult{Pass: true, Retryable: true}
+
+	// Check if 'go' is available. On deployment hosts (CT 202/203) Go may not
+	// be installed since the binary is cross-compiled on the dev machine.
+	if _, err := exec.LookPath("go"); err != nil {
+		logger.Info("validation: skipping worktree checks (go not available)",
+			zap.String("workDir", workDir),
+		)
+		return result // Pass by default when tool is missing.
+	}
 
 	// Build check.
 	buildOut, buildErr := runInDir(ctx, workDir, "go", "build", "./...")
