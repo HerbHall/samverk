@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/herbhall/samverk/internal/provider"
 )
 
@@ -42,12 +44,14 @@ type Client struct {
 	allowedTools string // comma-separated tool list; empty means no --allowedTools flag
 	maxTurns     int    // max agentic turns; 0 means no limit
 	onActivity   func() // called when output bytes arrive; may be nil
+	logger       *zap.Logger
 }
 
 // Options configures optional Client parameters.
 type Options struct {
-	AllowedTools string // comma-separated tool list (e.g. "Bash,Read,Edit,Write,Glob,Grep")
-	MaxTurns     int    // max agentic turns per session; 0 means no limit
+	AllowedTools string      // comma-separated tool list (e.g. "Bash,Read,Edit,Write,Glob,Grep")
+	MaxTurns     int         // max agentic turns per session; 0 means no limit
+	Logger       *zap.Logger // structured logger; nil uses nop logger
 }
 
 // New creates a claude-cli provider with the default timeout.
@@ -63,10 +67,14 @@ func NewWithTimeout(model string, timeout time.Duration, opts ...Options) *Clien
 		claudeBin: "claude",
 		model:     model,
 		timeout:   timeout,
+		logger:    zap.NewNop(),
 	}
 	if len(opts) > 0 {
 		c.allowedTools = opts[0].AllowedTools
 		c.maxTurns = opts[0].MaxTurns
+		if opts[0].Logger != nil {
+			c.logger = opts[0].Logger
+		}
 	}
 	return c
 }
@@ -103,6 +111,12 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		}
 	}
 
+	start := time.Now()
+	log := c.logger
+	if log == nil {
+		log = zap.NewNop()
+	}
+
 	args := []string{"--print", "--dangerously-skip-permissions", "--no-session-persistence"}
 	if c.allowedTools != "" {
 		args = append(args, "--allowedTools", c.allowedTools)
@@ -113,6 +127,15 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	if c.model != "" {
 		args = append(args, "--model", c.model)
 	}
+
+	log.Info("claude-cli chat request",
+		zap.String("model", c.model),
+		zap.Int("message_count", len(req.Messages)),
+		zap.Int("prompt_bytes", prompt.Len()),
+		zap.String("allowed_tools", c.allowedTools),
+		zap.Int("max_turns", c.maxTurns),
+		zap.Duration("timeout", c.timeout),
+	)
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -144,8 +167,14 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	}
 
 	if err = cmd.Start(); err != nil {
+		log.Error("claude-cli start failed",
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("claude-cli: start: %w", err)
 	}
+	log.Info("claude-cli process started",
+		zap.Int("pid", cmd.Process.Pid),
+	)
 
 	// Read stdout and stderr concurrently, merging into a single buffer.
 	var output strings.Builder
@@ -160,6 +189,12 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		if len(snippet) > maxErrOutputBytes {
 			snippet = snippet[len(snippet)-maxErrOutputBytes:]
 		}
+		log.Error("claude-cli stream error",
+			zap.String("model", c.model),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Int("output_bytes", output.Len()),
+			zap.Error(streamErr),
+		)
 		return nil, fmt.Errorf("claude-cli: %w: output: %s", streamErr, strings.TrimSpace(snippet))
 	}
 	if waitErr != nil {
@@ -167,8 +202,20 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		if len(snippet) > maxErrOutputBytes {
 			snippet = snippet[len(snippet)-maxErrOutputBytes:]
 		}
+		log.Error("claude-cli exec error",
+			zap.String("model", c.model),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Int("output_bytes", output.Len()),
+			zap.Error(waitErr),
+		)
 		return nil, fmt.Errorf("claude-cli: exec: %w: output: %s", waitErr, strings.TrimSpace(snippet))
 	}
+
+	log.Info("claude-cli chat response",
+		zap.String("model", c.model),
+		zap.Int("output_bytes", output.Len()),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 
 	return &provider.ChatResponse{
 		Model: c.model,

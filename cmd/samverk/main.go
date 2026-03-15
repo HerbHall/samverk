@@ -387,7 +387,7 @@ func dispatchCmd() *cobra.Command {
 			// Load provider registry and construct agent pool if config exists.
 			var pool *agent.Pool
 			if providersConfig != "" {
-				registry, regErr := provider.LoadRegistry(providersConfig, providerFactory)
+				registry, regErr := provider.LoadRegistry(providersConfig, makeProviderFactory(logger), logger)
 				if regErr != nil {
 					logger.Warn("could not load provider registry, agents disabled", zap.String("path", providersConfig), zap.Error(regErr))
 				} else {
@@ -950,55 +950,58 @@ func (a *apiWorkerAdapter) ListWorkers() []internalmcp.WorkerInfo {
 	return out
 }
 
-// providerFactory constructs a provider.Provider from YAML config.
-// It wires the concrete provider sub-packages (claude, openai, ollama)
-// so the registry package doesn't import them directly.
-func providerFactory(name string, cfg provider.ProviderConfig) (provider.Provider, error) {
-	switch cfg.Type {
-	case "claude":
-		apiKey := os.Getenv(cfg.APIKeyEnv)
-		if apiKey == "" {
-			return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+// makeProviderFactory returns a ProviderFactory closure that constructs
+// provider.Provider instances from YAML config, wiring in the logger.
+func makeProviderFactory(l *zap.Logger) provider.ProviderFactory {
+	return func(name string, cfg provider.ProviderConfig) (provider.Provider, error) {
+		plog := l.Named("provider." + name)
+		switch cfg.Type {
+		case "claude":
+			apiKey := os.Getenv(cfg.APIKeyEnv)
+			if apiKey == "" {
+				return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+			}
+			model := cfg.DefaultModel
+			if model == "" {
+				model = "claude-sonnet-4-20250514"
+			}
+			return claude.New(apiKey, model, claude.WithLogger(plog)), nil
+		case "openai":
+			apiKey := os.Getenv(cfg.APIKeyEnv)
+			if apiKey == "" {
+				return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+			}
+			model := cfg.DefaultModel
+			if model == "" {
+				model = "gpt-4o"
+			}
+			return openai.New(apiKey, model, openai.WithLogger(plog)), nil
+		case "ollama":
+			baseURL := cfg.BaseURL
+			if baseURL == "" {
+				baseURL = "http://localhost:11434"
+			}
+			if cfg.TimeoutSeconds > 0 {
+				return ollama.NewWithTimeout(baseURL, time.Duration(cfg.TimeoutSeconds)*time.Second, ollama.WithLogger(plog)), nil
+			}
+			return ollama.New(baseURL, ollama.WithLogger(plog)), nil
+		case "claude-cli":
+			if cfg.MaxTurns < 0 {
+				return nil, fmt.Errorf("provider %q: max_turns must be non-negative, got %d", name, cfg.MaxTurns)
+			}
+			model := cfg.DefaultModel
+			opts := claudecli.Options{
+				AllowedTools: normalizeCSV(cfg.AllowedTools),
+				MaxTurns:     cfg.MaxTurns,
+				Logger:       plog,
+			}
+			if cfg.TimeoutSeconds > 0 {
+				return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second, opts), nil
+			}
+			return claudecli.New(model, opts), nil
+		default:
+			return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 		}
-		model := cfg.DefaultModel
-		if model == "" {
-			model = "claude-sonnet-4-20250514"
-		}
-		return claude.New(apiKey, model), nil
-	case "openai":
-		apiKey := os.Getenv(cfg.APIKeyEnv)
-		if apiKey == "" {
-			return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
-		}
-		model := cfg.DefaultModel
-		if model == "" {
-			model = "gpt-4o"
-		}
-		return openai.New(apiKey, model), nil
-	case "ollama":
-		baseURL := cfg.BaseURL
-		if baseURL == "" {
-			baseURL = "http://localhost:11434"
-		}
-		if cfg.TimeoutSeconds > 0 {
-			return ollama.NewWithTimeout(baseURL, time.Duration(cfg.TimeoutSeconds)*time.Second), nil
-		}
-		return ollama.New(baseURL), nil
-	case "claude-cli":
-		if cfg.MaxTurns < 0 {
-			return nil, fmt.Errorf("provider %q: max_turns must be non-negative, got %d", name, cfg.MaxTurns)
-		}
-		model := cfg.DefaultModel
-		opts := claudecli.Options{
-			AllowedTools: normalizeCSV(cfg.AllowedTools),
-			MaxTurns:     cfg.MaxTurns,
-		}
-		if cfg.TimeoutSeconds > 0 {
-			return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second, opts), nil
-		}
-		return claudecli.New(model, opts), nil
-	default:
-		return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 	}
 }
 

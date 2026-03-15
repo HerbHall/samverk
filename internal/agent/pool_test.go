@@ -41,7 +41,7 @@ func newTestPool(t *testing.T, workers int, mp *mockProvider) *Pool {
 		},
 	}
 
-	reg := provider.NewRegistry()
+	reg := provider.NewRegistry(nil)
 	reg.Register("test", "test", mp, "test-model")
 	reg.SetRouting(map[string][]string{
 		"default": {"test"},

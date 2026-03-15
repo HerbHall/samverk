@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/herbhall/samverk/internal/provider"
 )
 
@@ -32,6 +34,7 @@ type Client struct {
 	model      string
 	maxTokens  int
 	httpClient *http.Client
+	logger     *zap.Logger
 }
 
 // Option is a functional option for the Client.
@@ -58,6 +61,13 @@ func WithMaxTokens(n int) Option {
 	}
 }
 
+// WithLogger sets a structured logger for request/response logging.
+func WithLogger(l *zap.Logger) Option {
+	return func(c *Client) {
+		c.logger = l
+	}
+}
+
 // New creates a new Claude API client.
 func New(apiKey, model string, opts ...Option) *Client {
 	c := &Client{
@@ -65,6 +75,7 @@ func New(apiKey, model string, opts ...Option) *Client {
 		apiKey:    apiKey,
 		model:     model,
 		maxTokens: defaultMaxTokens,
+		logger:    zap.NewNop(),
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -112,10 +123,17 @@ type claudeUsage struct {
 // System messages are extracted from req.Messages and placed in the
 // top-level "system" field as required by the Claude API.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
+	start := time.Now()
 	model := req.Model
 	if model == "" {
 		model = c.model
 	}
+
+	c.logger.Info("claude chat request",
+		zap.String("model", model),
+		zap.Int("message_count", len(req.Messages)),
+		zap.Int("max_tokens", c.maxTokens),
+	)
 
 	// Extract system messages and convert remaining to Claude format.
 	var systemParts []string
@@ -140,6 +158,11 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 	var resp claudeResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/messages", cr, &resp); err != nil {
+		c.logger.Error("claude chat failed",
+			zap.String("model", model),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("claude: chat: %w", err)
 	}
 
@@ -150,6 +173,13 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 			textParts = append(textParts, block.Text)
 		}
 	}
+
+	c.logger.Info("claude chat response",
+		zap.String("model", resp.Model),
+		zap.Int("prompt_tokens", resp.Usage.InputTokens),
+		zap.Int("completion_tokens", resp.Usage.OutputTokens),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 
 	return &provider.ChatResponse{
 		Model: resp.Model,

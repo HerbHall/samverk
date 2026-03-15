@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
@@ -49,15 +50,20 @@ type Registry struct {
 	models    map[string]string    // name -> default model
 	types     map[string]string    // name -> provider type
 	routing   map[string][]string  // agent_type -> provider names
+	logger    *zap.Logger
 }
 
 // NewRegistry creates an empty provider registry.
-func NewRegistry() *Registry {
+func NewRegistry(logger *zap.Logger) *Registry {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Registry{
 		providers: make(map[string]Provider),
 		models:    make(map[string]string),
 		types:     make(map[string]string),
 		routing:   make(map[string][]string),
+		logger:    logger,
 	}
 }
 
@@ -66,6 +72,11 @@ func (r *Registry) Register(name, providerType string, p Provider, model string)
 	r.providers[name] = p
 	r.models[name] = model
 	r.types[name] = providerType
+	r.logger.Info("provider registered",
+		zap.String("name", name),
+		zap.String("type", providerType),
+		zap.String("model", model),
+	)
 }
 
 // SetRouting sets the routing table that maps agent types to provider chains.
@@ -81,20 +92,43 @@ func (r *Registry) Get(ctx context.Context, agentType string) (Provider, string,
 	if !ok {
 		chain, ok = r.routing["default"]
 		if !ok {
+			r.logger.Error("no routing chain found",
+				zap.String("agent_type", agentType),
+			)
 			return nil, "", ErrNoHealthyProvider
 		}
+		r.logger.Info("routing chain fallback to default",
+			zap.String("agent_type", agentType),
+		)
 	}
 
 	for _, name := range chain {
 		p, exists := r.providers[name]
 		if !exists {
+			r.logger.Warn("provider in chain not registered",
+				zap.String("agent_type", agentType),
+				zap.String("provider", name),
+			)
 			continue
 		}
 		if p.Healthy(ctx) {
+			r.logger.Info("provider selected",
+				zap.String("agent_type", agentType),
+				zap.String("provider", name),
+				zap.String("model", r.models[name]),
+			)
 			return p, r.models[name], nil
 		}
+		r.logger.Warn("provider unhealthy, trying next",
+			zap.String("agent_type", agentType),
+			zap.String("provider", name),
+		)
 	}
 
+	r.logger.Error("all providers in chain unhealthy",
+		zap.String("agent_type", agentType),
+		zap.Strings("chain", chain),
+	)
 	return nil, "", ErrNoHealthyProvider
 }
 
@@ -140,13 +174,22 @@ func LoadRegistryConfig(path string) (*RegistryConfig, error) {
 
 // LoadRegistry reads a YAML config file, constructs providers using the
 // given factory, and returns a fully wired Registry.
-func LoadRegistry(path string, factory ProviderFactory) (*Registry, error) {
+func LoadRegistry(path string, factory ProviderFactory, logger *zap.Logger) (*Registry, error) {
 	cfg, err := LoadRegistryConfig(path)
 	if err != nil {
 		return nil, err
 	}
 
-	reg := NewRegistry()
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	logger.Info("loading provider registry",
+		zap.String("path", path),
+		zap.Int("provider_count", len(cfg.Providers)),
+	)
+
+	reg := NewRegistry(logger)
 
 	for name, pcfg := range cfg.Providers {
 		p, err := factory(name, pcfg)
@@ -158,6 +201,9 @@ func LoadRegistry(path string, factory ProviderFactory) (*Registry, error) {
 
 	if cfg.Routing != nil {
 		reg.SetRouting(cfg.Routing)
+		logger.Info("routing table loaded",
+			zap.Int("chain_count", len(cfg.Routing)),
+		)
 	}
 
 	return reg, nil

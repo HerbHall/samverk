@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/herbhall/samverk/internal/provider"
 )
 
@@ -22,40 +24,83 @@ var _ provider.Provider = (*Client)(nil)
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	logger     *zap.Logger
+}
+
+// Option configures a Client.
+type Option func(*Client)
+
+// WithLogger sets a structured logger for request/response logging.
+func WithLogger(l *zap.Logger) Option {
+	return func(c *Client) {
+		c.logger = l
+	}
 }
 
 // New creates a new Ollama client targeting the given base URL
 // (e.g., "http://localhost:11434") with a default 30-second timeout.
-func New(baseURL string) *Client {
-	return &Client{
+func New(baseURL string, opts ...Option) *Client {
+	c := &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
+		logger:  zap.NewNop(),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // NewWithTimeout creates a new Ollama client targeting the given base URL
 // with a custom HTTP client timeout. Use this when models may be cold
 // (evicted from VRAM) and require extra time to load before responding.
-func NewWithTimeout(baseURL string, timeout time.Duration) *Client {
-	return &Client{
+func NewWithTimeout(baseURL string, timeout time.Duration, opts ...Option) *Client {
+	c := &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
+		logger:  zap.NewNop(),
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // Chat sends a chat completion request to POST /api/chat.
 // Stream is always forced to false.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (resp *provider.ChatResponse, err error) {
+	start := time.Now()
+
+	c.logger.Info("ollama chat request",
+		zap.String("model", req.Model),
+		zap.Int("message_count", len(req.Messages)),
+		zap.String("base_url", c.baseURL),
+	)
+
 	req.Stream = false
 
 	resp = &provider.ChatResponse{}
 	if err = c.doJSON(ctx, http.MethodPost, "/api/chat", req, resp); err != nil {
+		c.logger.Error("ollama chat failed",
+			zap.String("model", req.Model),
+			zap.String("base_url", c.baseURL),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("ollama: chat: %w", err)
 	}
+
+	c.logger.Info("ollama chat response",
+		zap.String("model", resp.Model),
+		zap.Int("prompt_tokens", resp.PromptTokens),
+		zap.Int("completion_tokens", resp.CompletionTokens),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
+
 	return resp, nil
 }
 
