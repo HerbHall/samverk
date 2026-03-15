@@ -284,6 +284,7 @@ func (c *Client) doRequestWithSession(ctx context.Context, rpcReq jsonRPCRequest
 		return nil, "", fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
 	if session != "" {
 		httpReq.Header.Set("Mcp-Session-Id", session)
 	}
