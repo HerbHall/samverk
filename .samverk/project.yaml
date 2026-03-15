@@ -1,7 +1,0 @@
-name: samverk
-forge: github
-forge_url: https://github.com/HerbHall/samverk
-phase: execution
-registered: 2026-02-15
-labels_synced: true
-autonomy_overrides: {}
