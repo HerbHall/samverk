@@ -60,6 +60,10 @@ type Store interface {
 	IncrementIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
 	ClearIssueFailureCount(ctx context.Context, issueNumber int) error
 
+	// Correction events (written by correction engine, read by API and diagnostics)
+	SaveCorrectionEvent(ctx context.Context, e *models.CorrectionEvent) error
+	ListCorrectionEvents(ctx context.Context, issueNumber int) ([]*models.CorrectionEvent, error)
+
 	Close() error
 }
 
@@ -212,6 +216,21 @@ CREATE TABLE IF NOT EXISTS issue_failure_counts (
 	count        INTEGER NOT NULL DEFAULT 0,
 	updated_at   TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS corrections (
+	id             TEXT PRIMARY KEY,
+	issue_number   INTEGER NOT NULL,
+	failure_class  TEXT NOT NULL,
+	action         TEXT NOT NULL,
+	scope          TEXT NOT NULL,
+	reason         TEXT NOT NULL DEFAULT '',
+	new_provider   TEXT NOT NULL DEFAULT '',
+	outcome        TEXT NOT NULL DEFAULT 'pending',
+	created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_corrections_issue ON corrections(issue_number);
+CREATE INDEX IF NOT EXISTS idx_corrections_created ON corrections(created_at DESC);
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
 		return err

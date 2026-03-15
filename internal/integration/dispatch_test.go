@@ -120,6 +120,12 @@ func (m *mockStore) GetFailureSummary(_ context.Context, _ time.Time) (*models.F
 func (m *mockStore) GetIssueFailureCount(_ context.Context, _ int) (int, error)       { return 0, nil }
 func (m *mockStore) IncrementIssueFailureCount(_ context.Context, _ int) (int, error)  { return 1, nil }
 func (m *mockStore) ClearIssueFailureCount(_ context.Context, _ int) error             { return nil }
+func (m *mockStore) SaveCorrectionEvent(_ context.Context, _ *models.CorrectionEvent) error {
+	return nil
+}
+func (m *mockStore) ListCorrectionEvents(_ context.Context, _ int) ([]*models.CorrectionEvent, error) {
+	return nil, nil
+}
 
 func (m *mockStore) getSession(id string) *models.Session {
 	m.mu.Lock()
