@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,26 +36,39 @@ const (
 
 // Client invokes the claude CLI binary for chat completions.
 type Client struct {
-	claudeBin  string
-	model      string
-	timeout    time.Duration
-	onActivity func() // called when output bytes arrive; may be nil
+	claudeBin    string
+	model        string
+	timeout      time.Duration
+	allowedTools string // comma-separated tool list; empty means no --allowedTools flag
+	maxTurns     int    // max agentic turns; 0 means no limit
+	onActivity   func() // called when output bytes arrive; may be nil
+}
+
+// Options configures optional Client parameters.
+type Options struct {
+	AllowedTools string // comma-separated tool list (e.g. "Bash,Read,Edit,Write,Glob,Grep")
+	MaxTurns     int    // max agentic turns per session; 0 means no limit
 }
 
 // New creates a claude-cli provider with the default timeout.
 // If model is empty, the CLI uses its default.
-func New(model string) *Client {
-	return NewWithTimeout(model, defaultTimeout)
+func New(model string, opts ...Options) *Client {
+	return NewWithTimeout(model, defaultTimeout, opts...)
 }
 
 // NewWithTimeout creates a claude-cli provider with a custom timeout.
 // Use this when the provider config specifies timeout_seconds.
-func NewWithTimeout(model string, timeout time.Duration) *Client {
-	return &Client{
+func NewWithTimeout(model string, timeout time.Duration, opts ...Options) *Client {
+	c := &Client{
 		claudeBin: "claude",
 		model:     model,
 		timeout:   timeout,
 	}
+	if len(opts) > 0 {
+		c.allowedTools = opts[0].AllowedTools
+		c.maxTurns = opts[0].MaxTurns
+	}
+	return c
 }
 
 // SetOnActivity registers a callback invoked whenever the CLI process
@@ -74,6 +88,7 @@ func (c *Client) SetOnActivity(fn func()) {
 // IMPORTANT: The prompt MUST be sent via stdin, not as a CLI argument.
 // Passing the prompt as an argument causes the CLI to hang indefinitely.
 // --dangerously-skip-permissions is required for headless/non-interactive use.
+// --allowedTools pre-approves tools so the CLI never prompts in headless context.
 // ANTHROPIC_API_KEY must be unset so the CLI uses OAuth (~/.claude) not API credits.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	var prompt strings.Builder
@@ -89,6 +104,12 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	}
 
 	args := []string{"--print", "--dangerously-skip-permissions"}
+	if c.allowedTools != "" {
+		args = append(args, "--allowedTools", c.allowedTools)
+	}
+	if c.maxTurns > 0 {
+		args = append(args, "--max-turns", strconv.Itoa(c.maxTurns))
+	}
 	if c.model != "" {
 		args = append(args, "--model", c.model)
 	}
