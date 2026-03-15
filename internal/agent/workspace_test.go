@@ -54,7 +54,7 @@ func setupTestRepoWithRemote(t *testing.T) string {
 	bareDir := filepath.Join(t.TempDir(), "remote.git")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "init", "--bare", bareDir) //nolint:gosec // G204: test setup
+	cmd := exec.CommandContext(ctx, "git", "init", "--bare", "--initial-branch=main", bareDir) //nolint:gosec // G204: test setup
 	cmd.Env = cleanGitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init --bare: %v: %s", err, out)
@@ -62,6 +62,7 @@ func setupTestRepoWithRemote(t *testing.T) string {
 
 	repoDir := t.TempDir()
 	mustGit(t, repoDir, "init")
+	mustGit(t, repoDir, "checkout", "-b", "main") // ensure default branch is "main" (not "master")
 	mustGit(t, repoDir, "config", "user.email", "test@test.com")
 	mustGit(t, repoDir, "config", "user.name", "Test")
 	mustGit(t, repoDir, "remote", "add", "origin", bareDir)
