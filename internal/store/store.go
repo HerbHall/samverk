@@ -92,6 +92,13 @@ func New(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 
+	// Set busy timeout so concurrent readers/writers (serve + dispatch) retry
+	// instead of returning SQLITE_BUSY immediately.
+	if _, err = db.ExecContext(context.Background(), "PRAGMA busy_timeout=5000"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
 	s := &SQLiteStore{db: db}
 	if err = s.migrate(); err != nil {
 		_ = db.Close()

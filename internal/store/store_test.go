@@ -53,6 +53,50 @@ func TestNewStoreClose(t *testing.T) {
 	}
 }
 
+func TestBusyTimeoutEnabled(t *testing.T) {
+	s := newTestStore(t)
+
+	var timeout int
+	err := s.db.QueryRowContext(context.Background(), "PRAGMA busy_timeout").Scan(&timeout)
+	if err != nil {
+		t.Fatalf("query busy_timeout: %v", err)
+	}
+	if timeout != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", timeout)
+	}
+}
+
+func TestConcurrentFileAccess(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "concurrent.db")
+
+	s1, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("open store 1: %v", err)
+	}
+	defer s1.Close()
+
+	s2, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("open store 2: %v", err)
+	}
+	defer s2.Close()
+
+	// Both stores writing concurrently should not return SQLITE_BUSY
+	// because busy_timeout gives the blocked writer time to retry.
+	ctx := context.Background()
+	for i := 0; i < 20; i++ {
+		if _, err := s1.db.ExecContext(ctx, "INSERT INTO scaling_events (id, timestamp, action, from_workers, to_workers, reason, confidence) VALUES (?, ?, 'scale_up', 1, 2, 'test', 0.9)",
+			generateID(), "2026-01-01T00:00:00Z"); err != nil {
+			t.Fatalf("store1 write %d: %v", i, err)
+		}
+		if _, err := s2.db.ExecContext(ctx, "INSERT INTO scaling_events (id, timestamp, action, from_workers, to_workers, reason, confidence) VALUES (?, ?, 'scale_up', 2, 3, 'test', 0.9)",
+			generateID(), "2026-01-01T00:00:00Z"); err != nil {
+			t.Fatalf("store2 write %d: %v", i, err)
+		}
+	}
+}
+
 func TestMigrationIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
