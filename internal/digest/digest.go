@@ -256,7 +256,7 @@ func countDependents(ctx context.Context, tracker forge.IssueTracker, issueNumbe
 		pr, _ := models.ParseFrontmatter(iss.Body)
 		if pr != nil && pr.Frontmatter != nil {
 			for _, dep := range pr.Frontmatter.DependsOn {
-				if dep == issueNumber {
+				if !dep.IsCrossProject() && dep.Number == issueNumber {
 					count++
 					break
 				}

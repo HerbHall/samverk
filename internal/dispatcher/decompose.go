@@ -95,7 +95,11 @@ func (d *Dispatcher) decomposeAndCreateChildren(
 	}
 
 	// Block parent on all children.
-	if blockErr := d.blockIssue(ctx, issue.Number, childNumbers); blockErr != nil {
+	blockerStrs := make([]string, 0, len(childNumbers))
+	for _, n := range childNumbers {
+		blockerStrs = append(blockerStrs, fmt.Sprintf("%d", n))
+	}
+	if blockErr := d.blockIssue(ctx, issue.Number, blockerStrs); blockErr != nil {
 		return false, fmt.Errorf("block parent #%d: %w", issue.Number, blockErr)
 	}
 
@@ -153,7 +157,7 @@ func (d *Dispatcher) createChildIssues(
 
 // buildChildBody constructs the issue body with frontmatter linking to parent.
 func buildChildBody(parentNumber int, agentType models.AgentType, description string, dependsOn []int) string {
-	fm := fmt.Sprintf("---\nschema_version: \"1.0.0\"\ntype: task\nagent_type: %s\nparent_issue: %d\n", agentType, parentNumber)
+	fm := fmt.Sprintf("---\nschema_version: \"%s\"\ntype: task\nagent_type: %s\nparent_issue: %d\n", models.SchemaVersion, agentType, parentNumber)
 	if len(dependsOn) > 0 {
 		fm += "depends_on:\n"
 		for _, dep := range dependsOn {

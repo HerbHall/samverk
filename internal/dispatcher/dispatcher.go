@@ -32,6 +32,7 @@ type Dispatcher struct {
 	store          store.Store
 	pool           *agent.Pool
 	decomposer     Decomposer
+	projects       ProjectResolver
 	config         *Config
 	claimed        map[int]*claimedIssue
 	issueFailures  map[int]int // in-memory fallback; persisted counter is authoritative when store is set
@@ -70,6 +71,13 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 // child issues before routing.
 func (d *Dispatcher) SetDecomposer(dec Decomposer) {
 	d.decomposer = dec
+}
+
+// SetProjectResolver configures the cross-project dependency resolver.
+// When set, the dispatcher can resolve depends_on references to issues
+// in other registered projects (e.g., "owner/repo#42").
+func (d *Dispatcher) SetProjectResolver(pr ProjectResolver) {
+	d.projects = pr
 }
 
 // Snapshot returns a point-in-time snapshot of dispatcher metrics.
@@ -149,6 +157,10 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			pollStart := time.Now()
 			if err := d.checkTimeouts(ctx); err != nil {
 				d.logger.Error("heartbeat check", zap.String("error", err.Error()))
+			}
+			// Periodically re-evaluate cross-project dependencies for blocked issues.
+			if err := d.recheckCrossProjectDeps(ctx); err != nil {
+				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
 			}
 			d.metrics.PollCompleted(time.Since(pollStart))
 		}
@@ -357,7 +369,7 @@ func (d *Dispatcher) escalateCycle(ctx context.Context, cycle []int) error {
 }
 
 // blockIssue transitions an issue to status:blocked with a comment listing blockers.
-func (d *Dispatcher) blockIssue(ctx context.Context, issueNumber int, blockers []int) error {
+func (d *Dispatcher) blockIssue(ctx context.Context, issueNumber int, blockers []string) error {
 	comment := fmt.Sprintf(
 		"BLOCKED [dispatcher] [%s]\nWaiting on: %v\nWill auto-unblock when all dependencies reach status:done.",
 		time.Now().UTC().Format(time.RFC3339), blockers,

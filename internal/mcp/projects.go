@@ -116,6 +116,21 @@ func (r *ProjectRegistry) Get(name string) (*Project, bool) {
 	return p, exists
 }
 
+// TrackerFor returns the IssueTracker for the project matching the given
+// owner/repo pair. Returns nil, false if no matching project is registered.
+// This method satisfies the dispatcher.ProjectResolver interface.
+func (r *ProjectRegistry) TrackerFor(owner, repo string) (forge.IssueTracker, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, p := range r.projects {
+		if p.Owner == owner && p.Repo == repo {
+			return p.Tracker, true
+		}
+	}
+	return nil, false
+}
+
 // ActiveName returns the name of the currently active project.
 func (r *ProjectRegistry) ActiveName() string {
 	r.mu.RLock()
