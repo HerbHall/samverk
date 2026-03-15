@@ -228,6 +228,17 @@ export interface LogEntry {
   fields?: string
 }
 
+export interface LogSummary {
+  scope: { type: string; id: string }
+  text: string
+  total_entries: number
+  error_count: number
+  warn_count: number
+  components: string[]
+  ai_generated: boolean
+  generated_at: string
+}
+
 export const api = {
   listIssues: (params?: { state?: string; page?: number }) =>
     fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
@@ -275,5 +286,13 @@ export const api = {
     }
     const qs = searchParams.toString()
     return fetchJSON<LogEntry[]>(`/logs${qs ? '?' + qs : ''}`)
+  },
+
+  getLogSummary: (params: { scope: string; id?: string; since?: string; until?: string }) => {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '') searchParams.set(k, String(v))
+    })
+    return fetchJSON<LogSummary>(`/logs/summary?${searchParams.toString()}`)
   },
 }

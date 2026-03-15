@@ -26,6 +26,7 @@ import (
 	"github.com/herbhall/samverk/internal/logstore"
 	giteaadapter "github.com/herbhall/samverk/internal/forge/gitea"
 	"github.com/herbhall/samverk/internal/forge/github"
+	"github.com/herbhall/samverk/internal/loganalyst"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/prwatcher"
@@ -310,6 +311,25 @@ func serveCmd() *cobra.Command {
 				}
 			}()
 			logger.Info("host metrics collector started")
+
+			// Wire log analyst if logstore is available.
+			if ls != nil {
+				ollamaURL := os.Getenv("SAMVERK_OLLAMA_URL")
+				if ollamaURL == "" {
+					ollamaURL = "http://192.168.1.207:11434"
+				}
+				ollamaModel := os.Getenv("SAMVERK_ANALYST_MODEL")
+				if ollamaModel == "" {
+					ollamaModel = "qwen2.5-coder:7b"
+				}
+				var ollamaClient loganalyst.OllamaClient = loganalyst.NewOllamaAnalystClient(ollamaURL, ollamaModel, 120*time.Second)
+				analyst := loganalyst.New(ls, ollamaClient, logger)
+				apiHandler.SetLogAnalyst(analyst)
+				logger.Info("log analyst enabled",
+					zap.String("ollama_url", ollamaURL),
+					zap.String("model", ollamaModel),
+				)
+			}
 
 			// Wire worker lister from API into MCP digest so the get_digest tool
 			// shows registered PC agent workers in the RUNTIME METRICS section.

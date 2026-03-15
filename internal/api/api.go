@@ -9,6 +9,7 @@ import (
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/hostmetrics"
+	"github.com/herbhall/samverk/internal/loganalyst"
 	"github.com/herbhall/samverk/internal/logstore"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/store"
@@ -39,6 +40,7 @@ type API struct {
 	system         systemMetricsSource     // may be nil; created via SetMetrics
 	hostMetrics    *hostmetrics.Collector   // may be nil if collector not started
 	capacity       *capacityDTO            // may be nil if no providers configured
+	logAnalyst     *loganalyst.Analyst      // may be nil if logstore not configured
 	workers        *workerRegistry         // in-memory registry of PC agent workers
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
@@ -94,6 +96,12 @@ func (a *API) SetScalingConfig(enabled bool, minW, maxW int) {
 	a.scalingMax = maxW
 }
 
+// SetLogAnalyst attaches the log analyst for AI-powered log summaries.
+// Call from the serve command after creating the logstore and Ollama client.
+func (a *API) SetLogAnalyst(la *loganalyst.Analyst) {
+	a.logAnalyst = la
+}
+
 // RegisterRoutes registers all API endpoints on the given mux.
 // Routes use Go 1.22+ method+path patterns.
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
@@ -115,6 +123,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/metrics/host", a.handleHostMetrics)
 	mux.HandleFunc("GET /api/v1/failures", a.handleFailureSummary)
 	mux.HandleFunc("GET /api/v1/logs", a.handleListLogs)
+	mux.HandleFunc("GET /api/v1/logs/summary", a.handleLogSummary)
 }
 
 // errorResponse is the JSON body returned for error responses.
