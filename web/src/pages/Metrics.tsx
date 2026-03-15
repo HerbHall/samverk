@@ -185,7 +185,7 @@ function ActivityFeed({ sessions }: { sessions: Session[] }) {
 function TrendingSection({ entries }: { entries: HistoryEntry[] }) {
   if (entries.length < 2) {
     return (
-      <SectionCard title="Trending (30m)">
+      <SectionCard title="Trending (24h)">
         <div className="py-6 text-center text-sm text-gray-400">Collecting data...</div>
       </SectionCard>
     )
@@ -210,7 +210,7 @@ function TrendingSection({ entries }: { entries: HistoryEntry[] }) {
   ]
 
   return (
-    <SectionCard title="Trending (30m)">
+    <SectionCard title="Trending (24h)">
       <div className="space-y-1 py-1">
         {rows.map((r) => (
           <div key={r.label} className="flex items-center justify-between py-1.5 border-b last:border-b-0">
@@ -418,7 +418,7 @@ export function Metrics() {
 
   const history = useQuery({
     queryKey: ['metrics-history'],
-    queryFn: () => api.getMetricsHistory('30m'),
+    queryFn: () => api.getMetricsHistory('24h'),
     refetchInterval: 30_000,
   })
 
