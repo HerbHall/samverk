@@ -217,6 +217,17 @@ export interface HostMetricsResponse {
   history: HostMetricsDTO[]
 }
 
+export interface LogEntry {
+  id: number
+  ts: string
+  level: string
+  msg: string
+  component?: string
+  session_id?: string
+  issue_number?: number
+  fields?: string
+}
+
 export const api = {
   listIssues: (params?: { state?: string; page?: number }) =>
     fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
@@ -244,4 +255,25 @@ export const api = {
 
   getHostMetrics: () =>
     fetchJSON<HostMetricsResponse>('/metrics/host'),
+
+  getLogs: (params?: {
+    level?: string
+    component?: string
+    session_id?: string
+    issue?: number
+    since?: string
+    until?: string
+    limit?: number
+    offset?: number
+    q?: string
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== '') searchParams.set(k, String(v))
+      })
+    }
+    const qs = searchParams.toString()
+    return fetchJSON<LogEntry[]>(`/logs${qs ? '?' + qs : ''}`)
+  },
 }
