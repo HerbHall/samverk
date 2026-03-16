@@ -524,6 +524,11 @@ func TestClassifyFailure(t *testing.T) {
 			input: "hung: no output for 5m0s",
 			want:  models.FailureClassProviderDown,
 		},
+		{
+			name:  "hung no output 60s after timeout reduction",
+			input: "provider chat: claude-cli: hung: no output for 60s: output: ",
+			want:  models.FailureClassProviderDown,
+		},
 	}
 
 	for _, tt := range tests {

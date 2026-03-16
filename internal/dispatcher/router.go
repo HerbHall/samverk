@@ -31,14 +31,20 @@ var complexTitleKeywords = []string{"architect", "refactor", "redesign", "spike"
 // Returns the agent type and parsed frontmatter (may be nil for heuristic matches).
 // If frontmatter is present but malformed, returns an error immediately (no
 // heuristic fallback). Heuristics are only attempted when frontmatter is absent.
-func (d *Dispatcher) classify(_ context.Context, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
+//
+// When a heuristic match succeeds for an issue without frontmatter, classify
+// auto-generates frontmatter and attempts to persist it back to the issue body
+// via UpdateIssue. If persistence fails the generated frontmatter is still
+// returned for in-memory routing.
+func (d *Dispatcher) classify(ctx context.Context, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
 	fm, err := d.parseFrontmatter(issue)
 	if err != nil {
 		return "", nil, fmt.Errorf("classify issue #%d: %w", issue.Number, err)
 	}
 	if fm == nil {
 		if at := classifyByHeuristic(issue); at != "" {
-			return at, nil, nil
+			fm = d.autoInjectFrontmatter(ctx, issue, at)
+			return at, fm, nil
 		}
 		return "", nil, fmt.Errorf("classify issue #%d: no frontmatter found and no heuristic match", issue.Number)
 	}
