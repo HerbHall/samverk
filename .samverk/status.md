@@ -1,6 +1,6 @@
 ---
-phase: foundation-rebuild
-updated: 2026-03-15T22:00:00Z
+phase: agent-autonomy
+updated: 2026-03-17T00:30:00Z
 updated_by: claude-code
 ---
 
@@ -8,62 +8,62 @@ updated_by: claude-code
 
 ## Phase
 
-Phase 5A: Foundation rebuild. Dispatcher re-enabled on CT 202 with workspace isolation. Implementing solo developer agent model (ADR-035). Next: agent tooling (#521) and end-to-end verification.
+Agent Autonomy -- getting Samverk to run itself. Infrastructure complete.
+Focus: fix agent quality, move data to server, enable planning workflow.
 
 ## What Is Running
 
-- Samverk server: CT 202 (192.168.1.162:8080) -- healthy, API auth enabled
-- MCP endpoint: POST /mcp (Streamable HTTP, bearer auth)
-- Dispatcher: RUNNING (1 worker, workspace isolation via /var/lib/samverk/repo)
-- PR watcher: runs concurrently with dispatcher (auto-merge eligible PRs)
-- Gitea: CT 200 (192.168.1.160:3000 / gitea.herbhall.net) -- primary runtime forge
-- Staging: CT 203 (192.168.1.199:8080) -- available for testing (not yet deployed with latest)
+- Samverk server: CT 202 (192.168.1.162:8080) -- healthy
+- Dispatcher: RUNNING (1-5 workers, 6 providers, free-first routing)
+- Health monitor: 60s probes, WoL for sleeping hosts
+- Watcher: auto-restart with backoff (no more silent hangs)
+- Dashboard: unified with Synapset native + DevKit iframe
+- Gitea CI: CT 200 (40GB disk, weekly cleanup cron)
 
-## Phase 5A Progress
+### GPU Fleet
 
-### Completed
+| Host | GPU | Model | Status |
+|------|-----|-------|--------|
+| HDH-NZXT | RTX 5090 32GB | qwen3-coder:30b | HEALTHY |
+| VM 300 | RTX 3090 Ti 24GB | qwen2.5-coder:14b | HEALTHY |
+| CM-ASUS | RTX 2080 Ti 11GB | qwen2.5-coder:7b | HEALTHY |
 
-| Issue | Title | PR | Status |
-|-------|-------|----|--------|
-| #501 | allowedTools fix for Claude CLI | -- | CLOSED (merged) |
-| #503-506 | Provider logging (all 4 providers) | #526 | MERGED |
-| #515 | Tier enforcement in agent runner | #522 | MERGED |
-| #516 | Intelligent failure response engine | #525 | MERGED |
-| #519 | Staging CT 203 | #524 | MERGED |
-| #517 | Isolated agent workspaces (git worktrees) | #529 | MERGED |
-| #535 | Wire SetRepoDir in dispatcher startup | #536 | MERGED |
-| #518 | Pre-posting validation gate | #537 | MERGED |
+## Gaps to Full Autonomy
 
-### Remaining
+### Critical
 
-| Issue | Title | Depends On | Status |
-|-------|-------|------------|--------|
-| #521 | Agent tooling (DevKit rules, MCP, Synapset) | #517 | Not started |
-| #527 | Research: Docker containers as agent workspaces | -- | Not started |
+1. **Ollama output quality** -- models overwrite CLAUDE.md instead of
+   implementing features. No tool use, raw chat format. DevKit#348.
+2. **Claude CLI hangs** -- 60s timeout on CT 202, switch_provider works
+   but wastes time.
 
-### Gate Criteria (Resume Dispatcher)
+### High
 
-Progress toward full gate:
+3. **No planning step** -- agents code without reading codebase first.
+4. **DevKit data on local machine** -- claude.db not on CT 202.
+5. **Copilot review feedback** -- PRs merge without reading comments.
 
-1. ~~#517 merged (workspace isolation)~~ DONE
-2. #521 merged (agent tooling parity) -- NOT YET
-3. At least one successful end-to-end agent run on staging (CT 203) -- NOT YET
-4. Failure response engine verified with at least 3 failure classes -- NOT YET
+### Medium
 
-Dispatcher is running in production with partial gate (workspace isolation + validation gate active). Full gate completion requires #521 and e2e verification.
+6. Synapset parse error (Synapset#62 filed)
+7. DevKit dashboard native React (replace iframe)
+8. Enhanced Agents page (#590)
+9. Multi-repo dispatch (code ready, config needed)
 
-### Known Issues
+## Recommended Next Session
 
-- SQLITE_BUSY warnings in logs: autoscaler and metric writer contend on shared SQLite DB when serve and dispatch run concurrently. Non-blocking but should be addressed.
+1. Plan issues for gaps #1-5 with precise scope
+2. Queue for agents with detailed prompts (not auto-dispatch)
+3. Monitor and fix as they process
 
-## Architecture
+## Session Summary (2026-03-16/17)
 
-- ADR-035: Solo developer agent model (proposed) -- agents operate as independent developers with git worktrees, tiered permissions, and intelligent failure response
-- All 10 agent types use single unified workflow with tiered permissions (read-only, code-write, file-write, manual)
+13 PRs merged, 20+ issues closed. Multi-repo dispatcher, health probes,
+WoL, 3 GPU hosts, unified dashboard, inline sparklines, clickable links,
+watcher auto-restart, CT 200 disk fix.
 
-## Start Here (Cold Start Protocol)
+## Start Here
 
 1. Read this file
-2. Call `samverk get_digest --since 168h` if MCP is configured
-3. Check open issues if relevant to the task
-4. Proceed -- do not ask the user to explain project state
+2. Check open issues if relevant
+3. Proceed -- do not ask the user to explain project state
