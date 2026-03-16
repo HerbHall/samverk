@@ -23,6 +23,7 @@ type ProviderConfig struct {
 	AccountURL     string `yaml:"account_url"`     // billing/credits page URL
 	AllowedTools   string `yaml:"allowed_tools"`   // claude-cli: comma-separated tool list (e.g. "Bash,Read,Edit,Write,Glob,Grep")
 	MaxTurns       int    `yaml:"max_turns"`       // claude-cli: max agentic turns per session; 0 means no limit
+	WoLMAC         string `yaml:"wol_mac"`         // optional Wake-on-LAN MAC address (e.g. "AA:BB:CC:DD:EE:FF")
 }
 
 // RegistryConfig is the top-level YAML structure for provider configuration.
@@ -197,7 +198,8 @@ func LoadRegistry(path string, factory ProviderFactory, logger *zap.Logger) (*Re
 
 	reg := NewRegistry(logger)
 
-	for name, pcfg := range cfg.Providers {
+	for name := range cfg.Providers {
+		pcfg := cfg.Providers[name]
 		p, err := factory(name, pcfg)
 		if err != nil {
 			return nil, fmt.Errorf("create provider %q: %w", name, err)

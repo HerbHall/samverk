@@ -73,6 +73,7 @@ func run() int {
 	root.AddCommand(digestCmd())
 	root.AddCommand(keyCmd())
 	root.AddCommand(statusCmd())
+	root.AddCommand(wakeCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -281,7 +282,8 @@ func serveCmd() *cobra.Command {
 				regCfg, pcErr := provider.LoadRegistryConfig(providersConfigServe)
 				if pcErr == nil {
 					pdtos := make([]api.ProviderDTO, 0, len(regCfg.Providers))
-					for name, pcfg := range regCfg.Providers {
+					for name := range regCfg.Providers {
+						pcfg := regCfg.Providers[name]
 						pdtos = append(pdtos, api.ProviderDTO{
 							Name:       name,
 							Type:       pcfg.Type,
@@ -509,6 +511,25 @@ func dispatchCmd() *cobra.Command {
 			// Start health monitor for pre-flight provider health gating.
 			if providerRegistry != nil {
 				hm := provider.NewHealthMonitor(providerRegistry, provider.DefaultHealthCheckInterval, logger)
+
+				// Wire WoL targets from provider config.
+				if providersConfig != "" {
+					regCfg, wolErr := provider.LoadRegistryConfig(providersConfig)
+					if wolErr == nil {
+						wolTargets := make(map[string]provider.WoLConfig)
+						for pName := range regCfg.Providers {
+							pcfg := regCfg.Providers[pName]
+							if pcfg.WoLMAC != "" {
+								wolTargets[pName] = provider.WoLConfig{MAC: pcfg.WoLMAC}
+							}
+						}
+						if len(wolTargets) > 0 {
+							hm.SetWoLTargets(wolTargets)
+							logger.Info("Wake-on-LAN targets configured", zap.Int("count", len(wolTargets)))
+						}
+					}
+				}
+
 				hm.Start(ctx)
 				disp.SetHealthMonitor(hm)
 				logger.Info("provider health monitor started")
@@ -1020,6 +1041,43 @@ func statusCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&write, "write", false, "Write to .samverk/status.md instead of stdout")
 	cmd.Flags().StringVar(&healthURL, "health-url", "http://localhost:8080/healthz", "Health check URL")
 
+	return cmd
+}
+
+func wakeCmd() *cobra.Command {
+	var providersConfigWake string
+
+	cmd := &cobra.Command{
+		Use:   "wake <provider-name>",
+		Short: "Send a Wake-on-LAN packet to a provider's host",
+		Long:  "Reads the wol_mac field from the provider's YAML config and sends a magic packet.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			providerName := args[0]
+
+			cfg, err := provider.LoadRegistryConfig(providersConfigWake)
+			if err != nil {
+				return fmt.Errorf("load providers config: %w", err)
+			}
+
+			pcfg, ok := cfg.Providers[providerName]
+			if !ok {
+				return fmt.Errorf("provider %q not found in config", providerName)
+			}
+			if pcfg.WoLMAC == "" {
+				return fmt.Errorf("provider %q has no wol_mac configured", providerName)
+			}
+
+			fmt.Printf("Sending Wake-on-LAN packet to %s (MAC: %s)...\n", providerName, pcfg.WoLMAC)
+			if err := provider.WakeOnLAN(pcfg.WoLMAC); err != nil {
+				return fmt.Errorf("wake-on-LAN failed: %w", err)
+			}
+			fmt.Println("Magic packet sent successfully.")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&providersConfigWake, "providers-config", ".samverk/providers.yaml", "Path to provider registry YAML config")
 	return cmd
 }
 

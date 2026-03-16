@@ -48,6 +48,9 @@ type HealthMonitor struct {
 
 	mu     sync.RWMutex
 	health map[string]*ProviderHealth // keyed by provider name
+
+	wolTargets  map[string]WoLConfig // provider name -> WoL config
+	wolCooldown *wolCooldownTracker
 }
 
 // NewHealthMonitor creates a HealthMonitor that probes all providers in
@@ -60,11 +63,20 @@ func NewHealthMonitor(registry *Registry, interval time.Duration, logger *zap.Lo
 		logger = zap.NewNop()
 	}
 	return &HealthMonitor{
-		registry: registry,
-		interval: interval,
-		logger:   logger,
-		health:   make(map[string]*ProviderHealth),
+		registry:    registry,
+		interval:    interval,
+		logger:      logger,
+		health:      make(map[string]*ProviderHealth),
+		wolTargets:  make(map[string]WoLConfig),
+		wolCooldown: newWoLCooldownTracker(),
 	}
+}
+
+// SetWoLTargets configures Wake-on-LAN targets for providers. When a
+// provider with a configured WoL target is unhealthy, the monitor sends
+// a magic packet (subject to a 5-minute cooldown per target).
+func (hm *HealthMonitor) SetWoLTargets(targets map[string]WoLConfig) {
+	hm.wolTargets = targets
 }
 
 // Start runs the health check loop in a goroutine. It performs an initial
@@ -153,6 +165,10 @@ func (hm *HealthMonitor) probeAll(ctx context.Context) {
 
 		if info.Healthy {
 			existing.LastHealthy = now
+		} else {
+			// Send WoL packet if the provider is unhealthy and has a
+			// configured target, subject to cooldown.
+			hm.tryWakeOnLAN(name)
 		}
 
 		// Attempt extended health detail for providers that support it.
@@ -182,4 +198,33 @@ func (hm *HealthMonitor) probeAll(ctx context.Context) {
 		zap.Int("providers", len(providers)),
 		zap.Time("at", now),
 	)
+}
+
+// tryWakeOnLAN sends a WoL magic packet for the named provider if it has
+// a configured WoL target and the cooldown has expired.
+func (hm *HealthMonitor) tryWakeOnLAN(name string) {
+	wol, ok := hm.wolTargets[name]
+	if !ok || wol.MAC == "" {
+		return
+	}
+
+	if !hm.wolCooldown.shouldSend(wol.MAC) {
+		hm.logger.Debug("WoL cooldown active, skipping",
+			zap.String("provider", name),
+			zap.String("mac", wol.MAC),
+		)
+		return
+	}
+
+	hm.logger.Info("sending Wake-on-LAN packet for unhealthy provider",
+		zap.String("provider", name),
+		zap.String("mac", wol.MAC),
+	)
+	if err := WakeOnLAN(wol.MAC); err != nil {
+		hm.logger.Warn("Wake-on-LAN failed",
+			zap.String("provider", name),
+			zap.String("mac", wol.MAC),
+			zap.Error(err),
+		)
+	}
 }
