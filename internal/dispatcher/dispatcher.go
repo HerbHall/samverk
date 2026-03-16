@@ -14,6 +14,7 @@ import (
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/metrics"
+	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
 )
 
@@ -45,6 +46,7 @@ type Dispatcher struct {
 	policy         autonomy.AutonomyPolicy
 	store          store.Store
 	pool           *agent.Pool
+	healthMonitor  *provider.HealthMonitor
 	decomposer     Decomposer
 	projects       ProjectResolver
 	config         *Config
@@ -120,6 +122,13 @@ func New(trackers []TrackerEntry, policy autonomy.AutonomyPolicy, st store.Store
 // child issues before routing.
 func (d *Dispatcher) SetDecomposer(dec Decomposer) {
 	d.decomposer = dec
+}
+
+// SetHealthMonitor configures the provider health monitor for pre-flight
+// health gating. When set, route() checks that at least one provider in
+// the routing chain is healthy before claiming an issue.
+func (d *Dispatcher) SetHealthMonitor(hm *provider.HealthMonitor) {
+	d.healthMonitor = hm
 }
 
 // SetProjectResolver configures the cross-project dependency resolver.

@@ -464,15 +464,17 @@ func dispatchCmd() *cobra.Command {
 
 			// Load provider registry and construct agent pool if config exists.
 			var pool *agent.Pool
+			var providerRegistry *provider.Registry
 			if providersConfig != "" {
-				registry, regErr := provider.LoadRegistry(providersConfig, makeProviderFactory(logger), logger)
+				reg, regErr := provider.LoadRegistry(providersConfig, makeProviderFactory(logger), logger)
 				if regErr != nil {
 					logger.Warn("could not load provider registry, agents disabled", zap.String("path", providersConfig), zap.Error(regErr))
 				} else {
+					providerRegistry = reg
 					costs := cost.NewTracker(st, budget, 24)
-					pool = agent.NewPool(registry, tracker, st, costs, workers, logger)
+					pool = agent.NewPool(reg, tracker, st, costs, workers, logger)
 					defer pool.Shutdown()
-					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(registry.List(ctx))))
+					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(reg.List(ctx))))
 				}
 			}
 
@@ -503,6 +505,15 @@ func dispatchCmd() *cobra.Command {
 				{Owner: owner, Repo: repo, Tracker: tracker},
 			}
 			disp := dispatcher.New(trackerEntries, policy, st, pool, nil, logger)
+
+			// Start health monitor for pre-flight provider health gating.
+			if providerRegistry != nil {
+				hm := provider.NewHealthMonitor(providerRegistry, provider.DefaultHealthCheckInterval, logger)
+				hm.Start(ctx)
+				disp.SetHealthMonitor(hm)
+				logger.Info("provider health monitor started")
+			}
+
 			logger.Info("starting dispatcher", zap.String("owner", owner), zap.String("repo", repo))
 
 			g, gctx := errgroup.WithContext(ctx)
