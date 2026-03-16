@@ -144,7 +144,7 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
   )
 }
 
-function MetricRow({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
+function MetricRow({ label, value, tooltip, sparkline }: { label: string; value: string; tooltip?: string; sparkline?: number[] }) {
   return (
     <div className="flex items-center justify-between py-2 border-b dark:border-gray-700 last:border-b-0">
       {tooltip ? (
@@ -157,7 +157,10 @@ function MetricRow({ label, value, tooltip }: { label: string; value: string; to
       ) : (
         <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>
       )}
-      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-mono">{value}</span>
+      <div className="flex items-center gap-2 ml-auto">
+        {sparkline != null && sparkline.length >= 2 && <Sparkline data={sparkline} height={24} />}
+        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-mono w-16 text-right">{value}</span>
+      </div>
     </div>
   )
 }
@@ -293,51 +296,7 @@ function ActivityFeed({ sessions }: { sessions: Session[] }) {
   )
 }
 
-// --- Trending Sparklines ---
-
-function TrendingSection({ entries }: { entries: HistoryEntry[] }) {
-  if (entries.length < 2) {
-    return (
-      <SectionCard title="Trending (24h)">
-        <div className="py-6 text-center text-sm text-gray-400 dark:text-gray-500">Collecting data...</div>
-      </SectionCard>
-    )
-  }
-
-  const workers = entries.map((e) => e.pool?.active_workers ?? 0)
-  const queue = entries.map((e) => e.pool?.queue_depth ?? 0)
-  const goroutines = entries.map((e) => e.system?.goroutines ?? 0)
-  const heap = entries.map((e) => (e.system?.heap_alloc_bytes ?? 0) / 1_048_576)
-  const latency = entries.map((e) => e.dispatcher?.avg_poll_latency_ms ?? 0)
-  const events = entries.map((e) => e.dispatcher?.total_events_processed ?? 0)
-  // Compute deltas for events (cumulative counter)
-  const eventDeltas = events.slice(1).map((v, i) => Math.max(0, v - events[i]))
-
-  const rows: { label: string; data: number[]; color: string; current: string }[] = [
-    { label: 'Active Workers', data: workers, color: '#3b82f6', current: workers[workers.length - 1].toString() },
-    { label: 'Queue Depth', data: queue, color: '#f59e0b', current: queue[queue.length - 1].toString() },
-    { label: 'Goroutines', data: goroutines, color: '#8b5cf6', current: goroutines[goroutines.length - 1].toString() },
-    { label: 'Heap (MB)', data: heap, color: '#10b981', current: heap[heap.length - 1].toFixed(1) },
-    { label: 'Poll Latency (ms)', data: latency, color: '#ef4444', current: latency[latency.length - 1].toFixed(1) },
-    { label: 'Events/interval', data: eventDeltas, color: '#06b6d4', current: eventDeltas.length > 0 ? eventDeltas[eventDeltas.length - 1].toString() : '0' },
-  ]
-
-  return (
-    <SectionCard title="Trending (24h)">
-      <div className="space-y-1 py-1">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-center justify-between py-1.5 border-b dark:border-gray-700 last:border-b-0">
-            <span className="text-sm text-gray-600 dark:text-gray-400 w-36">{r.label}</span>
-            <Sparkline data={r.data} color={r.color} />
-            <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-mono w-16 text-right">{r.current}</span>
-          </div>
-        ))}
-      </div>
-    </SectionCard>
-  )
-}
-
-// --- Existing Section Components (unchanged) ---
+// --- Section Components ---
 
 const pressureColors: Record<string, string> = {
   low: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300',
@@ -366,19 +325,22 @@ function PressureSection({ pressure }: { pressure: PressureMetrics }) {
   )
 }
 
-function PoolSection({ pool }: { pool: PoolMetrics | null }) {
+function PoolSection({ pool, history }: { pool: PoolMetrics | null; history: HistoryEntry[] }) {
   if (pool == null) return <NullSection title="Agent Pool" />
 
   const utilization =
     pool.total_workers > 0 ? Math.round((pool.active_workers / pool.total_workers) * 100) : 0
 
+  const workerSparkline = history.map((e) => e.pool?.active_workers ?? 0)
+  const queueSparkline = history.map((e) => e.pool?.queue_depth ?? 0)
+
   return (
     <SectionCard title="Agent Pool">
       <MetricRow label="Total Workers" value={pool.total_workers.toString()} tooltip="Current number of worker goroutines in the agent pool." />
-      <MetricRow label="Active Workers" value={pool.active_workers.toString()} tooltip="Workers currently executing a task." />
+      <MetricRow label="Active Workers" value={pool.active_workers.toString()} tooltip="Workers currently executing a task." sparkline={workerSparkline} />
       <MetricRow label="Idle Workers" value={pool.idle_workers.toString()} tooltip="Workers waiting for tasks." />
       <MetricRow label="Utilization" value={`${utilization}%`} tooltip="Percentage of workers currently active." />
-      <MetricRow label="Queue Depth" value={pool.queue_depth.toString()} tooltip="Tasks waiting for an available worker." />
+      <MetricRow label="Queue Depth" value={pool.queue_depth.toString()} tooltip="Tasks waiting for an available worker." sparkline={queueSparkline} />
       <MetricRow label="Tasks Completed" value={pool.tasks_completed.toLocaleString()} tooltip="Total tasks successfully completed since startup." />
       <MetricRow label="Tasks Failed" value={pool.tasks_failed.toLocaleString()} tooltip="Total tasks that failed. Failed tasks may be requeued." />
       <MetricRow label="Avg Task Duration" value={formatMs(pool.avg_task_duration_ms)} tooltip="Average wall-clock time per completed task." />
@@ -387,7 +349,7 @@ function PoolSection({ pool }: { pool: PoolMetrics | null }) {
   )
 }
 
-function DispatcherSection({ dispatcher }: { dispatcher: DispatcherMetrics | null }) {
+function DispatcherSection({ dispatcher, history }: { dispatcher: DispatcherMetrics | null; history: HistoryEntry[] }) {
   if (dispatcher == null) return <NullSection title="Dispatcher" />
 
   const lastPoll =
@@ -395,25 +357,32 @@ function DispatcherSection({ dispatcher }: { dispatcher: DispatcherMetrics | nul
       ? 'Never'
       : new Date(dispatcher.last_poll_at).toLocaleString()
 
+  const latencySparkline = history.map((e) => e.dispatcher?.avg_poll_latency_ms ?? 0)
+  const events = history.map((e) => e.dispatcher?.total_events_processed ?? 0)
+  const eventDeltaSparkline = events.slice(1).map((v, i) => Math.max(0, v - events[i]))
+
   return (
     <SectionCard title="Dispatcher">
       <MetricRow label="Claimed Issues" value={dispatcher.claimed_count.toString()} tooltip="Issues currently claimed for processing." />
       <MetricRow label="Total Routed" value={dispatcher.total_routed.toLocaleString()} tooltip="Total issues routed since startup." />
       <MetricRow label="Total Requeued" value={dispatcher.total_requeued.toLocaleString()} tooltip="Issues returned to queue for retry." />
-      <MetricRow label="Events Processed" value={dispatcher.total_events_processed.toLocaleString()} tooltip="Total forge events processed." />
-      <MetricRow label="Avg Poll Latency" value={formatMs(dispatcher.avg_poll_latency_ms)} tooltip="Average time to poll the forge." />
+      <MetricRow label="Events Processed" value={dispatcher.total_events_processed.toLocaleString()} tooltip="Total forge events processed." sparkline={eventDeltaSparkline} />
+      <MetricRow label="Avg Poll Latency" value={formatMs(dispatcher.avg_poll_latency_ms)} tooltip="Average time to poll the forge." sparkline={latencySparkline} />
       <MetricRow label="Last Poll" value={lastPoll} tooltip="Most recent forge poll timestamp." />
     </SectionCard>
   )
 }
 
-function SystemSection({ system }: { system: SystemMetrics | null }) {
+function SystemSection({ system, history }: { system: SystemMetrics | null; history: HistoryEntry[] }) {
   if (system == null) return <NullSection title="System" />
+
+  const goroutineSparkline = history.map((e) => e.system?.goroutines ?? 0)
+  const heapSparkline = history.map((e) => e.system?.heap_alloc_bytes ?? 0)
 
   return (
     <SectionCard title="System">
-      <MetricRow label="Goroutines" value={system.goroutines.toString()} />
-      <MetricRow label="Heap Allocated" value={formatBytes(system.heap_alloc_bytes)} />
+      <MetricRow label="Goroutines" value={system.goroutines.toString()} sparkline={goroutineSparkline} />
+      <MetricRow label="Heap Allocated" value={formatBytes(system.heap_alloc_bytes)} sparkline={heapSparkline} />
       <MetricRow label="OS Memory" value={formatBytes(system.sys_bytes_total)} />
       <MetricRow label="GC Cycles" value={system.gc_cycles.toString()} />
       <MetricRow label="Next GC Target" value={formatBytes(system.next_gc_bytes)} />
@@ -617,18 +586,17 @@ export function Metrics() {
 
           <PressureSection pressure={metrics.data.pressure} />
 
-          {/* Trending + Activity + Issues */}
+          {/* Core metrics (with inline sparklines) */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <TrendingSection entries={history.data?.entries ?? []} />
-            {sessions.data != null && <ActivityFeed sessions={sessions.data} />}
-            {issues.data != null && <IssueSummary issues={issues.data} />}
+            <PoolSection pool={metrics.data.pool} history={history.data?.entries ?? []} />
+            <DispatcherSection dispatcher={metrics.data.dispatcher} history={history.data?.entries ?? []} />
+            <SystemSection system={metrics.data.system} history={history.data?.entries ?? []} />
           </div>
 
-          {/* Core metrics */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <PoolSection pool={metrics.data.pool} />
-            <DispatcherSection dispatcher={metrics.data.dispatcher} />
-            <SystemSection system={metrics.data.system} />
+          {/* Activity + Issues */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {sessions.data != null && <ActivityFeed sessions={sessions.data} />}
+            {issues.data != null && <IssueSummary issues={issues.data} />}
           </div>
 
           {/* Host Resources */}
