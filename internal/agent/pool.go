@@ -34,6 +34,9 @@ const spawnStagger = 200 * time.Millisecond
 // Task represents a unit of work to be processed by the agent pool.
 type Task struct {
 	Issue         *forge.Issue
+	Tracker       forge.IssueTracker        // per-task tracker for comments/labels; when nil, pool falls back to its default
+	Owner         string                    // repository owner for this task
+	Repo          string                    // repository name for this task
 	AgentType     models.AgentType
 	SessionID     string
 	ProviderKey   string                    // routing chain key; defaults to string(AgentType) when empty
@@ -45,6 +48,8 @@ type Task struct {
 // TaskResult reports the outcome of a pool task back to the dispatcher.
 type TaskResult struct {
 	IssueNumber int
+	Owner       string // repository owner
+	Repo        string // repository name
 	SessionID   string
 	AgentType   models.AgentType
 	ProviderKey string // routing chain key used for this task
@@ -381,6 +386,8 @@ func (p *Pool) processTask(task Task) {
 		if cbPtr := p.onComplete.Load(); cbPtr != nil {
 			(*cbPtr)(TaskResult{
 				IssueNumber: task.Issue.Number,
+				Owner:       task.Owner,
+				Repo:        task.Repo,
 				SessionID:   task.SessionID,
 				AgentType:   task.AgentType,
 				ProviderKey: routingKey,
@@ -403,7 +410,12 @@ func (p *Pool) processTask(task Task) {
 	p.lastSpawn = time.Now()
 	p.spawnMu.Unlock()
 
-	runner := NewRunner(prov, model, p.tracker, p.store, p.costs, p.logger)
+	// Use per-task tracker when set; fall back to pool's default tracker.
+	taskTracker := task.Tracker
+	if taskTracker == nil {
+		taskTracker = p.tracker
+	}
+	runner := NewRunner(prov, model, taskTracker, p.store, p.costs, p.logger)
 	runner.cleanupCtx = cleanupCtx
 	runner.synapset = p.synapset
 	runner.SetRepoDir(p.repoDir)
@@ -414,6 +426,8 @@ func (p *Pool) processTask(task Task) {
 	// Notify dispatcher of completion (success or failure).
 	result := TaskResult{
 		IssueNumber: task.Issue.Number,
+		Owner:       task.Owner,
+		Repo:        task.Repo,
 		SessionID:   task.SessionID,
 		AgentType:   task.AgentType,
 		ProviderKey: routingKey,

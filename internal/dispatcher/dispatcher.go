@@ -4,9 +4,11 @@ package dispatcher
 import (
 	"context"
 	"fmt"
-	"go.uber.org/zap"
+	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/autonomy"
@@ -18,24 +20,36 @@ import (
 // claimedIssue tracks in-memory heartbeat state for a single routed issue.
 type claimedIssue struct {
 	AgentID       string
+	Owner         string // repository owner
+	Repo          string // repository name
 	ClaimedAt     time.Time
 	LastHeartbeat time.Time
 	FailureCount  int
+}
+
+// TrackerEntry binds a forge.IssueTracker to its owner/repo identity.
+// This avoids modifying the IssueTracker interface while supporting
+// multiple repositories.
+type TrackerEntry struct {
+	Owner   string
+	Repo    string
+	Tracker forge.IssueTracker
 }
 
 // Dispatcher is the core routing engine. It watches the issue tracker for
 // changes, classifies incoming work, resolves dependencies, and assigns
 // tasks to agent pools.
 type Dispatcher struct {
-	tracker        forge.IssueTracker
+	trackers       map[string]forge.IssueTracker // key: strings.ToLower(owner+"/"+repo)
+	trackerEntries []TrackerEntry                // original entries for iteration
 	policy         autonomy.AutonomyPolicy
 	store          store.Store
 	pool           *agent.Pool
 	decomposer     Decomposer
 	projects       ProjectResolver
 	config         *Config
-	claimed        map[int]*claimedIssue
-	issueFailures  map[int]int // in-memory fallback; persisted counter is authoritative when store is set
+	claimed        map[string]*claimedIssue  // key: issueKey(owner, repo, number)
+	issueFailures  map[string]int            // key: issueKey(owner, repo, number)
 	circuitBreaker *CircuitBreaker
 	metrics        *metrics.DispatcherMetrics
 	wakeup         chan struct{}
@@ -44,23 +58,56 @@ type Dispatcher struct {
 	stop           context.CancelFunc
 }
 
+// issueKey returns a case-insensitive composite key for claimed/failure maps.
+func issueKey(owner, repo string, number int) string {
+	return fmt.Sprintf("%s/%s#%d", strings.ToLower(owner), strings.ToLower(repo), number)
+}
+
+// trackerKey returns the normalized map key for a tracker entry.
+func trackerKey(owner, repo string) string {
+	return strings.ToLower(owner + "/" + repo)
+}
+
+// trackerFor resolves the IssueTracker for a given owner/repo pair.
+// Returns the first registered tracker if owner/repo is empty (backward compat).
+func (d *Dispatcher) trackerFor(owner, repo string) forge.IssueTracker {
+	if owner == "" && repo == "" && len(d.trackerEntries) > 0 {
+		return d.trackerEntries[0].Tracker
+	}
+	if t, ok := d.trackers[trackerKey(owner, repo)]; ok {
+		return t
+	}
+	// Fallback: return the first tracker if only one is registered.
+	if len(d.trackerEntries) == 1 {
+		return d.trackerEntries[0].Tracker
+	}
+	return nil
+}
+
 // New creates a Dispatcher with the given dependencies. The pool parameter
 // is optional; when nil, routed issues are labeled but no agent tasks are spawned.
-func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.Store, pool *agent.Pool, cfg *Config, logger *zap.Logger) *Dispatcher {
+// Accepts a slice of TrackerEntry for multi-repo support. A single-element
+// slice is equivalent to the previous single-tracker behavior.
+func New(trackers []TrackerEntry, policy autonomy.AutonomyPolicy, st store.Store, pool *agent.Pool, cfg *Config, logger *zap.Logger) *Dispatcher {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	tm := make(map[string]forge.IssueTracker, len(trackers))
+	for i := range trackers {
+		tm[trackerKey(trackers[i].Owner, trackers[i].Repo)] = trackers[i].Tracker
+	}
 	return &Dispatcher{
-		tracker:        tracker,
+		trackers:       tm,
+		trackerEntries: trackers,
 		policy:         policy,
 		store:          st,
 		pool:           pool,
 		config:         cfg,
-		claimed:        make(map[int]*claimedIssue),
-		issueFailures:  make(map[int]int),
+		claimed:        make(map[string]*claimedIssue),
+		issueFailures:  make(map[string]int),
 		circuitBreaker: NewCircuitBreaker(logger),
 		metrics:        metrics.NewDispatcherMetrics(),
 		wakeup:         make(chan struct{}, 1),
@@ -93,17 +140,23 @@ func (d *Dispatcher) Snapshot() metrics.DispatcherSnapshot {
 // count for escalation — the counter survives restarts.
 func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 	d.metrics.IssueUnclaimed()
+	key := issueKey(result.Owner, result.Repo, result.IssueNumber)
 	d.mu.Lock()
-	delete(d.claimed, result.IssueNumber)
+	delete(d.claimed, key)
 	if result.Success {
-		delete(d.issueFailures, result.IssueNumber)
+		delete(d.issueFailures, key)
 	}
 	d.mu.Unlock()
 
 	ctx := context.Background()
+	tracker := d.trackerFor(result.Owner, result.Repo)
+	if tracker == nil {
+		d.logger.Error("no tracker for task result", zap.String("owner", result.Owner), zap.String("repo", result.Repo))
+		return
+	}
 
-	_ = d.tracker.RemoveLabel(ctx, result.IssueNumber, "status:claimed")
-	_ = d.tracker.RemoveLabel(ctx, result.IssueNumber, "status:in-progress")
+	_ = tracker.RemoveLabel(ctx, result.IssueNumber, "status:claimed")
+	_ = tracker.RemoveLabel(ctx, result.IssueNumber, "status:in-progress")
 
 	if result.Success {
 		d.clearFailure(ctx, result.IssueNumber)
@@ -116,7 +169,7 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		// provider will be added in #492 (multi-machine routing).
 		d.checkCompletionQuality(ctx, result)
 
-		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
+		if err := tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "needs-qc"), zap.String("error", err.Error()))
 		}
 		d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
@@ -141,7 +194,8 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 }
 
 // Run starts the watch loop and heartbeat ticker. It blocks until ctx is
-// cancelled or an unrecoverable error occurs.
+// cancelled or an unrecoverable error occurs. One watch goroutine is started
+// per registered tracker; the first watcher error cancels all others.
 func (d *Dispatcher) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	d.stop = cancel
@@ -151,14 +205,17 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		d.pool.SetOnComplete(d.handleTaskComplete)
 	}
 
-	errCh := make(chan error, 1)
+	errCh := make(chan error, len(d.trackerEntries))
 
-	// Start the event watcher in a goroutine.
-	go func() {
-		errCh <- d.tracker.Watch(ctx, func(ev forge.Event) {
-			d.handleEvent(ctx, ev)
-		})
-	}()
+	// Start one event watcher per registered tracker.
+	for i := range d.trackerEntries {
+		entry := d.trackerEntries[i]
+		go func() {
+			errCh <- entry.Tracker.Watch(ctx, func(ev forge.Event) {
+				d.handleEvent(ctx, ev)
+			})
+		}()
+	}
 
 	ticker := time.NewTicker(d.config.HeartbeatCheckInterval)
 	defer ticker.Stop()
@@ -234,10 +291,15 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		return nil
 	}
 
+	tracker := d.trackerFor(ev.Owner, ev.Repo)
+	if tracker == nil {
+		return fmt.Errorf("no tracker for %s/%s", ev.Owner, ev.Repo)
+	}
+
 	issue := ev.Issue
 	if issue == nil {
 		var err error
-		issue, err = d.tracker.GetIssue(ctx, ev.IssueNumber)
+		issue, err = tracker.GetIssue(ctx, ev.IssueNumber)
 		if err != nil {
 			return fmt.Errorf("get issue #%d: %w", ev.IssueNumber, err)
 		}
@@ -253,28 +315,28 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		return nil
 	}
 
-	agentType, fm, err := d.classify(ctx, issue)
+	agentType, fm, err := d.classify(ctx, ev.Owner, ev.Repo, issue)
 	if err != nil {
 		d.recordFailure(ctx, issue.Number, "", "", "", err.Error(), 0)
-		return d.escalate(ctx, issue.Number, "invalid_frontmatter", err.Error())
+		return d.escalate(ctx, ev.Owner, ev.Repo, issue.Number, "invalid_frontmatter", err.Error())
 	}
 
 	if fm != nil && len(fm.DependsOn) > 0 {
 		// Check for cycles first.
-		cycle, cycleErr := d.detectCycle(ctx, issue.Number)
+		cycle, cycleErr := d.detectCycle(ctx, ev.Owner, ev.Repo, issue.Number)
 		if cycleErr != nil {
 			return fmt.Errorf("cycle detection for #%d: %w", issue.Number, cycleErr)
 		}
 		if len(cycle) > 0 {
-			return d.escalateCycle(ctx, cycle)
+			return d.escalateCycle(ctx, ev.Owner, ev.Repo, cycle)
 		}
 
-		blocked, blockers, depErr := d.checkDependencies(ctx, fm)
+		blocked, blockers, depErr := d.checkDependencies(ctx, ev.Owner, ev.Repo, fm)
 		if depErr != nil {
 			return fmt.Errorf("check deps for #%d: %w", issue.Number, depErr)
 		}
 		if blocked {
-			return d.blockIssue(ctx, issue.Number, blockers)
+			return d.blockIssue(ctx, ev.Owner, ev.Repo, issue.Number, blockers)
 		}
 	}
 
@@ -289,7 +351,7 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		timeout = EstimateTimeout(issue, fm, agentType, providerKey)
 	}
 
-	decomposed, decErr := d.decomposeAndCreateChildren(ctx, issue, fm, agentType, timeout)
+	decomposed, decErr := d.decomposeAndCreateChildren(ctx, ev.Owner, ev.Repo, issue, fm, agentType, timeout)
 	if decErr != nil {
 		d.recordFailure(ctx, issue.Number, "", string(agentType), "", decErr.Error(), 0)
 		return fmt.Errorf("decompose #%d: %w", issue.Number, decErr)
@@ -298,15 +360,16 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		return nil // parent is now blocked on children; don't route it
 	}
 
-	return d.route(ctx, issue, agentType, fm)
+	return d.route(ctx, ev.Owner, ev.Repo, issue, agentType, fm)
 }
 
 // handleClosed processes a closed issue by unblocking dependents.
 func (d *Dispatcher) handleClosed(ctx context.Context, ev forge.Event) error {
 	// Remove from claimed map and clear both in-memory and persisted failure counts.
+	key := issueKey(ev.Owner, ev.Repo, ev.IssueNumber)
 	d.mu.Lock()
-	delete(d.claimed, ev.IssueNumber)
-	delete(d.issueFailures, ev.IssueNumber)
+	delete(d.claimed, key)
+	delete(d.issueFailures, key)
 	d.mu.Unlock()
 
 	d.clearFailure(ctx, ev.IssueNumber)
@@ -333,7 +396,8 @@ func (d *Dispatcher) handleCommented(_ context.Context, ev forge.Event) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	claimed, ok := d.claimed[ev.IssueNumber]
+	key := issueKey(ev.Owner, ev.Repo, ev.IssueNumber)
+	claimed, ok := d.claimed[key]
 	if !ok {
 		return nil
 	}
@@ -359,22 +423,31 @@ func (d *Dispatcher) handleEdited(_ context.Context, _ forge.Event) error {
 }
 
 // escalate labels an issue as needs-human and posts a comment.
-func (d *Dispatcher) escalate(ctx context.Context, issueNumber int, trigger, details string) error {
+func (d *Dispatcher) escalate(ctx context.Context, owner, repo string, issueNumber int, trigger, details string) error {
+	tracker := d.trackerFor(owner, repo)
+	if tracker == nil {
+		return fmt.Errorf("no tracker for %s/%s", owner, repo)
+	}
 	comment := fmt.Sprintf(
 		"ESCALATE [dispatcher] [%s]\ntrigger: %s\ndetails: %s\naction_needed: Manual review required.",
 		time.Now().UTC().Format(time.RFC3339), trigger, details,
 	)
-	if err := d.tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
+	if err := tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
 		return fmt.Errorf("add needs-human label: %w", err)
 	}
-	if _, err := d.tracker.AddComment(ctx, issueNumber, comment); err != nil {
+	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
 		return fmt.Errorf("add escalation comment: %w", err)
 	}
 	return nil
 }
 
 // escalateCycle labels all issues in a dependency cycle as needs-human.
-func (d *Dispatcher) escalateCycle(ctx context.Context, cycle []int) error {
+// Cycle detection is per-repo, so all issues share the triggering repo's identity.
+func (d *Dispatcher) escalateCycle(ctx context.Context, owner, repo string, cycle []int) error {
+	tracker := d.trackerFor(owner, repo)
+	if tracker == nil {
+		return fmt.Errorf("no tracker for %s/%s", owner, repo)
+	}
 	cyclePath := fmt.Sprintf("%v", cycle)
 	for _, num := range cycle {
 		errMsg := fmt.Sprintf("dependency_cycle: %s", cyclePath)
@@ -384,10 +457,10 @@ func (d *Dispatcher) escalateCycle(ctx context.Context, cycle []int) error {
 			"ESCALATE [dispatcher] [%s]\ntrigger: dependency_cycle\ndetails: Cycle detected: %s\naction_needed: Break the dependency cycle.",
 			time.Now().UTC().Format(time.RFC3339), cyclePath,
 		)
-		if err := d.tracker.AddLabel(ctx, num, "status:needs-human"); err != nil {
+		if err := tracker.AddLabel(ctx, num, "status:needs-human"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", num), zap.String("label", "needs-human"), zap.String("error", err.Error()))
 		}
-		if _, err := d.tracker.AddComment(ctx, num, comment); err != nil {
+		if _, err := tracker.AddComment(ctx, num, comment); err != nil {
 			d.logger.Error("add comment", zap.Int("issue", num), zap.String("context", "cycle"), zap.String("error", err.Error()))
 		}
 	}
@@ -395,15 +468,19 @@ func (d *Dispatcher) escalateCycle(ctx context.Context, cycle []int) error {
 }
 
 // blockIssue transitions an issue to status:blocked with a comment listing blockers.
-func (d *Dispatcher) blockIssue(ctx context.Context, issueNumber int, blockers []string) error {
+func (d *Dispatcher) blockIssue(ctx context.Context, owner, repo string, issueNumber int, blockers []string) error {
+	tracker := d.trackerFor(owner, repo)
+	if tracker == nil {
+		return fmt.Errorf("no tracker for %s/%s", owner, repo)
+	}
 	comment := fmt.Sprintf(
 		"BLOCKED [dispatcher] [%s]\nWaiting on: %v\nWill auto-unblock when all dependencies reach status:done.",
 		time.Now().UTC().Format(time.RFC3339), blockers,
 	)
-	if err := d.tracker.AddLabel(ctx, issueNumber, "status:blocked"); err != nil {
+	if err := tracker.AddLabel(ctx, issueNumber, "status:blocked"); err != nil {
 		return fmt.Errorf("add blocked label: %w", err)
 	}
-	if _, err := d.tracker.AddComment(ctx, issueNumber, comment); err != nil {
+	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
 		return fmt.Errorf("add block comment: %w", err)
 	}
 	return nil

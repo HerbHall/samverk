@@ -36,14 +36,14 @@ var complexTitleKeywords = []string{"architect", "refactor", "redesign", "spike"
 // auto-generates frontmatter and attempts to persist it back to the issue body
 // via UpdateIssue. If persistence fails the generated frontmatter is still
 // returned for in-memory routing.
-func (d *Dispatcher) classify(ctx context.Context, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
+func (d *Dispatcher) classify(ctx context.Context, owner, repo string, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
 	fm, err := d.parseFrontmatter(issue)
 	if err != nil {
 		return "", nil, fmt.Errorf("classify issue #%d: %w", issue.Number, err)
 	}
 	if fm == nil {
 		if at := classifyByHeuristic(issue); at != "" {
-			fm = d.autoInjectFrontmatter(ctx, issue, at)
+			fm = d.autoInjectFrontmatter(ctx, owner, repo, issue, at)
 			return at, fm, nil
 		}
 		return "", nil, fmt.Errorf("classify issue #%d: no frontmatter found and no heuristic match", issue.Number)
@@ -162,11 +162,16 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 // Circuit breaker checks are applied before dispatching:
 //   - Budget circuit open → do not dispatch anything
 //   - Provider circuit open → skip that provider (fallback may still work)
-func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType models.AgentType, fm *models.IssueFrontmatter) error {
+func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge.Issue, agentType models.AgentType, fm *models.IssueFrontmatter) error {
+	tracker := d.trackerFor(owner, repo)
+	if tracker == nil {
+		return fmt.Errorf("no tracker for %s/%s", owner, repo)
+	}
+
 	// Human-typed issues are tracked but never submitted to the agent pool.
 	if agentType == models.AgentTypeHuman {
 		d.logger.Info("issue classified as human", zap.Int("issue", issue.Number))
-		if err := d.tracker.AddLabel(ctx, issue.Number, "status:needs-human"); err != nil {
+		if err := tracker.AddLabel(ctx, issue.Number, "status:needs-human"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", issue.Number), zap.String("label", "needs-human"), zap.String("error", err.Error()))
 		}
 		return nil
@@ -180,13 +185,13 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 		return nil
 	}
 
-	if err := d.tracker.RemoveLabel(ctx, issue.Number, "status:queued"); err != nil {
+	if err := tracker.RemoveLabel(ctx, issue.Number, "status:queued"); err != nil {
 		d.logger.Debug("remove queued label", zap.Int("issue", issue.Number), zap.String("error", err.Error()))
 	}
-	if err := d.tracker.AddLabel(ctx, issue.Number, "status:claimed"); err != nil {
+	if err := tracker.AddLabel(ctx, issue.Number, "status:claimed"); err != nil {
 		return fmt.Errorf("add claimed label to #%d: %w", issue.Number, err)
 	}
-	if err := d.tracker.Assign(ctx, issue.Number, string(agentType)); err != nil {
+	if err := tracker.Assign(ctx, issue.Number, string(agentType)); err != nil {
 		// Best-effort: Gitea requires assignee to be a repo collaborator,
 		// GitHub silently ignores invalid assignees. Don't block routing.
 		d.logger.Warn("assign issue (non-fatal)", zap.Int("issue", issue.Number), zap.String("agent", string(agentType)), zap.Error(err))
@@ -208,14 +213,17 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 	)
 
 	now := time.Now()
+	key := issueKey(owner, repo, issue.Number)
 	// Use persisted failure count (survives restarts) with in-memory fallback.
 	priorFailures := d.getPersistedFailureCount(ctx, issue.Number)
 	d.mu.Lock()
-	if memCount := d.issueFailures[issue.Number]; memCount > priorFailures {
+	if memCount := d.issueFailures[key]; memCount > priorFailures {
 		priorFailures = memCount // in-memory may be ahead if store write lagged
 	}
-	d.claimed[issue.Number] = &claimedIssue{
+	d.claimed[key] = &claimedIssue{
 		AgentID:       string(agentType),
+		Owner:         owner,
+		Repo:          repo,
 		ClaimedAt:     now,
 		LastHeartbeat: now,
 		FailureCount:  priorFailures,
@@ -227,6 +235,8 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 
 	d.logger.Info("routed",
 		zap.Int("issue", issue.Number),
+		zap.String("owner", owner),
+		zap.String("repo", repo),
 		zap.String("agent", string(agentType)),
 		zap.String("provider", providerKey),
 		zap.String("reason", reason),
@@ -249,9 +259,12 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 		if err := d.store.CreateSession(ctx, session); err != nil {
 			return fmt.Errorf("create session for #%d: %w", issue.Number, err)
 		}
-		issueNum := issue.Number
+		hbKey := key // capture for closure
 		task := agent.Task{
 			Issue:       issue,
+			Tracker:     tracker,
+			Owner:       owner,
+			Repo:        repo,
 			AgentType:   agentType,
 			SessionID:   sessionID,
 			ProviderKey: providerKey,
@@ -259,7 +272,7 @@ func (d *Dispatcher) route(ctx context.Context, issue *forge.Issue, agentType mo
 			Frontmatter: fm,
 			HeartbeatFunc: func() {
 				d.mu.Lock()
-				if c, ok := d.claimed[issueNum]; ok {
+				if c, ok := d.claimed[hbKey]; ok {
 					c.LastHeartbeat = time.Now()
 				}
 				d.mu.Unlock()

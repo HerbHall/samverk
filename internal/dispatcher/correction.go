@@ -220,14 +220,14 @@ func (d *Dispatcher) applyCorrection(ctx context.Context, result agent.TaskResul
 
 	switch decision.Action {
 	case CorrectionActionEscalate:
-		_ = d.escalate(ctx, decision.IssueNumber, string(decision.FailureClass), decision.Reason)
+		_ = d.escalate(ctx, result.Owner, result.Repo, decision.IssueNumber, string(decision.FailureClass), decision.Reason)
 		d.logger.Warn("issue escalated to human",
 			zap.Int("issue", decision.IssueNumber),
 			zap.String("reason", decision.Reason),
 		)
 
 	case CorrectionActionPause:
-		_ = d.escalate(ctx, decision.IssueNumber, "budget_exhausted", decision.Reason)
+		_ = d.escalate(ctx, result.Owner, result.Repo, decision.IssueNumber, "budget_exhausted", decision.Reason)
 		d.logger.Warn("dispatching paused due to budget",
 			zap.Int("issue", decision.IssueNumber),
 		)
@@ -235,11 +235,14 @@ func (d *Dispatcher) applyCorrection(ctx context.Context, result agent.TaskResul
 	case CorrectionActionSwitchProvider, CorrectionActionRouteHigher,
 		CorrectionActionIncreaseTimeout, CorrectionActionRetryWithContext,
 		CorrectionActionRetry:
-		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:queued"); err != nil {
-			d.logger.Error("add queued label for retry",
-				zap.Int("issue", result.IssueNumber),
-				zap.Error(err),
-			)
+		tracker := d.trackerFor(result.Owner, result.Repo)
+		if tracker != nil {
+			if err := tracker.AddLabel(ctx, result.IssueNumber, "status:queued"); err != nil {
+				d.logger.Error("add queued label for retry",
+					zap.Int("issue", result.IssueNumber),
+					zap.Error(err),
+				)
+			}
 		}
 		d.logger.Info("issue re-queued with correction",
 			zap.Int("issue", decision.IssueNumber),

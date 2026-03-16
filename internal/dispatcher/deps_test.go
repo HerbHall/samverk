@@ -80,7 +80,7 @@ func TestCheckDependencies_SameProjectOnly(t *testing.T) {
 		},
 	}
 
-	blocked, blockers, err := d.checkDependencies(context.Background(), fm)
+	blocked, blockers, err := d.checkDependencies(context.Background(), "test", "repo", fm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestCheckDependencies_CrossProjectDone(t *testing.T) {
 		},
 	}
 
-	blocked, blockers, err := d.checkDependencies(context.Background(), fm)
+	blocked, blockers, err := d.checkDependencies(context.Background(), "test", "repo", fm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestCheckDependencies_CrossProjectNotDone(t *testing.T) {
 		},
 	}
 
-	blocked, blockers, err := d.checkDependencies(context.Background(), fm)
+	blocked, blockers, err := d.checkDependencies(context.Background(), "test", "repo", fm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestCheckDependencies_MixedDeps(t *testing.T) {
 		},
 	}
 
-	blocked, blockers, err := d.checkDependencies(context.Background(), fm)
+	blocked, blockers, err := d.checkDependencies(context.Background(), "test", "repo", fm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestCheckDependencies_CrossProjectUnregistered(t *testing.T) {
 		},
 	}
 
-	_, _, err := d.checkDependencies(context.Background(), fm)
+	_, _, err := d.checkDependencies(context.Background(), "test", "repo", fm)
 	if err == nil {
 		t.Fatal("expected error for unregistered project")
 	}
@@ -238,7 +238,7 @@ func TestCheckDependencies_NoProjectResolver(t *testing.T) {
 		},
 	}
 
-	_, _, err := d.checkDependencies(context.Background(), fm)
+	_, _, err := d.checkDependencies(context.Background(), "test", "repo", fm)
 	if err == nil {
 		t.Fatal("expected error when no project resolver is configured")
 	}
@@ -255,7 +255,7 @@ func TestCheckDependencies_EmptyDeps(t *testing.T) {
 		DependsOn: nil,
 	}
 
-	blocked, blockers, err := d.checkDependencies(context.Background(), fm)
+	blocked, blockers, err := d.checkDependencies(context.Background(), "test", "repo", fm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestCheckDependencies_NilFrontmatter(t *testing.T) {
 	tracker := newMockTracker()
 	d := newTestDispatcher(tracker)
 
-	blocked, blockers, err := d.checkDependencies(context.Background(), nil)
+	blocked, blockers, err := d.checkDependencies(context.Background(), "test", "repo", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestBuildDependencyGraph_ExcludesCrossProject(t *testing.T) {
 		Body:   issueBody("code-gen", nil),
 	}
 
-	graph, err := d.buildDependencyGraph(context.Background())
+	graph, err := d.buildDependencyGraph(context.Background(), "test", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -579,7 +579,7 @@ func TestDetectCycle_MixedDeps_IgnoresCrossProject(t *testing.T) {
 		Body:   issueBody("code-gen", nil),
 	}
 
-	cycle, err := d.detectCycle(context.Background(), 1)
+	cycle, err := d.detectCycle(context.Background(), "test", "repo", 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

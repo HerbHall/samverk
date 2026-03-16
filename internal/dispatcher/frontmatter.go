@@ -12,7 +12,7 @@ import (
 // autoInjectFrontmatter builds an IssueFrontmatter from heuristic classification
 // and attempts to persist it back to the issue body via UpdateIssue. If persistence
 // fails the generated frontmatter is still returned for in-memory routing.
-func (d *Dispatcher) autoInjectFrontmatter(ctx context.Context, issue *forge.Issue, agentType models.AgentType) *models.IssueFrontmatter {
+func (d *Dispatcher) autoInjectFrontmatter(ctx context.Context, owner, repo string, issue *forge.Issue, agentType models.AgentType) *models.IssueFrontmatter {
 	fm := &models.IssueFrontmatter{
 		SchemaVersion: models.SchemaVersion,
 		Type:          models.IssueTypeTask,
@@ -21,7 +21,8 @@ func (d *Dispatcher) autoInjectFrontmatter(ctx context.Context, issue *forge.Iss
 	}
 
 	newBody := models.RenderFrontmatter(fm, issue.Body)
-	_, err := d.tracker.UpdateIssue(ctx, issue.Number, &forge.UpdateIssueRequest{
+	tracker := d.trackerFor(owner, repo)
+	_, err := tracker.UpdateIssue(ctx, issue.Number, &forge.UpdateIssueRequest{
 		Body: &newBody,
 	})
 	if err != nil {

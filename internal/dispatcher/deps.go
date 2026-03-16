@@ -21,7 +21,8 @@ type ProjectResolver interface {
 
 // checkDependencies verifies all depends_on issues are done.
 // Returns blocked=true with the human-readable list of unsatisfied dependency references.
-func (d *Dispatcher) checkDependencies(ctx context.Context, fm *models.IssueFrontmatter) (blocked bool, blockers []string, err error) {
+// owner/repo identify the triggering issue's tracker for resolving local dependencies.
+func (d *Dispatcher) checkDependencies(ctx context.Context, owner, repo string, fm *models.IssueFrontmatter) (blocked bool, blockers []string, err error) {
 	if fm == nil || len(fm.DependsOn) == 0 {
 		return false, nil, nil
 	}
@@ -38,7 +39,11 @@ func (d *Dispatcher) checkDependencies(ctx context.Context, fm *models.IssueFron
 				blockers = append(blockers, dep.String())
 			}
 		} else {
-			issue, getErr := d.tracker.GetIssue(ctx, dep.Number)
+			tracker := d.trackerFor(owner, repo)
+			if tracker == nil {
+				return false, nil, fmt.Errorf("no tracker for %s/%s", owner, repo)
+			}
+			issue, getErr := tracker.GetIssue(ctx, dep.Number)
 			if getErr != nil {
 				return false, nil, fmt.Errorf("get dependency #%d: %w", dep.Number, getErr)
 			}
@@ -87,9 +92,9 @@ func isDone(issue *forge.Issue) bool {
 // detectCycle runs DFS from startIssue to find dependency cycles.
 // Returns the cycle path if found, nil if no cycle exists.
 // Only considers same-project (local) dependencies for cycle detection.
-func (d *Dispatcher) detectCycle(ctx context.Context, startIssue int) ([]int, error) {
-	// Build the dependency graph from all open issues.
-	graph, err := d.buildDependencyGraph(ctx)
+func (d *Dispatcher) detectCycle(ctx context.Context, owner, repo string, startIssue int) ([]int, error) {
+	// Build the dependency graph from the triggering repo's open issues.
+	graph, err := d.buildDependencyGraph(ctx, owner, repo)
 	if err != nil {
 		return nil, err
 	}
@@ -143,8 +148,13 @@ func (d *Dispatcher) detectCycle(ctx context.Context, startIssue int) ([]int, er
 // from each issue number to its local depends_on list.
 // Cross-project dependencies are excluded from the graph since they
 // are resolved separately in checkDependencies.
-func (d *Dispatcher) buildDependencyGraph(ctx context.Context) (graph map[int][]int, err error) {
-	issues, listErr := d.tracker.ListIssues(ctx, &forge.ListOptions{State: forge.StateOpen})
+// The graph is built for the specified owner/repo tracker only (per-repo).
+func (d *Dispatcher) buildDependencyGraph(ctx context.Context, owner, repo string) (graph map[int][]int, err error) {
+	tracker := d.trackerFor(owner, repo)
+	if tracker == nil {
+		return nil, fmt.Errorf("no tracker for %s/%s", owner, repo)
+	}
+	issues, listErr := tracker.ListIssues(ctx, &forge.ListOptions{State: forge.StateOpen})
 	if listErr != nil {
 		return nil, fmt.Errorf("list open issues: %w", listErr)
 	}
@@ -163,124 +173,132 @@ func (d *Dispatcher) buildDependencyGraph(ctx context.Context) (graph map[int][]
 	return graph, nil
 }
 
-// unblockDependents scans blocked issues and transitions any whose
-// dependencies are all satisfied after closedIssueNumber was closed.
+// unblockDependents scans blocked issues across ALL registered trackers
+// and transitions any whose dependencies are all satisfied after
+// closedIssueNumber was closed. A close in repo B may unblock repo A.
 func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber int) error {
-	blockedIssues, err := d.tracker.ListIssues(ctx, &forge.ListOptions{
-		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
-	})
-	if err != nil {
-		return fmt.Errorf("list blocked issues: %w", err)
-	}
-
-	for _, issue := range blockedIssues {
-		result, parseErr := models.ParseFrontmatter(issue.Body)
-		if parseErr != nil || result.Frontmatter == nil {
+	for _, entry := range d.trackerEntries {
+		blockedIssues, err := entry.Tracker.ListIssues(ctx, &forge.ListOptions{
+			State:  forge.StateOpen,
+			Labels: []string{"status:blocked"},
+		})
+		if err != nil {
+			d.logger.Warn("list blocked issues", zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(err))
 			continue
 		}
 
-		// Only check issues that depend on the one that just closed (local deps).
-		dependsOnClosed := false
-		for _, dep := range result.Frontmatter.DependsOn {
-			if !dep.IsCrossProject() && dep.Number == closedIssueNumber {
-				dependsOnClosed = true
-				break
+		for _, issue := range blockedIssues {
+			result, parseErr := models.ParseFrontmatter(issue.Body)
+			if parseErr != nil || result.Frontmatter == nil {
+				continue
 			}
-		}
-		if !dependsOnClosed {
-			continue
-		}
 
-		// Check if ALL dependencies are now satisfied.
-		blocked, _, depErr := d.checkDependencies(ctx, result.Frontmatter)
-		if depErr != nil {
-			d.logger.Warn("check deps", zap.Int("issue", issue.Number), zap.String("error", depErr.Error()))
-			continue
-		}
-		if blocked {
-			continue
-		}
+			// Only check issues that depend on the one that just closed (local deps).
+			dependsOnClosed := false
+			for _, dep := range result.Frontmatter.DependsOn {
+				if !dep.IsCrossProject() && dep.Number == closedIssueNumber {
+					dependsOnClosed = true
+					break
+				}
+			}
+			if !dependsOnClosed {
+				continue
+			}
 
-		// Unblock: transition from blocked to queued.
-		if removeErr := d.tracker.RemoveLabel(ctx, issue.Number, "status:blocked"); removeErr != nil {
-			d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", "blocked"), zap.String("error", removeErr.Error()))
-		}
-		if addErr := d.tracker.AddLabel(ctx, issue.Number, "status:queued"); addErr != nil {
-			d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", "queued"), zap.String("error", addErr.Error()))
-		}
+			// Check if ALL dependencies are now satisfied.
+			blocked, _, depErr := d.checkDependencies(ctx, entry.Owner, entry.Repo, result.Frontmatter)
+			if depErr != nil {
+				d.logger.Warn("check deps", zap.Int("issue", issue.Number), zap.String("error", depErr.Error()))
+				continue
+			}
+			if blocked {
+				continue
+			}
 
-		comment := fmt.Sprintf(
-			"UNBLOCKED [dispatcher] [%s]\nDependency #%d completed. All dependencies satisfied.\nTransitioning to status:queued for routing.",
-			time.Now().UTC().Format(time.RFC3339), closedIssueNumber,
-		)
-		if _, commentErr := d.tracker.AddComment(ctx, issue.Number, comment); commentErr != nil {
-			d.logger.Warn("add comment", zap.Int("issue", issue.Number), zap.String("context", "unblock"), zap.String("error", commentErr.Error()))
-		}
+			// Unblock: transition from blocked to queued.
+			if removeErr := entry.Tracker.RemoveLabel(ctx, issue.Number, "status:blocked"); removeErr != nil {
+				d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", "blocked"), zap.String("error", removeErr.Error()))
+			}
+			if addErr := entry.Tracker.AddLabel(ctx, issue.Number, "status:queued"); addErr != nil {
+				d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", "queued"), zap.String("error", addErr.Error()))
+			}
 
-		d.logger.Info("unblocked", zap.Int("issue", issue.Number), zap.Int("closed_dep", closedIssueNumber))
+			comment := fmt.Sprintf(
+				"UNBLOCKED [dispatcher] [%s]\nDependency #%d completed. All dependencies satisfied.\nTransitioning to status:queued for routing.",
+				time.Now().UTC().Format(time.RFC3339), closedIssueNumber,
+			)
+			if _, commentErr := entry.Tracker.AddComment(ctx, issue.Number, comment); commentErr != nil {
+				d.logger.Warn("add comment", zap.Int("issue", issue.Number), zap.String("context", "unblock"), zap.String("error", commentErr.Error()))
+			}
+
+			d.logger.Info("unblocked", zap.Int("issue", issue.Number), zap.Int("closed_dep", closedIssueNumber))
+		}
 	}
 
 	return nil
 }
 
-// recheckCrossProjectDeps scans blocked issues with cross-project dependencies
-// and unblocks any whose dependencies are all satisfied. This is called
-// periodically from the heartbeat ticker since cross-project closures are
-// not delivered via the local forge watcher.
+// recheckCrossProjectDeps scans blocked issues across ALL registered trackers
+// with cross-project dependencies and unblocks any whose dependencies are all
+// satisfied. This is called periodically from the heartbeat ticker since
+// cross-project closures are not delivered via the local forge watcher.
 func (d *Dispatcher) recheckCrossProjectDeps(ctx context.Context) error {
 	if d.projects == nil {
 		return nil
 	}
 
-	blockedIssues, err := d.tracker.ListIssues(ctx, &forge.ListOptions{
-		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
-	})
-	if err != nil {
-		return fmt.Errorf("list blocked issues for cross-project recheck: %w", err)
-	}
-
-	for _, issue := range blockedIssues {
-		result, parseErr := models.ParseFrontmatter(issue.Body)
-		if parseErr != nil || result.Frontmatter == nil {
+	for _, entry := range d.trackerEntries {
+		blockedIssues, err := entry.Tracker.ListIssues(ctx, &forge.ListOptions{
+			State:  forge.StateOpen,
+			Labels: []string{"status:blocked"},
+		})
+		if err != nil {
+			d.logger.Warn("list blocked issues for cross-project recheck",
+				zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(err))
 			continue
 		}
 
-		// Only process issues that have at least one cross-project dependency.
-		crossDeps := result.Frontmatter.DependsOn.CrossProjectDeps()
-		if len(crossDeps) == 0 {
-			continue
-		}
+		for _, issue := range blockedIssues {
+			result, parseErr := models.ParseFrontmatter(issue.Body)
+			if parseErr != nil || result.Frontmatter == nil {
+				continue
+			}
 
-		// Check if ALL dependencies (local + cross-project) are satisfied.
-		blocked, _, depErr := d.checkDependencies(ctx, result.Frontmatter)
-		if depErr != nil {
-			d.logger.Warn("cross-project dep recheck",
-				zap.Int("issue", issue.Number), zap.String("error", depErr.Error()))
-			continue
-		}
-		if blocked {
-			continue
-		}
+			// Only process issues that have at least one cross-project dependency.
+			crossDeps := result.Frontmatter.DependsOn.CrossProjectDeps()
+			if len(crossDeps) == 0 {
+				continue
+			}
 
-		// Unblock: transition from blocked to queued.
-		if removeErr := d.tracker.RemoveLabel(ctx, issue.Number, "status:blocked"); removeErr != nil {
-			d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", "blocked"), zap.String("error", removeErr.Error()))
-		}
-		if addErr := d.tracker.AddLabel(ctx, issue.Number, "status:queued"); addErr != nil {
-			d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", "queued"), zap.String("error", addErr.Error()))
-		}
+			// Check if ALL dependencies (local + cross-project) are satisfied.
+			blocked, _, depErr := d.checkDependencies(ctx, entry.Owner, entry.Repo, result.Frontmatter)
+			if depErr != nil {
+				d.logger.Warn("cross-project dep recheck",
+					zap.Int("issue", issue.Number), zap.String("error", depErr.Error()))
+				continue
+			}
+			if blocked {
+				continue
+			}
 
-		comment := fmt.Sprintf(
-			"UNBLOCKED [dispatcher] [%s]\nAll cross-project dependencies satisfied.\nTransitioning to status:queued for routing.",
-			time.Now().UTC().Format(time.RFC3339),
-		)
-		if _, commentErr := d.tracker.AddComment(ctx, issue.Number, comment); commentErr != nil {
-			d.logger.Warn("add comment", zap.Int("issue", issue.Number), zap.String("context", "cross-project-unblock"), zap.String("error", commentErr.Error()))
-		}
+			// Unblock: transition from blocked to queued.
+			if removeErr := entry.Tracker.RemoveLabel(ctx, issue.Number, "status:blocked"); removeErr != nil {
+				d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", "blocked"), zap.String("error", removeErr.Error()))
+			}
+			if addErr := entry.Tracker.AddLabel(ctx, issue.Number, "status:queued"); addErr != nil {
+				d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", "queued"), zap.String("error", addErr.Error()))
+			}
 
-		d.logger.Info("cross-project unblocked", zap.Int("issue", issue.Number))
+			comment := fmt.Sprintf(
+				"UNBLOCKED [dispatcher] [%s]\nAll cross-project dependencies satisfied.\nTransitioning to status:queued for routing.",
+				time.Now().UTC().Format(time.RFC3339),
+			)
+			if _, commentErr := entry.Tracker.AddComment(ctx, issue.Number, comment); commentErr != nil {
+				d.logger.Warn("add comment", zap.Int("issue", issue.Number), zap.String("context", "cross-project-unblock"), zap.String("error", commentErr.Error()))
+			}
+
+			d.logger.Info("cross-project unblocked", zap.Int("issue", issue.Number))
+		}
 	}
 
 	return nil

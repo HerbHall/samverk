@@ -498,7 +498,11 @@ func dispatchCmd() *cobra.Command {
 				}
 			}
 
-			disp := dispatcher.New(tracker, policy, st, pool, nil, logger)
+			// Build tracker entries for multi-repo dispatch.
+			trackerEntries := []dispatcher.TrackerEntry{
+				{Owner: owner, Repo: repo, Tracker: tracker},
+			}
+			disp := dispatcher.New(trackerEntries, policy, st, pool, nil, logger)
 			logger.Info("starting dispatcher", zap.String("owner", owner), zap.String("repo", repo))
 
 			g, gctx := errgroup.WithContext(ctx)

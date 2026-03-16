@@ -61,20 +61,20 @@ func parseHeartbeat(body string) *Heartbeat {
 func (d *Dispatcher) checkTimeouts(ctx context.Context) error {
 	d.mu.Lock()
 	// Snapshot the claimed map to avoid holding the lock during tracker calls.
-	timedOut := make([]int, 0)
+	timedOut := make([]string, 0)
 	now := time.Now()
 	timeout := time.Duration(float64(d.config.HeartbeatInterval) * d.config.HeartbeatTimeoutMultiplier)
 
-	for num, claimed := range d.claimed {
+	for key, claimed := range d.claimed {
 		if now.Sub(claimed.LastHeartbeat) > timeout {
-			timedOut = append(timedOut, num)
+			timedOut = append(timedOut, key)
 		}
 	}
 	d.mu.Unlock()
 
-	for _, num := range timedOut {
-		if err := d.releaseTimedOut(ctx, num); err != nil {
-			d.logger.Warn("release timeout", zap.Int("issue", num), zap.String("error", err.Error()))
+	for _, key := range timedOut {
+		if err := d.releaseTimedOut(ctx, key); err != nil {
+			d.logger.Warn("release timeout", zap.String("key", key), zap.String("error", err.Error()))
 		}
 	}
 	return nil
@@ -83,9 +83,10 @@ func (d *Dispatcher) checkTimeouts(ctx context.Context) error {
 // releaseTimedOut unclaims a single timed-out issue and re-queues it.
 // Uses persisted failure counts (SQLite) so the counter survives restarts.
 // Falls back to in-memory counting when no store is configured.
-func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error {
+// The key is a composite issueKey(owner, repo, number).
+func (d *Dispatcher) releaseTimedOut(ctx context.Context, key string) error {
 	d.mu.Lock()
-	claimed, ok := d.claimed[issueNumber]
+	claimed, ok := d.claimed[key]
 	if !ok {
 		d.mu.Unlock()
 		return nil
@@ -94,10 +95,23 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 	claimed.FailureCount++
 	inMemoryCount := claimed.FailureCount
 	agentID := claimed.AgentID
+	owner := claimed.Owner
+	repo := claimed.Repo
 	lastHB := claimed.LastHeartbeat
-	delete(d.claimed, issueNumber)
-	d.issueFailures[issueNumber] = inMemoryCount
+	delete(d.claimed, key)
+	d.issueFailures[key] = inMemoryCount
 	d.mu.Unlock()
+
+	tracker := d.trackerFor(owner, repo)
+	if tracker == nil {
+		return fmt.Errorf("no tracker for %s/%s", owner, repo)
+	}
+
+	// Extract issue number from the claimed entry. We need it for API calls.
+	// The issue number is embedded in the key but we need to parse it or
+	// store it. We can get it from the tracker by looking at the key format.
+	// For now, we re-derive it from the issue key.
+	issueNumber := parseIssueNumber(key)
 
 	// Record failure event (also increments the persisted counter).
 	elapsed := time.Since(lastHB)
@@ -110,7 +124,7 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 		if persisted := d.getPersistedFailureCount(ctx, issueNumber); persisted > failureCount {
 			failureCount = persisted
 			d.mu.Lock()
-			d.issueFailures[issueNumber] = failureCount
+			d.issueFailures[key] = failureCount
 			d.mu.Unlock()
 		}
 	}
@@ -119,18 +133,18 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 		"RELEASE [dispatcher] [%s] timeout\nAgent %s missed heartbeat. Last seen: %s.\nUnclaiming issue for re-queue. (attempt %d)",
 		time.Now().UTC().Format(time.RFC3339), agentID, lastHB.UTC().Format(time.RFC3339), failureCount,
 	)
-	if _, err := d.tracker.AddComment(ctx, issueNumber, comment); err != nil {
+	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
 		d.logger.Warn("add comment", zap.Int("issue", issueNumber), zap.String("context", "timeout-release"), zap.String("error", err.Error()))
 	}
 
 	// Remove in-progress or claimed label.
-	_ = d.tracker.RemoveLabel(ctx, issueNumber, "status:in-progress")
-	_ = d.tracker.RemoveLabel(ctx, issueNumber, "status:claimed")
+	_ = tracker.RemoveLabel(ctx, issueNumber, "status:in-progress")
+	_ = tracker.RemoveLabel(ctx, issueNumber, "status:claimed")
 
-	if err := d.tracker.AddLabel(ctx, issueNumber, "status:queued"); err != nil {
+	if err := tracker.AddLabel(ctx, issueNumber, "status:queued"); err != nil {
 		d.logger.Warn("add label", zap.Int("issue", issueNumber), zap.String("label", "queued"), zap.String("error", err.Error()))
 	}
-	if err := d.tracker.Unassign(ctx, issueNumber, agentID); err != nil {
+	if err := tracker.Unassign(ctx, issueNumber, agentID); err != nil {
 		d.logger.Warn("unassign", zap.Int("issue", issueNumber), zap.String("agent", agentID), zap.String("error", err.Error()))
 	}
 
@@ -148,13 +162,26 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, issueNumber int) error
 			time.Now().UTC().Format(time.RFC3339),
 			failureCount, issueNumber, agentID, failureCount,
 		)
-		if err := d.tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
+		if err := tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", issueNumber), zap.String("label", "needs-human"), zap.String("error", err.Error()))
 		}
-		if _, err := d.tracker.AddComment(ctx, issueNumber, escalateComment); err != nil {
+		if _, err := tracker.AddComment(ctx, issueNumber, escalateComment); err != nil {
 			d.logger.Error("add comment", zap.Int("issue", issueNumber), zap.String("context", "escalate"), zap.String("error", err.Error()))
 		}
 	}
 
 	return nil
+}
+
+// parseIssueNumber extracts the issue number from a composite key like "owner/repo#42".
+func parseIssueNumber(key string) int {
+	idx := len(key) - 1
+	for idx >= 0 && key[idx] >= '0' && key[idx] <= '9' {
+		idx--
+	}
+	if idx < 0 || key[idx] != '#' {
+		return 0
+	}
+	n, _ := strconv.Atoi(key[idx+1:])
+	return n
 }
