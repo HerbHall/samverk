@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { useTheme } from '../hooks/useTheme'
 
 export function HeaderBar() {
@@ -27,6 +28,13 @@ export function HeaderBar() {
         >
           Synapset
         </a>
+        <span className="text-gray-300 dark:text-gray-600">|</span>
+        <Link
+          to="/devkit"
+          className="text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400"
+        >
+          DevKit
+        </Link>
         <span className="text-gray-300 dark:text-gray-600">|</span>
         <button
           onClick={toggle}

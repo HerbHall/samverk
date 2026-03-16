@@ -1,7 +1,10 @@
-import { Outlet, NavLink } from 'react-router'
+import { Outlet, NavLink, useLocation } from 'react-router'
 import { HeaderBar } from './HeaderBar'
 
 export function Layout() {
+  const location = useLocation()
+  const isFullPage = location.pathname === '/devkit'
+
   return (
     <div className="flex h-screen flex-col bg-gray-50 dark:bg-gray-950">
       <HeaderBar />
@@ -57,9 +60,20 @@ export function Layout() {
             >
               Logs
             </NavLink>
+            <div className="mt-4 border-t pt-3 dark:border-gray-700">
+              <span className="px-3 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">External</span>
+            </div>
+            <NavLink
+              to="/devkit"
+              className={({ isActive }) =>
+                `block rounded px-3 py-2 text-sm ${isActive ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
+              }
+            >
+              DevKit
+            </NavLink>
           </nav>
         </aside>
-        <main className="flex-1 overflow-auto p-6">
+        <main className={`flex-1 overflow-auto ${isFullPage ? '' : 'p-6'}`}>
           <Outlet />
         </main>
       </div>
