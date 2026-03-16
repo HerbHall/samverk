@@ -93,15 +93,15 @@ func auditProvidersCmd() *cobra.Command {
 
 func printAuditTable(results []audit.AuditResult) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROVIDER\tTYPE\tMODEL\tHEALTHY\tLATENCY\tERROR")
-	fmt.Fprintln(w, "--------\t----\t-----\t-------\t-------\t-----")
+	_, _ = fmt.Fprintln(w, "PROVIDER\tTYPE\tMODEL\tHEALTHY\tLATENCY\tERROR")
+	_, _ = fmt.Fprintln(w, "--------\t----\t-----\t-------\t-------\t-----")
 	for i := range results {
 		r := &results[i]
 		healthy := "yes"
 		if !r.Healthy {
 			healthy = "NO"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.ProviderName,
 			r.ProviderType,
 			r.Model,
