@@ -514,6 +514,10 @@ func (r *Runner) postComment(ctx context.Context, task Task, response string) er
 	if err := r.checkTier(task, autonomy.ActionCommentIssue); err != nil {
 		return err
 	}
+	if strings.TrimSpace(response) == "" {
+		r.logger.Warn("skipping empty comment", zap.Int("issue", task.Issue.Number))
+		return nil
+	}
 	if _, err := r.tracker.AddComment(ctx, task.Issue.Number, response); err != nil {
 		return fmt.Errorf("add comment: %w", err)
 	}
