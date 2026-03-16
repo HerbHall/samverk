@@ -286,6 +286,7 @@ func serveCmd() *cobra.Command {
 							Name:       name,
 							Type:       pcfg.Type,
 							Model:      pcfg.DefaultModel,
+							Healthy:    true, // Present in config = assumed healthy; real probe is a separate concern.
 							AccountURL: pcfg.AccountURL,
 						})
 					}
@@ -543,6 +544,9 @@ func dispatchCmd() *cobra.Command {
 
 			// Periodically persist pool + dispatcher metrics to SQLite
 			// so the serve process can read them via StoreBackedMetrics.
+			// NOTE: TasksCompleted and TasksFailed are in-memory counters that
+			// reset when the dispatch process restarts. They reflect per-process-
+			// lifetime totals, not cumulative all-time counts.
 			if st != nil {
 				g.Go(func() error {
 					tick := time.NewTicker(30 * time.Second)
