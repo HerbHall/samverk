@@ -178,7 +178,7 @@ export function MyQueue() {
                     {priority.label.replace('priority:', '').toUpperCase()}
                   </span>
 
-                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">#{issue.number}</span>
+                  <a href={`https://github.com/HerbHall/samverk/issues/${issue.number}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400" onClick={(e) => e.stopPropagation()}>#{issue.number}</a>
 
                   <span className="flex-1 font-medium text-gray-900 dark:text-gray-100">{issue.title}</span>
 
