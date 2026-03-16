@@ -247,11 +247,11 @@ func TestHeartbeatFunc_UpdatesClaimedLastHeartbeat(t *testing.T) {
 	tracker := newMockTracker()
 	d := newTestDispatcher(tracker)
 
-	const issueNum = 99
+	key := issueKey("test", "repo", 99)
 	oldTime := time.Now().Add(-5 * time.Minute)
 
 	d.mu.Lock()
-	d.claimed[issueNum] = &claimedIssue{
+	d.claimed[key] = &claimedIssue{
 		AgentID:       "code-gen",
 		ClaimedAt:     oldTime,
 		LastHeartbeat: oldTime,
@@ -261,7 +261,7 @@ func TestHeartbeatFunc_UpdatesClaimedLastHeartbeat(t *testing.T) {
 	// Build the same closure that route() injects into agent.Task.HeartbeatFunc.
 	heartbeatFunc := func() {
 		d.mu.Lock()
-		if c, ok := d.claimed[issueNum]; ok {
+		if c, ok := d.claimed[key]; ok {
 			c.LastHeartbeat = time.Now()
 		}
 		d.mu.Unlock()
@@ -270,7 +270,7 @@ func TestHeartbeatFunc_UpdatesClaimedLastHeartbeat(t *testing.T) {
 	heartbeatFunc()
 
 	d.mu.Lock()
-	hb := d.claimed[issueNum].LastHeartbeat
+	hb := d.claimed[key].LastHeartbeat
 	d.mu.Unlock()
 
 	if !hb.After(oldTime) {
@@ -285,12 +285,12 @@ func TestHeartbeatFunc_NoopWhenUnclaimed(t *testing.T) {
 	tracker := newMockTracker()
 	d := newTestDispatcher(tracker)
 
-	const issueNum = 77
+	key := issueKey("test", "repo", 77)
 	// Issue is NOT in d.claimed.
 
 	heartbeatFunc := func() {
 		d.mu.Lock()
-		if c, ok := d.claimed[issueNum]; ok {
+		if c, ok := d.claimed[key]; ok {
 			c.LastHeartbeat = time.Now()
 		}
 		d.mu.Unlock()

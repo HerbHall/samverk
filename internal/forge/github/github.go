@@ -255,6 +255,13 @@ func (c *Client) listAllOpenIssues(ctx context.Context) ([]*forge.Issue, error) 
 // It blocks until the context is cancelled. The initial poll establishes baseline state;
 // subsequent polls emit events for changes.
 func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
+	// Wrap handler to inject owner/repo into every emitted event.
+	wrappedHandler := func(ev forge.Event) {
+		ev.Owner = c.owner
+		ev.Repo = c.repo
+		handler(ev)
+	}
+
 	known := make(map[int]*forge.Issue)
 	var mu sync.Mutex
 
@@ -273,7 +280,7 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 	for _, iss := range issues {
 		for _, label := range iss.Labels {
 			if label == "status:queued" {
-				handler(forge.Event{
+				wrappedHandler(forge.Event{
 					Type:          forge.EventIssueOpened,
 					IssueNumber:   iss.Number,
 					Issue:         iss,
@@ -299,7 +306,7 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 			}
 
 			mu.Lock()
-			c.diffAndEmit(known, current, handler)
+			c.diffAndEmit(known, current, wrappedHandler)
 			mu.Unlock()
 		}
 	}

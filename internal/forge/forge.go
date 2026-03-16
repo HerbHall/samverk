@@ -88,6 +88,8 @@ type Comment struct {
 // Event represents a change detected on the forge.
 type Event struct {
 	Type          EventType
+	Owner         string // repository owner (set by the forge Watch implementation)
+	Repo          string // repository name (set by the forge Watch implementation)
 	IssueNumber   int
 	Issue         *Issue
 	Comment       *Comment
