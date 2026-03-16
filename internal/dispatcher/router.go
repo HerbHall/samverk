@@ -36,14 +36,14 @@ var complexTitleKeywords = []string{"architect", "refactor", "redesign", "spike"
 // auto-generates frontmatter and attempts to persist it back to the issue body
 // via UpdateIssue. If persistence fails the generated frontmatter is still
 // returned for in-memory routing.
-func (d *Dispatcher) classify(ctx context.Context, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
+func (d *Dispatcher) classify(ctx context.Context, owner, repo string, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
 	fm, err := d.parseFrontmatter(issue)
 	if err != nil {
 		return "", nil, fmt.Errorf("classify issue #%d: %w", issue.Number, err)
 	}
 	if fm == nil {
 		if at := classifyByHeuristic(issue); at != "" {
-			fm = d.autoInjectFrontmatter(ctx, issue, at)
+			fm = d.autoInjectFrontmatter(ctx, owner, repo, issue, at)
 			return at, fm, nil
 		}
 		return "", nil, fmt.Errorf("classify issue #%d: no frontmatter found and no heuristic match", issue.Number)

@@ -79,7 +79,7 @@ func TestAutoInjectFrontmatter_PersistsBody(t *testing.T) {
 	}
 	tracker.issues[42] = issue
 
-	fm := d.autoInjectFrontmatter(context.Background(), issue, models.AgentTypeCodeGen)
+	fm := d.autoInjectFrontmatter(context.Background(), "testowner", "testrepo", issue, models.AgentTypeCodeGen)
 
 	if fm == nil {
 		t.Fatal("expected non-nil frontmatter")
@@ -123,7 +123,7 @@ func TestAutoInjectFrontmatter_RoundTrips(t *testing.T) {
 	}
 	tracker.issues[55] = issue
 
-	d.autoInjectFrontmatter(context.Background(), issue, models.AgentTypeCodeGen)
+	d.autoInjectFrontmatter(context.Background(), "testowner", "testrepo", issue, models.AgentTypeCodeGen)
 
 	// Re-parse the persisted body to verify it round-trips.
 	result, err := models.ParseFrontmatter(tracker.issues[55].Body)
@@ -161,6 +161,8 @@ func TestHandleOpened_HeuristicInjectsFrontmatter(t *testing.T) {
 		Type:        forge.EventIssueOpened,
 		IssueNumber: 100,
 		Issue:       issue,
+		Owner:       "testowner",
+		Repo:        "testrepo",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

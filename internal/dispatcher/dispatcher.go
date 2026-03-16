@@ -315,7 +315,7 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 		return nil
 	}
 
-	agentType, fm, err := d.classify(ctx, issue)
+	agentType, fm, err := d.classify(ctx, ev.Owner, ev.Repo, issue)
 	if err != nil {
 		d.recordFailure(ctx, issue.Number, "", "", "", err.Error(), 0)
 		return d.escalate(ctx, ev.Owner, ev.Repo, issue.Number, "invalid_frontmatter", err.Error())
