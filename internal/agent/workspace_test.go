@@ -323,6 +323,55 @@ func TestFetchLatest_NilLogger(t *testing.T) {
 	FetchLatest("", nil)
 }
 
+func TestCommitAndPush_ForcePushOverStaleRemoteBranch(t *testing.T) {
+	repoDir := setupTestRepoWithRemote(t)
+
+	// First attempt: create worktree, make a change, push.
+	ws1, cleanup1, err := CreateWorkspace(repoDir, "attempt-1", 77, zap.NewNop())
+	if err != nil {
+		t.Fatalf("CreateWorkspace attempt-1: %v", err)
+	}
+	if writeErr := os.WriteFile(filepath.Join(ws1, "first.go"), []byte("package main\n"), 0o644); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	changed, err := CommitAndPush(ws1, "agent: first attempt #77")
+	if err != nil {
+		t.Fatalf("first CommitAndPush: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true on first push")
+	}
+	cleanup1()
+
+	// Second attempt: new worktree on same branch, different content.
+	// This simulates a retry after the first attempt failed mid-task.
+	ws2, cleanup2, err := CreateWorkspace(repoDir, "attempt-2", 77, zap.NewNop())
+	if err != nil {
+		t.Fatalf("CreateWorkspace attempt-2: %v", err)
+	}
+	defer cleanup2()
+
+	if writeErr := os.WriteFile(filepath.Join(ws2, "second.go"), []byte("package main\n"), 0o644); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	// This push should succeed even though the remote branch already has
+	// different commits from the first attempt, because we force-push.
+	changed, err = CommitAndPush(ws2, "agent: retry attempt #77")
+	if err != nil {
+		t.Fatalf("second CommitAndPush (force-push): %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true on retry push")
+	}
+
+	// Verify the retry commit is on the branch.
+	log := mustGit(t, ws2, "log", "--oneline", "-1")
+	if !strings.Contains(log, "retry attempt #77") {
+		t.Errorf("expected retry commit, got: %q", log)
+	}
+}
+
 func TestExtractFileContext_WithWorkDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "internal", "agent"), 0o755); err != nil {
