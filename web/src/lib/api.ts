@@ -241,6 +241,45 @@ export interface LogSummary {
   generated_at: string
 }
 
+// Agent (enhanced provider) types
+export interface AgentStats {
+  total_sessions: number
+  completed: number
+  failed: number
+  active: number
+  success_rate: number
+  avg_duration_secs: number
+}
+
+export interface AgentSession {
+  id: string
+  issue_number: number
+  status: string
+  started_at: string
+  duration_secs?: number
+}
+
+export interface ThroughputPoint {
+  hour: string
+  count: number
+}
+
+export interface AgentInfo {
+  name: string
+  type: string
+  model: string
+  healthy: boolean
+  account_url?: string
+  routing_chains: string[]
+  stats: AgentStats
+  recent_sessions: AgentSession[]
+  throughput: ThroughputPoint[]
+}
+
+export interface AgentsResponse {
+  agents: AgentInfo[]
+}
+
 // Synapset types (matching actual upstream API responses)
 export interface SynapsetStatus {
   version: string
@@ -342,6 +381,9 @@ export const api = {
 
   getFailures: (hours?: number) =>
     fetchJSON<FailureSummary>(`/failures${hours ? '?hours=' + hours : ''}`),
+
+  getAgents: () =>
+    fetchJSON<AgentsResponse>('/agents'),
 
   getHostMetrics: () =>
     fetchJSON<HostMetricsResponse>('/metrics/host'),
