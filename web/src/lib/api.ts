@@ -241,6 +241,83 @@ export interface LogSummary {
   generated_at: string
 }
 
+// Synapset types (matching actual upstream API responses)
+export interface SynapsetStatus {
+  version: string
+  uptime_seconds: number
+  memory_count: number
+  pool_count: number
+  db_size_bytes: number
+  provider: string
+}
+
+export interface SynapsetToolSummaryEntry {
+  ToolName: string
+  CallCount: number
+  AvgDurationMs: number
+  MaxDurationMs: number
+  ErrorCount: number
+  AvgSimilarity: number
+}
+
+export interface SynapsetToolHistoryEntry {
+  ID: number
+  ToolName: string
+  PoolName: string
+  DurationMs: number
+  Status: string
+  ErrorMsg: string
+  ResultCount: number
+  SimilarityAvg: number
+  CreatedAt: string
+}
+
+export interface SynapsetSearchStats {
+  total_searches: number
+  avg_similarity: number
+  avg_result_count: number
+  similarity_distribution: Record<string, number>
+}
+
+export interface SynapsetMemoryTrendEntry {
+  date: string
+  pool_name: string
+  count: number
+  cumulative: number
+}
+
+export interface SynapsetPoolStatsEntry {
+  name: string
+  description: string
+  model_name: string
+  dimensions: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SynapsetMetricsHistoryEntry {
+  ID: number
+  Goroutines: number
+  HeapAllocMB: number
+  HeapSysMB: number
+  GCCycles: number
+  DBSizeBytes: number
+  MemoryCount: number
+  PoolCount: number
+  UptimeSeconds: number
+  CreatedAt: string
+}
+
+export interface SynapsetLogEntry {
+  ID: number
+  Timestamp: string
+  Level: string
+  Message: string
+  Component: string
+  Fields: string
+  CreatedAt: string
+}
+
 export const api = {
   listIssues: (params?: { state?: string; page?: number }) =>
     fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
@@ -297,4 +374,29 @@ export const api = {
     })
     return fetchJSON<LogSummary>(`/logs/summary?${searchParams.toString()}`)
   },
+
+  // Synapset proxy endpoints
+  synapsetStatus: () =>
+    fetchJSON<SynapsetStatus>('/synapset/status'),
+
+  synapsetToolSummary: (period: string) =>
+    fetchJSON<SynapsetToolSummaryEntry[]>(`/synapset/tools/summary?period=${period}`),
+
+  synapsetToolHistory: (period: string) =>
+    fetchJSON<SynapsetToolHistoryEntry[]>(`/synapset/tools/history?period=${period}`),
+
+  synapsetSearchStats: (period: string) =>
+    fetchJSON<SynapsetSearchStats>(`/synapset/search/stats?period=${period}`),
+
+  synapsetMemoryTrend: (period: string) =>
+    fetchJSON<SynapsetMemoryTrendEntry[]>(`/synapset/memories/trend?period=${period}`),
+
+  synapsetPoolStats: () =>
+    fetchJSON<SynapsetPoolStatsEntry[]>('/synapset/pools/stats'),
+
+  synapsetMetricsHistory: (period: string) =>
+    fetchJSON<SynapsetMetricsHistoryEntry[]>(`/synapset/metrics/history?period=${period}`),
+
+  synapsetLogs: (limit?: number) =>
+    fetchJSON<SynapsetLogEntry[]>(`/synapset/logs${limit ? '?limit=' + limit : ''}`),
 }

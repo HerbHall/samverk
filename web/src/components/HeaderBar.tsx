@@ -20,14 +20,12 @@ export function HeaderBar() {
         </span>
       </div>
       <div className="flex items-center gap-4 text-sm">
-        <a
-          href="https://synapset.herbhall.net/dashboard"
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          to="/synapset"
           className="text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400"
         >
           Synapset
-        </a>
+        </Link>
         <span className="text-gray-300 dark:text-gray-600">|</span>
         <Link
           to="/devkit"

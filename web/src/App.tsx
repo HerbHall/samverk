@@ -6,6 +6,7 @@ import { MyQueue } from './pages/MyQueue'
 import { Agents } from './pages/Agents'
 import { Metrics } from './pages/Metrics'
 import { Logs } from './pages/Logs'
+import { Synapset } from './pages/Synapset'
 import { DevKit } from './pages/DevKit'
 
 export function App() {
@@ -18,6 +19,7 @@ export function App() {
         <Route path="agents" element={<Agents />} />
         <Route path="metrics" element={<Metrics />} />
         <Route path="logs" element={<Logs />} />
+        <Route path="synapset" element={<Synapset />} />
         <Route path="devkit" element={<DevKit />} />
       </Route>
     </Routes>

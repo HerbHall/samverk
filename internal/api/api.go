@@ -47,6 +47,7 @@ type API struct {
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
 	scalingMax     int
+	synapsetProxy  *SynapsetProxy    // may be nil; proxies Synapset API requests
 	logStore       *logstore.LogStore // may be nil; for log query API
 	history        []historyEntry    // ring buffer of recent snapshots; guarded by historyMu
 	logger         *zap.Logger
@@ -127,6 +128,9 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/providers/health", a.handleProviderHealth)
 	mux.HandleFunc("GET /api/v1/logs", a.handleListLogs)
 	mux.HandleFunc("GET /api/v1/logs/summary", a.handleLogSummary)
+
+	// Synapset proxy routes (no-op if proxy not configured).
+	a.RegisterSynapsetRoutes(mux)
 }
 
 // errorResponse is the JSON body returned for error responses.
