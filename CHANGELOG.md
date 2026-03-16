@@ -1,5 +1,63 @@
 # Changelog
 
+## [0.1.16](https://github.com/HerbHall/samverk/compare/v0.1.15...v0.1.16) (2026-03-16)
+
+
+### Features
+
+* **#434:** cross-project dependency graph and coordination protocol ([#454](https://github.com/HerbHall/samverk/issues/454)) ([bf40b51](https://github.com/HerbHall/samverk/commit/bf40b51a73b68cf9ca032e85352320b2e457ba02))
+* **#436:** integrate Synapset semantic memory into agent runtime ([#449](https://github.com/HerbHall/samverk/issues/449)) ([22a943b](https://github.com/HerbHall/samverk/commit/22a943b400f05e6ce0bce26caaec46bd4b6f6096))
+* **#439:** add automated deploy workflow for CT 202 ([#447](https://github.com/HerbHall/samverk/issues/447)) ([7721c81](https://github.com/HerbHall/samverk/commit/7721c81dfd80a09ff210d859452bfd02c8f11808)), closes [#439](https://github.com/HerbHall/samverk/issues/439)
+* **#443:** Agents dashboard page with provider cards and account links ([#453](https://github.com/HerbHall/samverk/issues/453)) ([53f948a](https://github.com/HerbHall/samverk/commit/53f948a6d1e421249eef444e87a7f3a876eeba5d))
+* add AI log analyst with Ollama-powered summarization ([#551](https://github.com/HerbHall/samverk/issues/551)) ([0033cea](https://github.com/HerbHall/samverk/commit/0033cea357118834ff11e70856be4faa46626fb5))
+* add cloudflared tunnel health watchdog ([#478](https://github.com/HerbHall/samverk/issues/478)) ([#571](https://github.com/HerbHall/samverk/issues/571)) ([5b145bd](https://github.com/HerbHall/samverk/commit/5b145bdc416f270c63a03cd340b63b2e873944a2))
+* add dark mode toggle to dashboard ([#563](https://github.com/HerbHall/samverk/issues/563)) ([#565](https://github.com/HerbHall/samverk/issues/565)) ([056ce27](https://github.com/HerbHall/samverk/commit/056ce27c9ff5736457dbf9d4f60e2c8280e789d2))
+* add dashboard log viewer page ([#510](https://github.com/HerbHall/samverk/issues/510)) ([#550](https://github.com/HerbHall/samverk/issues/550)) ([f45e443](https://github.com/HerbHall/samverk/commit/f45e4439e8b90868961d67cdaa2a35e2d45236f8))
+* add host metrics collector with procfs support ([#547](https://github.com/HerbHall/samverk/issues/547)) ([dd895f4](https://github.com/HerbHall/samverk/commit/dd895f4d291c00c4ac7b325b0d111404ed2866e0))
+* add host resources section to Metrics page ([#508](https://github.com/HerbHall/samverk/issues/508)) ([#549](https://github.com/HerbHall/samverk/issues/549)) ([51bb4b0](https://github.com/HerbHall/samverk/commit/51bb4b0507c2ad436bedbb30d146555fb81d8392))
+* add My Queue dashboard page for human-required issues ([#469](https://github.com/HerbHall/samverk/issues/469)) ([0c76c30](https://github.com/HerbHall/samverk/commit/0c76c301408507d49400939c03c4fdaf64cdb62c))
+* add OAuth 2.1 discovery endpoints for Claude mobile MCP ([#479](https://github.com/HerbHall/samverk/issues/479)) ([#570](https://github.com/HerbHall/samverk/issues/570)) ([37e3c17](https://github.com/HerbHall/samverk/commit/37e3c17756c89f1eadc2e95e88bc7f8277606fe3))
+* add post-completion quality gate for agent output ([#496](https://github.com/HerbHall/samverk/issues/496)) ([#575](https://github.com/HerbHall/samverk/issues/575)) ([6455fd5](https://github.com/HerbHall/samverk/commit/6455fd50877540eb12457431be2d8036a6d4bee3))
+* add pre-posting validation gate for agent output ([#518](https://github.com/HerbHall/samverk/issues/518)) ([#537](https://github.com/HerbHall/samverk/issues/537)) ([8f99410](https://github.com/HerbHall/samverk/commit/8f9941039240bbdc6103938d4b28a74ec63b0bd7))
+* add provider health monitor with proactive checks ([#473](https://github.com/HerbHall/samverk/issues/473), [#494](https://github.com/HerbHall/samverk/issues/494)) ([#579](https://github.com/HerbHall/samverk/issues/579)) ([6646a15](https://github.com/HerbHall/samverk/commit/6646a15d781640a0d43a4325654eff74b890ffac))
+* add SQLite log tee with query API and auto-pruning ([#548](https://github.com/HerbHall/samverk/issues/548)) ([a7e9157](https://github.com/HerbHall/samverk/commit/a7e9157b38b4f18e4a0c071acef83442a7586baa))
+* add structured logging to all provider implementations ([#526](https://github.com/HerbHall/samverk/issues/526)) ([f13e5d5](https://github.com/HerbHall/samverk/commit/f13e5d556381bc4104868546b8a725ab2568030c))
+* add Wake-on-LAN support and model deploy script ([#495](https://github.com/HerbHall/samverk/issues/495), [#497](https://github.com/HerbHall/samverk/issues/497)) ([#580](https://github.com/HerbHall/samverk/issues/580)) ([76a5a0d](https://github.com/HerbHall/samverk/commit/76a5a0d00af1a3584d409981adf988f3babac48e))
+* auto-inject frontmatter for issues classified by heuristic ([#475](https://github.com/HerbHall/samverk/issues/475)) ([#574](https://github.com/HerbHall/samverk/issues/574)) ([44f42cf](https://github.com/HerbHall/samverk/commit/44f42cf06a6bf6e3e4b6415fc1a0c08997e48445))
+* **dashboard:** add metric tooltips and capacity section ([#437](https://github.com/HerbHall/samverk/issues/437)) ([90c6f0a](https://github.com/HerbHall/samverk/commit/90c6f0a58cf958243581ad072ed55af4e662531e))
+* equip agents with DevKit rules, MCP, and Synapset tools ([#531](https://github.com/HerbHall/samverk/issues/531)) ([ab488c8](https://github.com/HerbHall/samverk/commit/ab488c8939eec636ef1f8d41575161dd5cf83042))
+* equip agents with DevKit rules, project type detection, and git safety ([#521](https://github.com/HerbHall/samverk/issues/521)) ([#539](https://github.com/HerbHall/samverk/issues/539)) ([889befe](https://github.com/HerbHall/samverk/commit/889befeaa0f8daa42af205be7353f91f1c75ca04))
+* extend metrics trending window from 30m to 24h ([#499](https://github.com/HerbHall/samverk/issues/499)) ([12cf609](https://github.com/HerbHall/samverk/commit/12cf609905ea4cd0f357bdf6d884efdeaead9575))
+* implement autonomy tier enforcement in agent runner ([#522](https://github.com/HerbHall/samverk/issues/522)) ([627e784](https://github.com/HerbHall/samverk/commit/627e784b5dfa2544a0e185d498dc1dab5da87463)), closes [#515](https://github.com/HerbHall/samverk/issues/515)
+* implement intelligent failure response engine ([#525](https://github.com/HerbHall/samverk/issues/525)) ([eeb8363](https://github.com/HerbHall/samverk/commit/eeb8363dd63fdefb05751167ae35dc7f7081e8d4))
+* implement isolated agent workspaces via git worktrees ([#517](https://github.com/HerbHall/samverk/issues/517)) ([#529](https://github.com/HerbHall/samverk/issues/529)) ([6920536](https://github.com/HerbHall/samverk/commit/69205367c04554d5f0594e853aaa6b680297fbeb))
+* session-end documentation gate in agent runner ([#466](https://github.com/HerbHall/samverk/issues/466)) ([#581](https://github.com/HerbHall/samverk/issues/581)) ([88f5025](https://github.com/HerbHall/samverk/commit/88f5025246190e7e9049eeefde2395b3efca409e))
+* unified dashboard header with version display ([#569](https://github.com/HerbHall/samverk/issues/569)) ([#583](https://github.com/HerbHall/samverk/issues/583)) ([65d0a0d](https://github.com/HerbHall/samverk/commit/65d0a0da849edd0422dc4f3632bb50213624e699))
+* wire SetRepoDir through pool to runner with FetchLatest ([#536](https://github.com/HerbHall/samverk/issues/536)) ([db6afec](https://github.com/HerbHall/samverk/commit/db6afec238ffdd63ee12df393fec6e17c2a260bf))
+
+
+### Bug Fixes
+
+* add --allowedTools and --max-turns to claudecli provider ([#502](https://github.com/HerbHall/samverk/issues/502)) ([1dc13b4](https://github.com/HerbHall/samverk/commit/1dc13b4d5c637fc1f94c14d60aa397c1592653a8))
+* add --no-session-persistence to claudecli provider ([#512](https://github.com/HerbHall/samverk/issues/512)) ([0c9fd6e](https://github.com/HerbHall/samverk/commit/0c9fd6e4ea79db5ae33c19270dc79c735ad5db56))
+* add Accept header to Synapset client for JSON content negotiation ([#546](https://github.com/HerbHall/samverk/issues/546)) ([94b0df8](https://github.com/HerbHall/samverk/commit/94b0df8ea937851bb82329152aee2bf8b3061753)), closes [#544](https://github.com/HerbHall/samverk/issues/544)
+* add nolint for gosec G117 on OAuth access_token field ([#572](https://github.com/HerbHall/samverk/issues/572)) ([bc602bc](https://github.com/HerbHall/samverk/commit/bc602bc1c8bc22da6ee01e43588c6aaac4a81e21))
+* add SQLite busy_timeout to prevent SQLITE_BUSY contention ([#545](https://github.com/HerbHall/samverk/issues/545)) ([53099c5](https://github.com/HerbHall/samverk/commit/53099c5ed665ab7e9ae4aad981e05a780e67d486)), closes [#538](https://github.com/HerbHall/samverk/issues/538)
+* classify "not logged in" as auth failure and fix Synapset pool parameter ([#534](https://github.com/HerbHall/samverk/issues/534)) ([ac35e77](https://github.com/HerbHall/samverk/commit/ac35e77962ecb85a55318e7394283d2ada3e77c3))
+* deploy pipeline waits for idle dispatcher and always rebuilds SPA ([#471](https://github.com/HerbHall/samverk/issues/471)) ([ff046b0](https://github.com/HerbHall/samverk/commit/ff046b0ac4fba68669f3861e7a5cef27c587e2aa))
+* **deploy:** add --providers-config to serve service file ([66a0797](https://github.com/HerbHall/samverk/commit/66a0797c6e158766c2ca444f0099731dd142d276))
+* guard against posting empty comments ([#474](https://github.com/HerbHall/samverk/issues/474)) ([#573](https://github.com/HerbHall/samverk/issues/573)) ([cd0cb7d](https://github.com/HerbHall/samverk/commit/cd0cb7d5c5bb0ca1bbfe26f2312d1305f48987c0))
+* immediate dispatch when worker becomes idle ([#485](https://github.com/HerbHall/samverk/issues/485)) ([#567](https://github.com/HerbHall/samverk/issues/567)) ([7e23cd0](https://github.com/HerbHall/samverk/commit/7e23cd04bd3ba829470baa8e5475405496947c13))
+* make issue assignment best-effort for Gitea compatibility ([#562](https://github.com/HerbHall/samverk/issues/562)) ([ec325d0](https://github.com/HerbHall/samverk/commit/ec325d00d147ee29523dbfc87a733b8dc5c33612))
+* provider-down failures no longer escalate issues to needs-human ([#482](https://github.com/HerbHall/samverk/issues/482)) ([e541d2d](https://github.com/HerbHall/samverk/commit/e541d2da172c0182c59a3d2824d697bc28bab445)), closes [#472](https://github.com/HerbHall/samverk/issues/472)
+* reduce CLI hang detection to 60s and add spawn stagger ([#491](https://github.com/HerbHall/samverk/issues/491)) ([#568](https://github.com/HerbHall/samverk/issues/568)) ([2c1608a](https://github.com/HerbHall/samverk/commit/2c1608a4817c4bc4f676e5c1e6f81b097017e0fa))
+* restart watcher on failure with backoff and force-push agent branches ([#582](https://github.com/HerbHall/samverk/issues/582)) ([dbd0c53](https://github.com/HerbHall/samverk/commit/dbd0c536643aefc936ff7eeecc6ab5740bcf143a))
+* return 405 for non-POST requests to /mcp instead of SPA HTML ([#477](https://github.com/HerbHall/samverk/issues/477)) ([fbdc96a](https://github.com/HerbHall/samverk/commit/fbdc96a3c8593e4c380686c7530372e0b5c65efc))
+* set providers healthy in dashboard and document metric counter lifecycle ([#566](https://github.com/HerbHall/samverk/issues/566)) ([2272b83](https://github.com/HerbHall/samverk/commit/2272b83ad86deb428fe8f37167f12b587708af45))
+* set SQLite pragmas via DSN for all pooled connections ([#561](https://github.com/HerbHall/samverk/issues/561)) ([db8908f](https://github.com/HerbHall/samverk/commit/db8908fa885e48615bb3ee37c6e6dde10ffca75a))
+* skip worktree validation when go tool is not installed ([#542](https://github.com/HerbHall/samverk/issues/542)) ([8fc4056](https://github.com/HerbHall/samverk/commit/8fc4056e28988e65efcbfc3c7d74800fb4a043c0))
+* **synapset:** handle non-JSON responses and add post-init stabilization delay ([#452](https://github.com/HerbHall/samverk/issues/452)) ([2f6d6f9](https://github.com/HerbHall/samverk/commit/2f6d6f9596e1822070ee553ced3d4e2bcd62ca9f)), closes [#450](https://github.com/HerbHall/samverk/issues/450)
+
 ## [0.1.15](https://github.com/HerbHall/samverk/compare/v0.1.14...v0.1.15) (2026-03-14)
 
 
