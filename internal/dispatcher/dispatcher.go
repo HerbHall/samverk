@@ -110,6 +110,12 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		if d.circuitBreaker != nil {
 			d.circuitBreaker.RecordSuccess(result.ProviderKey)
 		}
+
+		// Post-completion quality gate: check output quality from session.
+		// Don't escalate yet -- just log. Escalation to a higher-tier
+		// provider will be added in #492 (multi-machine routing).
+		d.checkCompletionQuality(ctx, result)
+
 		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "needs-qc"), zap.String("error", err.Error()))
 		}
