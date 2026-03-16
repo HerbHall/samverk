@@ -1,0 +1,9 @@
+[Unit]
+Description=Run cloudflared watchdog every 60s
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=60
+
+[Install]
+WantedBy=timers.target
