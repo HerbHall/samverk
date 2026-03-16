@@ -163,6 +163,47 @@ func CommitAndPush(workDir, commitMsg string) (changed bool, err error) {
 	return true, nil
 }
 
+// ChangedFiles returns the list of files changed in the most recent commit
+// relative to the workspace directory.
+func ChangedFiles(workDir string) ([]string, error) {
+	out, err := gitExec(workDir, "diff", "--name-only", "HEAD~1")
+	if err != nil {
+		return nil, fmt.Errorf("git diff: %w", err)
+	}
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
+}
+
+// CheckDocGate examines a list of changed files and returns true if
+// infrastructure or code files were modified without corresponding
+// documentation updates. Returns false for test-only or docs-only changes.
+func CheckDocGate(changed []string) (needsDoc bool, codeFiles []string) {
+	var hasCodeChange, hasDocChange bool
+	for _, f := range changed {
+		switch {
+		case strings.HasSuffix(f, "_test.go"):
+			// test-only files don't trigger doc gate
+		case strings.HasPrefix(f, "internal/") ||
+			strings.HasPrefix(f, "cmd/") ||
+			strings.HasPrefix(f, "pkg/") ||
+			strings.HasPrefix(f, "deploy/"):
+			hasCodeChange = true
+			codeFiles = append(codeFiles, f)
+		case strings.HasPrefix(f, "docs/") ||
+			strings.HasPrefix(f, ".samverk/") ||
+			strings.HasSuffix(f, "README.md") ||
+			strings.HasSuffix(f, "CLAUDE.md"):
+			hasDocChange = true
+		}
+	}
+	return hasCodeChange && !hasDocChange, codeFiles
+}
+
 // ReadWorkspaceFiles reads file contents from the given directory for the
 // specified paths. Returns a map of path to content. Files that cannot be read
 // are included with empty content. The total content size is capped at maxBytes.
