@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbhall/samverk/internal/audit"
 	"github.com/herbhall/samverk/pkg/models"
 
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
@@ -63,6 +64,10 @@ type Store interface {
 	// Correction events (written by correction engine, read by API and diagnostics)
 	SaveCorrectionEvent(ctx context.Context, e *models.CorrectionEvent) error
 	ListCorrectionEvents(ctx context.Context, issueNumber int) ([]*models.CorrectionEvent, error)
+
+	// Provider audits (written by audit CLI, read by API and diagnostics)
+	SaveAuditResults(ctx context.Context, results []audit.AuditResult) error
+	GetLastAudit(ctx context.Context) ([]audit.AuditResult, error)
 
 	Close() error
 }
@@ -223,6 +228,19 @@ CREATE TABLE IF NOT EXISTS corrections (
 
 CREATE INDEX IF NOT EXISTS idx_corrections_issue ON corrections(issue_number);
 CREATE INDEX IF NOT EXISTS idx_corrections_created ON corrections(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS provider_audits (
+	id            TEXT PRIMARY KEY,
+	provider_name TEXT NOT NULL,
+	provider_type TEXT NOT NULL,
+	model         TEXT NOT NULL DEFAULT '',
+	healthy       INTEGER NOT NULL DEFAULT 0,
+	latency_ms    INTEGER NOT NULL DEFAULT 0,
+	error         TEXT NOT NULL DEFAULT '',
+	audited_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_audits_at ON provider_audits(audited_at DESC);
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
 		return err
