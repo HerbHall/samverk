@@ -143,6 +143,12 @@ func (r *Registry) Routing() map[string][]string {
 	return out
 }
 
+// ProviderByName returns the raw Provider instance for the given name,
+// or nil if the name is not registered.
+func (r *Registry) ProviderByName(name string) Provider {
+	return r.providers[name]
+}
+
 // List returns info about all registered providers with their health status.
 func (r *Registry) List(ctx context.Context) []ProviderInfo {
 	infos := make([]ProviderInfo, 0, len(r.providers))

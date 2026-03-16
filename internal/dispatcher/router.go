@@ -168,6 +168,26 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		return fmt.Errorf("no tracker for %s/%s", owner, repo)
 	}
 
+	// Pre-flight health gate: check if the routing chain has any healthy
+	// provider before claiming the issue. This prevents the tight
+	// claim-fail-requeue loop when all providers are down.
+	if d.healthMonitor != nil && d.pool != nil {
+		providerKey, _ := selectProviderKey(issue, agentType)
+		routing := d.pool.RegistryRouting()
+		chain, ok := routing[providerKey]
+		if !ok {
+			chain = routing["default"]
+		}
+		if len(chain) > 0 && !d.healthMonitor.ChainHealthy(chain) {
+			d.logger.Warn("no healthy providers for chain, deferring issue",
+				zap.Int("issue", issue.Number),
+				zap.String("chain", providerKey),
+				zap.Strings("providers", chain),
+			)
+			return nil
+		}
+	}
+
 	// Human-typed issues are tracked but never submitted to the agent pool.
 	if agentType == models.AgentTypeHuman {
 		d.logger.Info("issue classified as human", zap.Int("issue", issue.Number))

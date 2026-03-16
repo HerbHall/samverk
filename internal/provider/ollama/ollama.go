@@ -17,8 +17,11 @@ import (
 	"github.com/herbhall/samverk/internal/provider"
 )
 
-// Compile-time check that Client satisfies provider.Provider.
-var _ provider.Provider = (*Client)(nil)
+// Compile-time checks.
+var (
+	_ provider.Provider       = (*Client)(nil)
+	_ provider.HealthDetailer = (*Client)(nil)
+)
 
 // Client is an HTTP client for the Ollama REST API.
 type Client struct {
@@ -104,10 +107,18 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (resp *prov
 	return resp, nil
 }
 
+// healthTimeout is the maximum time for a health probe. Shorter than the
+// default HTTP client timeout (30s) to avoid blocking the health monitor.
+const healthTimeout = 5 * time.Second
+
 // Healthy returns true if the Ollama server is reachable.
 // It checks GET / which returns "Ollama is running" on success.
+// Uses a 5-second timeout independent of the main HTTP client timeout.
 func (c *Client) Healthy(ctx context.Context) bool {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/", http.NoBody)
+	hctx, cancel := context.WithTimeout(ctx, healthTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(hctx, http.MethodGet, c.baseURL+"/", http.NoBody)
 	if err != nil {
 		return false
 	}
@@ -119,6 +130,60 @@ func (c *Client) Healthy(ctx context.Context) bool {
 	_ = resp.Body.Close()
 
 	return resp.StatusCode == http.StatusOK
+}
+
+// OllamaHealth contains detailed health information from an Ollama instance.
+type OllamaHealth struct {
+	ModelLoaded bool   `json:"model_loaded"`
+	VRAMFree    int64  `json:"vram_free"`
+	VRAMTotal   int64  `json:"vram_total"`
+	ModelName   string `json:"model_name,omitempty"`
+}
+
+// tagsResponse wraps the /api/tags response.
+type tagsResponse struct {
+	Models []struct {
+		Name string `json:"name"`
+	} `json:"models"`
+}
+
+// HealthDetail returns extended health information: whether the configured
+// model is available and VRAM usage from running models. Implements
+// provider.HealthDetailer.
+func (c *Client) HealthDetail(ctx context.Context) (*provider.HealthDetail, error) {
+	hctx, cancel := context.WithTimeout(ctx, healthTimeout)
+	defer cancel()
+
+	// Check available models via /api/tags.
+	var tags tagsResponse
+	if err := c.doJSON(hctx, http.MethodGet, "/api/tags", nil, &tags); err != nil {
+		return nil, fmt.Errorf("list models: %w", err)
+	}
+
+	// Check running models via /api/ps for VRAM usage.
+	running, err := c.ListRunning(hctx)
+	if err != nil {
+		return nil, fmt.Errorf("list running: %w", err)
+	}
+
+	detail := &provider.HealthDetail{}
+
+	// Check if any model is loaded (tags lists all pulled models).
+	if len(tags.Models) > 0 {
+		detail.ModelLoaded = true
+	}
+
+	// Sum VRAM usage from running models.
+	var totalVRAM int64
+	for i := range running {
+		totalVRAM += running[i].SizeVRAM
+	}
+	// VRAMTotal is the total VRAM consumed by loaded models.
+	// VRAMFree cannot be determined from Ollama's API alone, so we
+	// report total VRAM in use. The dashboard can interpret this.
+	detail.VRAMTotal = totalVRAM
+
+	return detail, nil
 }
 
 // Name returns the provider identifier.

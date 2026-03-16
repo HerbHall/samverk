@@ -316,6 +316,15 @@ func (p *Pool) fetchLatest() {
 	FetchLatest(p.repoDir, p.logger)
 }
 
+// RegistryRouting returns the routing table from the underlying provider registry.
+// Used by the dispatcher for pre-flight health gate checks.
+func (p *Pool) RegistryRouting() map[string][]string {
+	if p.registry == nil {
+		return nil
+	}
+	return p.registry.Routing()
+}
+
 // SetOnComplete registers a callback invoked after each task finishes.
 func (p *Pool) SetOnComplete(fn func(TaskResult)) {
 	p.onComplete.Store(&fn)
