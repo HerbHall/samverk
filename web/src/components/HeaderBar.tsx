@@ -1,4 +1,3 @@
-import { Link } from 'react-router'
 import { useTheme } from '../hooks/useTheme'
 
 export function HeaderBar() {
@@ -19,29 +18,13 @@ export function HeaderBar() {
           {version}
         </span>
       </div>
-      <div className="flex items-center gap-4 text-sm">
-        <Link
-          to="/synapset"
-          className="text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400"
-        >
-          Synapset
-        </Link>
-        <span className="text-gray-300 dark:text-gray-600">|</span>
-        <Link
-          to="/devkit"
-          className="text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400"
-        >
-          DevKit
-        </Link>
-        <span className="text-gray-300 dark:text-gray-600">|</span>
-        <button
-          onClick={toggle}
-          className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? '\u2600' : '\u263D'}
-        </button>
-      </div>
+      <button
+        onClick={toggle}
+        className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {theme === 'dark' ? '\u2600' : '\u263D'}
+      </button>
     </header>
   )
 }
