@@ -74,7 +74,7 @@ func (a *Auditor) Run() ([]Finding, error) {
 func (a *Auditor) checkStaleStatus() ([]Finding, error) {
 	statusPath := filepath.Join(a.repoRoot, ".samverk", "status.md")
 
-	f, err := os.Open(statusPath)
+	f, err := os.Open(statusPath) //nolint:gosec // G304: path is constructed from trusted repoRoot
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil // handled by checkRequiredDocs
@@ -165,7 +165,7 @@ func (a *Auditor) checkMissingReferences() ([]Finding, error) {
 }
 
 func (a *Auditor) checkFileReferences(absPath, relPath string) ([]Finding, error) {
-	f, err := os.Open(absPath)
+	f, err := os.Open(absPath) //nolint:gosec // G304: path is constructed from trusted repoRoot + docs dir scan
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +204,7 @@ func (a *Auditor) checkFileReferences(absPath, relPath string) ([]Finding, error
 			dir := filepath.Dir(absPath)
 			targetAbs := filepath.Join(dir, linkTarget)
 
-			if _, statErr := os.Stat(targetAbs); os.IsNotExist(statErr) {
+			if _, statErr := os.Stat(targetAbs); os.IsNotExist(statErr) { //nolint:gosec // G703: path is from markdown link resolution within repo
 				findings = append(findings, Finding{
 					File:     relPath,
 					Line:     lineNum,

@@ -1098,13 +1098,13 @@ func docAuditCmd() *cobra.Command {
 			}
 
 			if len(findings) == 0 {
-				fmt.Fprintln(os.Stdout, "No documentation issues found.")
+				_, _ = fmt.Fprintln(os.Stdout, "No documentation issues found.")
 				return nil
 			}
 
 			// Print findings as a table.
-			fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", "SEVERITY", "FILE", "MESSAGE")
-			fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", "--------", "----------------------------------------", "-------")
+			_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", "SEVERITY", "FILE", "MESSAGE")
+			_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", "--------", "----------------------------------------", "-------")
 			hasError := false
 			for i := range findings {
 				f := &findings[i]
@@ -1112,7 +1112,7 @@ func docAuditCmd() *cobra.Command {
 				if f.Line > 0 {
 					loc = fmt.Sprintf("%s:%d", f.File, f.Line)
 				}
-				fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", string(f.Severity), loc, f.Message)
+				_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", string(f.Severity), loc, f.Message)
 				if f.Severity == docaudit.SeverityError {
 					hasError = true
 				}
