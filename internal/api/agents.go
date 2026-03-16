@@ -159,6 +159,9 @@ func computeAgentStats(sessions []*models.Session) agentStatsDTO {
 			stats.Failed++
 		case models.SessionStatusActive:
 			stats.Active++
+		case models.SessionStatusPending, models.SessionStatusCancelled:
+			// Pending and cancelled sessions are counted in TotalSessions
+			// but not tracked separately in the stats breakdown.
 		}
 		if s.FinishedAt != nil {
 			d := s.FinishedAt.Sub(s.StartedAt)
