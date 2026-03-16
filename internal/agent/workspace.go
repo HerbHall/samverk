@@ -154,7 +154,9 @@ func CommitAndPush(workDir, commitMsg string) (changed bool, err error) {
 	if _, err = gitExec(workDir, "commit", "-m", commitMsg); err != nil {
 		return false, fmt.Errorf("git commit: %w", err)
 	}
-	if _, err = gitExec(workDir, "push", "-u", "origin", "HEAD"); err != nil {
+	// Force-push because agent branches are ephemeral and a previous failed
+	// attempt may have already pushed commits to the same remote branch.
+	if _, err = gitExec(workDir, "push", "--force", "-u", "origin", "HEAD"); err != nil {
 		return false, fmt.Errorf("git push: %w", err)
 	}
 

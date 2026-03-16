@@ -55,6 +55,7 @@ type Dispatcher struct {
 	circuitBreaker *CircuitBreaker
 	metrics        *metrics.DispatcherMetrics
 	wakeup         chan struct{}
+	lastEventTime  time.Time // updated by watcher callbacks; read by stale detection
 	mu             sync.Mutex
 	logger         *zap.Logger
 	stop           context.CancelFunc
@@ -202,9 +203,32 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 	}
 }
 
+// watcherRestartBackoff defines the exponential backoff sequence for watcher
+// restarts: 1s, 2s, 4s, 8s, 16s, capped at maxWatcherBackoff.
+const (
+	initialWatcherBackoff = 1 * time.Second
+	maxWatcherBackoff     = 5 * time.Minute
+	// maxConsecutiveWatcherFailures is the number of rapid watcher failures
+	// (within watcherFailureWindow) before Run() gives up.
+	maxConsecutiveWatcherFailures = 5
+	watcherFailureWindow          = 10 * time.Minute
+	// stalePollMultiplier defines how many poll intervals with no events
+	// triggers a stale-watcher warning log.
+	stalePollMultiplier = 10
+)
+
+// watcherState tracks restart state for a single tracker watcher goroutine.
+type watcherState struct {
+	entry          TrackerEntry
+	failures       []time.Time // timestamps of recent failures
+	currentBackoff time.Duration
+}
+
 // Run starts the watch loop and heartbeat ticker. It blocks until ctx is
 // cancelled or an unrecoverable error occurs. One watch goroutine is started
-// per registered tracker; the first watcher error cancels all others.
+// per registered tracker. Watchers that fail are restarted with exponential
+// backoff; Run() exits only after maxConsecutiveWatcherFailures within a
+// short window.
 func (d *Dispatcher) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	d.stop = cancel
@@ -214,16 +238,41 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		d.pool.SetOnComplete(d.handleTaskComplete)
 	}
 
-	errCh := make(chan error, len(d.trackerEntries))
+	type watcherError struct {
+		idx int
+		err error
+	}
+	errCh := make(chan watcherError, len(d.trackerEntries))
+
+	// Build watcher state for each tracker.
+	watchers := make([]watcherState, len(d.trackerEntries))
+	for i := range d.trackerEntries {
+		watchers[i] = watcherState{
+			entry:          d.trackerEntries[i],
+			currentBackoff: initialWatcherBackoff,
+		}
+	}
+
+	// startWatcher launches a goroutine for the given tracker index.
+	startWatcher := func(idx int) {
+		entry := watchers[idx].entry
+		go func() {
+			err := entry.Tracker.Watch(ctx, func(ev forge.Event) {
+				d.handleEvent(ctx, ev)
+				d.mu.Lock()
+				d.lastEventTime = time.Now()
+				d.mu.Unlock()
+			})
+			errCh <- watcherError{idx: idx, err: err}
+		}()
+	}
 
 	// Start one event watcher per registered tracker.
+	d.mu.Lock()
+	d.lastEventTime = time.Now()
+	d.mu.Unlock()
 	for i := range d.trackerEntries {
-		entry := d.trackerEntries[i]
-		go func() {
-			errCh <- entry.Tracker.Watch(ctx, func(ev forge.Event) {
-				d.handleEvent(ctx, ev)
-			})
-		}()
+		startWatcher(i)
 	}
 
 	ticker := time.NewTicker(d.config.HeartbeatCheckInterval)
@@ -233,8 +282,57 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-errCh:
-			return fmt.Errorf("watch stopped: %w", err)
+
+		case we := <-errCh:
+			// Context cancellation is a clean shutdown, not a failure.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			ws := &watchers[we.idx]
+			now := time.Now()
+
+			// Prune failures outside the window.
+			cutoff := now.Add(-watcherFailureWindow)
+			recent := make([]time.Time, 0, len(ws.failures))
+			for _, ft := range ws.failures {
+				if ft.After(cutoff) {
+					recent = append(recent, ft)
+				}
+			}
+			recent = append(recent, now)
+			ws.failures = recent
+
+			if len(ws.failures) >= maxConsecutiveWatcherFailures {
+				return fmt.Errorf("watcher %s/%s failed %d times in %v: %w",
+					ws.entry.Owner, ws.entry.Repo,
+					len(ws.failures), watcherFailureWindow, we.err)
+			}
+
+			d.logger.Warn("watcher failed, restarting with backoff",
+				zap.String("owner", ws.entry.Owner),
+				zap.String("repo", ws.entry.Repo),
+				zap.Duration("backoff", ws.currentBackoff),
+				zap.Int("recent_failures", len(ws.failures)),
+				zap.Error(we.err),
+			)
+
+			backoff := ws.currentBackoff
+			ws.currentBackoff *= 2
+			if ws.currentBackoff > maxWatcherBackoff {
+				ws.currentBackoff = maxWatcherBackoff
+			}
+
+			// Restart after backoff delay in a goroutine.
+			go func(idx int, delay time.Duration) {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(delay):
+					startWatcher(idx)
+				}
+			}(we.idx, backoff)
+
 		case <-d.wakeup:
 			d.logger.Debug("wakeup: task completed, checking for queued work")
 			pollStart := time.Now()
@@ -245,6 +343,7 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
 			}
 			d.metrics.PollCompleted(time.Since(pollStart))
+
 		case <-ticker.C:
 			pollStart := time.Now()
 			if err := d.checkTimeouts(ctx); err != nil {
@@ -255,6 +354,18 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
 			}
 			d.metrics.PollCompleted(time.Since(pollStart))
+
+			// Stale watcher detection: warn if no events for a long time.
+			d.mu.Lock()
+			lastEvt := d.lastEventTime
+			d.mu.Unlock()
+			staleThreshold := time.Duration(stalePollMultiplier) * d.config.HeartbeatCheckInterval
+			if time.Since(lastEvt) > staleThreshold {
+				d.logger.Warn("no events received recently, watchers may be stale",
+					zap.Duration("since_last_event", time.Since(lastEvt)),
+					zap.Duration("threshold", staleThreshold),
+				)
+			}
 		}
 	}
 }

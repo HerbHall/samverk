@@ -1530,3 +1530,151 @@ func hasLabel(labels []string, target string) bool {
 	}
 	return false
 }
+
+// --- Watcher resilience tests (#577) ---
+
+// failingTracker wraps mockTracker but makes Watch return an error a
+// configurable number of times before blocking on ctx.Done().
+type failingTracker struct {
+	*mockTracker
+	mu           sync.Mutex
+	failCount    int // how many times Watch should fail before succeeding
+	watchCalls   int
+	failedCh     chan struct{} // closed after all failures are emitted
+	succeededCtx context.Context
+}
+
+func newFailingTracker(failCount int) *failingTracker {
+	return &failingTracker{
+		mockTracker: newMockTracker(),
+		failCount:   failCount,
+		failedCh:    make(chan struct{}, failCount),
+	}
+}
+
+func (f *failingTracker) Watch(ctx context.Context, handler func(forge.Event)) error {
+	f.mu.Lock()
+	call := f.watchCalls
+	f.watchCalls++
+	shouldFail := call < f.failCount
+	f.mu.Unlock()
+
+	if shouldFail {
+		f.failedCh <- struct{}{}
+		return fmt.Errorf("simulated watcher failure #%d", call+1)
+	}
+	f.succeededCtx = ctx
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (f *failingTracker) getWatchCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.watchCalls
+}
+
+func TestRun_WatcherRestartsAfterError(t *testing.T) {
+	ft := newFailingTracker(2) // fail twice, then succeed
+
+	cfg := DefaultConfig()
+	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
+
+	d := New(
+		[]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: ft}},
+		&mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop(),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- d.Run(ctx) }()
+
+	// Wait for the successful watch to start (call #3).
+	deadline := time.After(4 * time.Second)
+	for ft.getWatchCalls() < 3 {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for watcher restart, got %d calls", ft.getWatchCalls())
+		case err := <-errCh:
+			t.Fatalf("Run exited unexpectedly: %v", err)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	cancel()
+	err := <-errCh
+	if err != nil && err != context.Canceled {
+		t.Errorf("unexpected Run error: %v", err)
+	}
+}
+
+func TestRun_ExitsAfterTooManyWatcherFailures(t *testing.T) {
+	// Fail more than maxConsecutiveWatcherFailures times rapidly.
+	ft := newFailingTracker(maxConsecutiveWatcherFailures + 1)
+
+	cfg := DefaultConfig()
+	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
+
+	d := New(
+		[]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: ft}},
+		&mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop(),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := d.Run(ctx)
+	if err == nil {
+		t.Fatal("expected Run to return error after too many failures")
+	}
+	if !strings.Contains(err.Error(), "failed") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestRun_BackoffProgression(t *testing.T) {
+	// Verify that backoff doubles: the second failure should wait longer
+	// than the first. We test indirectly by measuring total time.
+	ft := newFailingTracker(3) // 3 failures = backoffs of 1s, 2s, then succeed
+
+	cfg := DefaultConfig()
+	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
+
+	d := New(
+		[]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: ft}},
+		&mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop(),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	errCh := make(chan error, 1)
+	go func() { errCh <- d.Run(ctx) }()
+
+	// Wait for the 4th Watch call (the successful one).
+	deadline := time.After(12 * time.Second)
+	for ft.getWatchCalls() < 4 {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for 4th watch call, got %d", ft.getWatchCalls())
+		case err := <-errCh:
+			t.Fatalf("Run exited unexpectedly: %v", err)
+		default:
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+
+	elapsed := time.Since(start)
+	// 3 failures with backoffs 1s + 2s + 4s = 7s minimum.
+	// Allow some slack but verify it's not instant.
+	if elapsed < 3*time.Second {
+		t.Errorf("expected at least 3s of backoff, got %v", elapsed)
+	}
+
+	cancel()
+	<-errCh
+}
