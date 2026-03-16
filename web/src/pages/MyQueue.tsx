@@ -20,15 +20,15 @@ function getPriority(labels: string[]): { rank: number; label: string } {
 function priorityColor(label: string): string {
   switch (label) {
     case 'priority:critical':
-      return 'bg-red-100 text-red-800'
+      return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
     case 'priority:high':
-      return 'bg-orange-100 text-orange-800'
+      return 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300'
     case 'priority:normal':
-      return 'bg-yellow-100 text-yellow-800'
+      return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
     case 'priority:low':
-      return 'bg-green-100 text-green-800'
+      return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
     default:
-      return 'bg-gray-100 text-gray-600'
+      return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
   }
 }
 
@@ -80,8 +80,8 @@ function CopyButton({ text }: { text: string }) {
       onClick={handleCopy}
       className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
         copied
-          ? 'bg-green-100 text-green-700'
-          : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+          : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40'
       }`}
       title="Copy agent prompt to clipboard"
     >
@@ -120,36 +120,36 @@ export function MyQueue() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">My Queue</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Queue</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Issues that need your input -- sorted by priority. Copy the prompt to resolve in an agent session.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-800">
+          <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-3 py-1 text-sm font-medium text-amber-800 dark:text-amber-300">
             {humanIssues.length} awaiting
           </span>
-          <span className="text-xs text-gray-400">Auto-refreshes every 30s</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">Auto-refreshes every 30s</span>
         </div>
       </div>
 
       {issues.isLoading && (
         <div className="flex items-center justify-center py-20">
-          <p className="text-gray-500">Loading issues...</p>
+          <p className="text-gray-500 dark:text-gray-400">Loading issues...</p>
         </div>
       )}
 
       {issues.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-          <p className="font-medium text-red-800">Failed to load issues</p>
-          <p className="mt-1 text-sm text-red-600">{issues.error?.message}</p>
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
+          <p className="font-medium text-red-800 dark:text-red-300">Failed to load issues</p>
+          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{issues.error?.message}</p>
         </div>
       )}
 
       {issues.isSuccess && humanIssues.length === 0 && (
-        <div className="rounded-lg border bg-white p-8 text-center">
-          <p className="text-lg font-medium text-gray-700">Queue empty</p>
-          <p className="mt-1 text-sm text-gray-500">No issues need your attention right now.</p>
+        <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
+          <p className="text-lg font-medium text-gray-700 dark:text-gray-300">Queue empty</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">No issues need your attention right now.</p>
         </div>
       )}
 
@@ -166,11 +166,11 @@ export function MyQueue() {
             return (
               <div
                 key={issue.number}
-                className="overflow-hidden rounded-lg border bg-white"
+                className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800"
               >
                 <div
                   onClick={() => toggleExpand(issue.number)}
-                  className="flex cursor-pointer items-center gap-4 px-4 py-3 hover:bg-gray-50"
+                  className="flex cursor-pointer items-center gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                   <span
                     className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${priorityColor(priority.label)}`}
@@ -178,55 +178,55 @@ export function MyQueue() {
                     {priority.label.replace('priority:', '').toUpperCase()}
                   </span>
 
-                  <span className="text-sm font-medium text-gray-500">#{issue.number}</span>
+                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">#{issue.number}</span>
 
-                  <span className="flex-1 font-medium text-gray-900">{issue.title}</span>
+                  <span className="flex-1 font-medium text-gray-900 dark:text-gray-100">{issue.title}</span>
 
                   <div className="flex flex-wrap gap-1">
                     {otherLabels.map((label) => (
                       <span
                         key={label}
-                        className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                        className="inline-block rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300"
                       >
                         {label}
                       </span>
                     ))}
                   </div>
 
-                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(issue.updated_at)}</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">{formatDate(issue.updated_at)}</span>
 
                   <CopyButton text={prompt} />
 
                   <span
-                    className={`text-xs text-gray-400 ${expanded ? 'rotate-90' : ''} inline-block transition-transform`}
+                    className={`text-xs text-gray-400 dark:text-gray-500 ${expanded ? 'rotate-90' : ''} inline-block transition-transform`}
                   >
                     &#9654;
                   </span>
                 </div>
 
                 {expanded && (
-                  <div className="border-t bg-gray-50 px-4 py-4">
+                  <div className="border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-4 py-4">
                     <div className="grid gap-4 lg:grid-cols-2">
                       <div>
-                        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                           Issue Description
                         </h4>
-                        <div className="max-h-64 overflow-auto rounded border bg-white p-3">
+                        <div className="max-h-64 overflow-auto rounded border dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
                           {issue.body.trim() !== '' ? (
-                            <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">
+                            <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-sans leading-relaxed">
                               {issue.body}
                             </pre>
                           ) : (
-                            <p className="text-sm italic text-gray-400">No description provided.</p>
+                            <p className="text-sm italic text-gray-400 dark:text-gray-500">No description provided.</p>
                           )}
                         </div>
                       </div>
 
                       <div>
-                        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                           Agent Prompt
                         </h4>
-                        <div className="relative rounded border bg-gray-900 p-3">
+                        <div className="relative rounded border dark:border-gray-700 bg-gray-900 p-3">
                           <pre className="whitespace-pre-wrap text-sm text-green-400 font-mono leading-relaxed">
                             {prompt}
                           </pre>
@@ -234,7 +234,7 @@ export function MyQueue() {
                             <CopyButton text={prompt} />
                           </div>
                         </div>
-                        <p className="mt-2 text-xs text-gray-500">
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                           Paste this into a Claude Code session to resolve and complete the issue.
                         </p>
                       </div>

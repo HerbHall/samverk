@@ -41,7 +41,7 @@ func newTestPool(t *testing.T, workers int, mp *mockProvider) *Pool {
 		},
 	}
 
-	reg := provider.NewRegistry()
+	reg := provider.NewRegistry(nil)
 	reg.Register("test", "test", mp, "test-model")
 	reg.SetRouting(map[string][]string{
 		"default": {"test"},
@@ -720,6 +720,36 @@ func TestResize_RapidSequential(t *testing.T) {
 	if got := pool.Workers(); got != 3 {
 		t.Errorf("Workers() = %d, want 3 after rapid resize sequence", got)
 	}
+}
+
+func TestPoolSetRepoDir(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 1, mp)
+	defer pool.Shutdown()
+
+	if pool.repoDir != "" {
+		t.Errorf("repoDir should be empty initially, got %q", pool.repoDir)
+	}
+
+	pool.SetRepoDir("/tmp/test-repo")
+	if pool.repoDir != "/tmp/test-repo" {
+		t.Errorf("repoDir = %q, want /tmp/test-repo", pool.repoDir)
+	}
+}
+
+func TestPoolFetchLatest_EmptyRepoDir(t *testing.T) {
+	mp := &mockProvider{
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+	pool := newTestPool(t, 1, mp)
+	defer pool.Shutdown()
+
+	// Should be a no-op, not panic.
+	pool.fetchLatest()
 }
 
 // --- mock types for pool tests ---

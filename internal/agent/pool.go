@@ -27,6 +27,10 @@ var ErrPoolShutdown = errors.New("pool is shut down")
 // defaultWorkers is the number of worker goroutines when none is specified.
 const defaultWorkers = 3
 
+// spawnStagger is the minimum interval between consecutive CLI process spawns.
+// Prevents overwhelming the system when multiple workers start simultaneously.
+const spawnStagger = 200 * time.Millisecond
+
 // Task represents a unit of work to be processed by the agent pool.
 type Task struct {
 	Issue         *forge.Issue
@@ -71,6 +75,10 @@ type Pool struct {
 	onComplete atomic.Pointer[func(TaskResult)]   // callback to notify dispatcher; atomic to avoid mu deadlock
 	workerQuit chan struct{}                        // each send causes one worker to exit after its current task
 	synapset   *synapset.Client                    // optional Synapset memory client; nil disables enrichment
+	repoDir    string                               // local git clone path for worktree creation; empty disables
+	fetchMu    sync.Mutex                           // serializes FetchLatest calls to avoid concurrent git index locks
+	spawnMu    sync.Mutex                           // serializes CLI process spawns to avoid overwhelming the system
+	lastSpawn  time.Time                            // timestamp of the last provider spawn for stagger enforcement
 }
 
 // NewPool creates a pool with the given number of worker goroutines and starts
@@ -284,6 +292,25 @@ func (p *Pool) SetSynapset(sc *synapset.Client) {
 	p.synapset = sc
 }
 
+// SetRepoDir configures the local git repository path used to create isolated
+// worktrees for agent sessions. When set, code-gen and test agents get their
+// own worktree branched from the latest origin/main.
+func (p *Pool) SetRepoDir(dir string) {
+	p.repoDir = dir
+}
+
+// fetchLatest pulls the latest code from origin into the shared clone.
+// Serialized via fetchMu to prevent concurrent git operations on the same
+// clone directory (git uses index locks that cause failures on concurrent access).
+func (p *Pool) fetchLatest() {
+	if p.repoDir == "" {
+		return
+	}
+	p.fetchMu.Lock()
+	defer p.fetchMu.Unlock()
+	FetchLatest(p.repoDir, p.logger)
+}
+
 // SetOnComplete registers a callback invoked after each task finishes.
 func (p *Pool) SetOnComplete(fn func(TaskResult)) {
 	p.onComplete.Store(&fn)
@@ -364,9 +391,22 @@ func (p *Pool) processTask(task Task) {
 		return
 	}
 
+	// Fetch latest code before creating a runner (serialized across workers).
+	p.fetchLatest()
+
+	// Stagger CLI spawns to avoid overwhelming the system when multiple
+	// workers start tasks simultaneously.
+	p.spawnMu.Lock()
+	if since := time.Since(p.lastSpawn); since < spawnStagger {
+		time.Sleep(spawnStagger - since)
+	}
+	p.lastSpawn = time.Now()
+	p.spawnMu.Unlock()
+
 	runner := NewRunner(prov, model, p.tracker, p.store, p.costs, p.logger)
 	runner.cleanupCtx = cleanupCtx
 	runner.synapset = p.synapset
+	runner.SetRepoDir(p.repoDir)
 	start := time.Now()
 	runErr := runner.Run(ctx, task)
 	duration := time.Since(start)

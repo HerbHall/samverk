@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/herbhall/samverk/internal/provider"
 )
 
@@ -25,6 +27,7 @@ type Client struct {
 	model      string
 	maxTokens  int
 	httpClient *http.Client
+	logger     *zap.Logger
 }
 
 // Option configures a Client.
@@ -51,6 +54,13 @@ func WithMaxTokens(n int) Option {
 	}
 }
 
+// WithLogger sets a structured logger for request/response logging.
+func WithLogger(l *zap.Logger) Option {
+	return func(c *Client) {
+		c.logger = l
+	}
+}
+
 // New creates a new OpenAI client with the given API key and model.
 func New(apiKey, model string, opts ...Option) *Client {
 	c := &Client{
@@ -58,6 +68,7 @@ func New(apiKey, model string, opts ...Option) *Client {
 		apiKey:    apiKey,
 		model:     model,
 		maxTokens: 4096,
+		logger:    zap.NewNop(),
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -101,6 +112,14 @@ type usage struct {
 
 // Chat sends a chat completion request to POST /v1/chat/completions.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (resp *provider.ChatResponse, err error) {
+	start := time.Now()
+
+	c.logger.Info("openai chat request",
+		zap.String("model", c.model),
+		zap.Int("message_count", len(req.Messages)),
+		zap.Int("max_tokens", c.maxTokens),
+	)
+
 	// Convert provider messages to OpenAI format (role maps 1:1).
 	msgs := make([]chatMessage, 0, len(req.Messages))
 	for i := range req.Messages {
@@ -118,12 +137,28 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (resp *prov
 
 	var oaiResp chatResponse
 	if err = c.doJSON(ctx, http.MethodPost, "/v1/chat/completions", oaiReq, &oaiResp); err != nil {
+		c.logger.Error("openai chat failed",
+			zap.String("model", c.model),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("openai: chat: %w", err)
 	}
 
 	if len(oaiResp.Choices) == 0 {
+		c.logger.Error("openai chat empty response",
+			zap.String("model", c.model),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)
 		return nil, fmt.Errorf("openai: chat: empty choices array")
 	}
+
+	c.logger.Info("openai chat response",
+		zap.String("model", oaiResp.Model),
+		zap.Int("prompt_tokens", oaiResp.Usage.PromptTokens),
+		zap.Int("completion_tokens", oaiResp.Usage.CompletionTokens),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 
 	resp = &provider.ChatResponse{
 		Model: oaiResp.Model,

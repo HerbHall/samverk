@@ -11,18 +11,22 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/api"
+	"github.com/herbhall/samverk/internal/hostmetrics"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/dispatcher"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/logstore"
 	giteaadapter "github.com/herbhall/samverk/internal/forge/gitea"
 	"github.com/herbhall/samverk/internal/forge/github"
+	"github.com/herbhall/samverk/internal/loganalyst"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/prwatcher"
@@ -121,6 +125,29 @@ func serveCmd() *cobra.Command {
 					costs = digest.NewStoreCostSource(s, budget)
 					defer func() { _ = s.Close() }()
 					logger.Info("database opened", zap.String("path", dbPath))
+				}
+			}
+
+			// Create log store for structured log persistence (separate DB).
+			var ls *logstore.LogStore
+			if dbPath != "" {
+				logsDBPath := strings.TrimSuffix(dbPath, ".db") + "-logs.db"
+				var lsErr error
+				ls, lsErr = logstore.New(logsDBPath)
+				if lsErr != nil {
+					logger.Warn("could not open log store", zap.String("path", logsDBPath), zap.Error(lsErr))
+				} else {
+					defer func() { _ = ls.Close() }()
+					// Upgrade logger to tee to SQLite.
+					teeLogger, teeErr := logging.NewWithTee(ls)
+					if teeErr != nil {
+						logger.Warn("could not create tee logger", zap.Error(teeErr))
+					} else {
+						logger = teeLogger
+					}
+					// Start log pruner (30 day retention).
+					go logstore.StartPruner(ctx, ls, 30*24*time.Hour, logger)
+					logger.Info("log store enabled", zap.String("path", logsDBPath))
 				}
 			}
 
@@ -259,6 +286,7 @@ func serveCmd() *cobra.Command {
 							Name:       name,
 							Type:       pcfg.Type,
 							Model:      pcfg.DefaultModel,
+							Healthy:    true, // Present in config = assumed healthy; real probe is a separate concern.
 							AccountURL: pcfg.AccountURL,
 						})
 					}
@@ -268,9 +296,41 @@ func serveCmd() *cobra.Command {
 					logger.Warn("could not load providers config for dashboard", zap.Error(pcErr))
 				}
 			}
+			if ls != nil {
+				apiHandler.SetLogStore(ls)
+			}
 			cfg.APIHandler = apiHandler
 			cfg.PressureProvider = apiHandler
 			logger.Info("REST API enabled")
+
+			// Start host metrics collector.
+			hm := hostmetrics.NewCollector("/")
+			apiHandler.SetHostMetrics(hm)
+			go func() {
+				if hmErr := hm.Run(ctx); hmErr != nil && hmErr != context.Canceled {
+					logger.Warn("host metrics collector stopped", zap.Error(hmErr))
+				}
+			}()
+			logger.Info("host metrics collector started")
+
+			// Wire log analyst if logstore is available.
+			if ls != nil {
+				ollamaURL := os.Getenv("SAMVERK_OLLAMA_URL")
+				if ollamaURL == "" {
+					ollamaURL = "http://192.168.1.207:11434"
+				}
+				ollamaModel := os.Getenv("SAMVERK_ANALYST_MODEL")
+				if ollamaModel == "" {
+					ollamaModel = "qwen2.5-coder:7b"
+				}
+				var ollamaClient loganalyst.OllamaClient = loganalyst.NewOllamaAnalystClient(ollamaURL, ollamaModel, 120*time.Second)
+				analyst := loganalyst.New(ls, ollamaClient, logger)
+				apiHandler.SetLogAnalyst(analyst)
+				logger.Info("log analyst enabled",
+					zap.String("ollama_url", ollamaURL),
+					zap.String("model", ollamaModel),
+				)
+			}
 
 			// Wire worker lister from API into MCP digest so the get_digest tool
 			// shows registered PC agent workers in the RUNTIME METRICS section.
@@ -304,7 +364,7 @@ func serveCmd() *cobra.Command {
 }
 
 func dispatchCmd() *cobra.Command {
-	var owner, repo, dbPath, providersConfig, scalingConfig string
+	var owner, repo, dbPath, providersConfig, scalingConfig, repoDir string
 	var forgeName, giteaURL string
 	var pollSeconds, workers, scalingMin, scalingMax int
 	var budget float64
@@ -383,10 +443,29 @@ func dispatchCmd() *cobra.Command {
 				}
 			}
 
+			// Create log store for structured log persistence (separate DB).
+			if dbPath != "" {
+				logsDBPath := strings.TrimSuffix(dbPath, ".db") + "-logs.db"
+				dispLS, lsErr := logstore.New(logsDBPath)
+				if lsErr != nil {
+					logger.Warn("could not open log store", zap.String("path", logsDBPath), zap.Error(lsErr))
+				} else {
+					defer func() { _ = dispLS.Close() }()
+					teeLogger, teeErr := logging.NewWithTee(dispLS)
+					if teeErr != nil {
+						logger.Warn("could not create tee logger", zap.Error(teeErr))
+					} else {
+						logger = teeLogger
+					}
+					go logstore.StartPruner(ctx, dispLS, 30*24*time.Hour, logger)
+					logger.Info("log store enabled", zap.String("path", logsDBPath))
+				}
+			}
+
 			// Load provider registry and construct agent pool if config exists.
 			var pool *agent.Pool
 			if providersConfig != "" {
-				registry, regErr := provider.LoadRegistry(providersConfig, providerFactory)
+				registry, regErr := provider.LoadRegistry(providersConfig, makeProviderFactory(logger), logger)
 				if regErr != nil {
 					logger.Warn("could not load provider registry, agents disabled", zap.String("path", providersConfig), zap.Error(regErr))
 				} else {
@@ -395,6 +474,15 @@ func dispatchCmd() *cobra.Command {
 					defer pool.Shutdown()
 					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(registry.List(ctx))))
 				}
+			}
+
+			// Wire repo directory for worktree-based workspace isolation.
+			if pool != nil && repoDir == "" {
+				repoDir = os.Getenv("SAMVERK_REPO_DIR")
+			}
+			if pool != nil && repoDir != "" {
+				pool.SetRepoDir(repoDir)
+				logger.Info("workspace isolation enabled", zap.String("repo_dir", repoDir))
 			}
 
 			// Wire Synapset memory client if configured (optional, best-effort).
@@ -456,6 +544,9 @@ func dispatchCmd() *cobra.Command {
 
 			// Periodically persist pool + dispatcher metrics to SQLite
 			// so the serve process can read them via StoreBackedMetrics.
+			// NOTE: TasksCompleted and TasksFailed are in-memory counters that
+			// reset when the dispatch process restarts. They reflect per-process-
+			// lifetime totals, not cumulative all-time counts.
 			if st != nil {
 				g.Go(func() error {
 					tick := time.NewTicker(30 * time.Second)
@@ -528,6 +619,7 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&scalingConfig, "scaling-config", "", "Path to scaling policy YAML config (optional)")
 	cmd.Flags().IntVar(&scalingMin, "scaling-min", 0, "Override min workers from scaling config (0 = use config value)")
 	cmd.Flags().IntVar(&scalingMax, "scaling-max", 0, "Override max workers from scaling config (0 = use config value)")
+	cmd.Flags().StringVar(&repoDir, "repo-dir", "", "Local git clone path for agent worktree isolation (env: SAMVERK_REPO_DIR)")
 
 	return cmd
 }
@@ -949,47 +1041,70 @@ func (a *apiWorkerAdapter) ListWorkers() []internalmcp.WorkerInfo {
 	return out
 }
 
-// providerFactory constructs a provider.Provider from YAML config.
-// It wires the concrete provider sub-packages (claude, openai, ollama)
-// so the registry package doesn't import them directly.
-func providerFactory(name string, cfg provider.ProviderConfig) (provider.Provider, error) {
-	switch cfg.Type {
-	case "claude":
-		apiKey := os.Getenv(cfg.APIKeyEnv)
-		if apiKey == "" {
-			return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+// makeProviderFactory returns a ProviderFactory closure that constructs
+// provider.Provider instances from YAML config, wiring in the logger.
+func makeProviderFactory(l *zap.Logger) provider.ProviderFactory {
+	return func(name string, cfg provider.ProviderConfig) (provider.Provider, error) {
+		plog := l.Named("provider." + name)
+		switch cfg.Type {
+		case "claude":
+			apiKey := os.Getenv(cfg.APIKeyEnv)
+			if apiKey == "" {
+				return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+			}
+			model := cfg.DefaultModel
+			if model == "" {
+				model = "claude-sonnet-4-20250514"
+			}
+			return claude.New(apiKey, model, claude.WithLogger(plog)), nil
+		case "openai":
+			apiKey := os.Getenv(cfg.APIKeyEnv)
+			if apiKey == "" {
+				return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+			}
+			model := cfg.DefaultModel
+			if model == "" {
+				model = "gpt-4o"
+			}
+			return openai.New(apiKey, model, openai.WithLogger(plog)), nil
+		case "ollama":
+			baseURL := cfg.BaseURL
+			if baseURL == "" {
+				baseURL = "http://localhost:11434"
+			}
+			if cfg.TimeoutSeconds > 0 {
+				return ollama.NewWithTimeout(baseURL, time.Duration(cfg.TimeoutSeconds)*time.Second, ollama.WithLogger(plog)), nil
+			}
+			return ollama.New(baseURL, ollama.WithLogger(plog)), nil
+		case "claude-cli":
+			if cfg.MaxTurns < 0 {
+				return nil, fmt.Errorf("provider %q: max_turns must be non-negative, got %d", name, cfg.MaxTurns)
+			}
+			model := cfg.DefaultModel
+			opts := claudecli.Options{
+				AllowedTools: normalizeCSV(cfg.AllowedTools),
+				MaxTurns:     cfg.MaxTurns,
+				Logger:       plog,
+			}
+			if cfg.TimeoutSeconds > 0 {
+				return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second, opts), nil
+			}
+			return claudecli.New(model, opts), nil
+		default:
+			return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 		}
-		model := cfg.DefaultModel
-		if model == "" {
-			model = "claude-sonnet-4-20250514"
-		}
-		return claude.New(apiKey, model), nil
-	case "openai":
-		apiKey := os.Getenv(cfg.APIKeyEnv)
-		if apiKey == "" {
-			return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
-		}
-		model := cfg.DefaultModel
-		if model == "" {
-			model = "gpt-4o"
-		}
-		return openai.New(apiKey, model), nil
-	case "ollama":
-		baseURL := cfg.BaseURL
-		if baseURL == "" {
-			baseURL = "http://localhost:11434"
-		}
-		if cfg.TimeoutSeconds > 0 {
-			return ollama.NewWithTimeout(baseURL, time.Duration(cfg.TimeoutSeconds)*time.Second), nil
-		}
-		return ollama.New(baseURL), nil
-	case "claude-cli":
-		model := cfg.DefaultModel
-		if cfg.TimeoutSeconds > 0 {
-			return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second), nil
-		}
-		return claudecli.New(model), nil
-	default:
-		return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 	}
+}
+
+// normalizeCSV trims whitespace around comma-separated values to prevent
+// incidental YAML whitespace from causing invalid tool names.
+func normalizeCSV(s string) string {
+	if s == "" {
+		return ""
+	}
+	parts := strings.Split(s, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return strings.Join(parts, ",")
 }

@@ -38,6 +38,7 @@ type Dispatcher struct {
 	issueFailures  map[int]int // in-memory fallback; persisted counter is authoritative when store is set
 	circuitBreaker *CircuitBreaker
 	metrics        *metrics.DispatcherMetrics
+	wakeup         chan struct{}
 	mu             sync.Mutex
 	logger         *zap.Logger
 	stop           context.CancelFunc
@@ -62,6 +63,7 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 		issueFailures:  make(map[int]int),
 		circuitBreaker: NewCircuitBreaker(logger),
 		metrics:        metrics.NewDispatcherMetrics(),
+		wakeup:         make(chan struct{}, 1),
 		logger:         logger,
 	}
 }
@@ -108,6 +110,12 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		if d.circuitBreaker != nil {
 			d.circuitBreaker.RecordSuccess(result.ProviderKey)
 		}
+
+		// Post-completion quality gate: check output quality from session.
+		// Don't escalate yet -- just log. Escalation to a higher-tier
+		// provider will be added in #492 (multi-machine routing).
+		d.checkCompletionQuality(ctx, result)
+
 		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "needs-qc"), zap.String("error", err.Error()))
 		}
@@ -117,10 +125,18 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		d.recordFailure(ctx, result.IssueNumber, result.SessionID,
 			string(result.AgentType), result.ProviderKey, result.Error, 0)
 
-		if err := d.tracker.AddLabel(ctx, result.IssueNumber, "status:queued"); err != nil {
-			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "queued"), zap.String("error", err.Error()))
-		}
-		d.logger.Warn("task failed re-queued", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID), zap.String("error", result.Error))
+		// Use correction engine to decide response instead of blind re-queue.
+		fc := classifyFailure(result.Error)
+		attempt := d.getPersistedFailureCount(ctx, result.IssueNumber)
+		decision := decideCorrection(fc, result.IssueNumber, attempt, 0)
+		d.applyCorrection(ctx, result, decision)
+	}
+
+	// Signal the run loop to immediately check for queued work
+	// instead of waiting for the next tick.
+	select {
+	case d.wakeup <- struct{}{}:
+	default: // already signaled, don't block
 	}
 }
 
@@ -153,6 +169,16 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			return ctx.Err()
 		case err := <-errCh:
 			return fmt.Errorf("watch stopped: %w", err)
+		case <-d.wakeup:
+			d.logger.Debug("wakeup: task completed, checking for queued work")
+			pollStart := time.Now()
+			if err := d.checkTimeouts(ctx); err != nil {
+				d.logger.Error("heartbeat check", zap.String("error", err.Error()))
+			}
+			if err := d.recheckCrossProjectDeps(ctx); err != nil {
+				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
+			}
+			d.metrics.PollCompleted(time.Since(pollStart))
 		case <-ticker.C:
 			pollStart := time.Now()
 			if err := d.checkTimeouts(ctx); err != nil {

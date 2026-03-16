@@ -185,6 +185,60 @@ export interface FailureSummary {
   recent: FailureEvent[]
 }
 
+export interface HostAlert {
+  resource: string
+  level: string
+  message: string
+  value: number
+  threshold: number
+}
+
+export interface HostMetricsDTO {
+  collected_at: string
+  disk_total_bytes: number
+  disk_used_bytes: number
+  disk_percent: number
+  ram_total_bytes: number
+  ram_used_bytes: number
+  ram_avail_bytes: number
+  ram_percent: number
+  swap_total_bytes: number
+  swap_used_bytes: number
+  swap_percent: number
+  load_avg_1: number
+  load_avg_5: number
+  load_avg_15: number
+  num_cpu: number
+  alerts?: HostAlert[]
+}
+
+export interface HostMetricsResponse {
+  current: HostMetricsDTO
+  history: HostMetricsDTO[]
+}
+
+export interface LogEntry {
+  id: number
+  ts: string
+  level: string
+  msg: string
+  component?: string
+  session_id?: string
+  issue_number?: number
+  fields?: string
+}
+
+export interface LogSummary {
+  scope: { type: string; id: string }
+  text: string
+  total_entries: number
+  error_count: number
+  warn_count: number
+  components: string[]
+  ai_generated: boolean
+  generated_at: string
+}
+
 export const api = {
   listIssues: (params?: { state?: string; page?: number }) =>
     fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
@@ -209,4 +263,36 @@ export const api = {
 
   getFailures: (hours?: number) =>
     fetchJSON<FailureSummary>(`/failures${hours ? '?hours=' + hours : ''}`),
+
+  getHostMetrics: () =>
+    fetchJSON<HostMetricsResponse>('/metrics/host'),
+
+  getLogs: (params?: {
+    level?: string
+    component?: string
+    session_id?: string
+    issue?: number
+    since?: string
+    until?: string
+    limit?: number
+    offset?: number
+    q?: string
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== '') searchParams.set(k, String(v))
+      })
+    }
+    const qs = searchParams.toString()
+    return fetchJSON<LogEntry[]>(`/logs${qs ? '?' + qs : ''}`)
+  },
+
+  getLogSummary: (params: { scope: string; id?: string; since?: string; until?: string }) => {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '') searchParams.set(k, String(v))
+    })
+    return fetchJSON<LogSummary>(`/logs/summary?${searchParams.toString()}`)
+  },
 }

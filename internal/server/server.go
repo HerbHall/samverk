@@ -41,6 +41,8 @@ type Server struct {
 
 	mu         sync.Mutex
 	listenAddr string
+
+	oauthCodes oauthCodeStore // short-lived authorization codes for OAuth 2.1 bridge
 }
 
 // New creates a new Server with routes registered.
@@ -127,6 +129,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // registerRoutes wires all HTTP endpoints.
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+
+	// OAuth 2.1 endpoints -- unauthenticated, required by Claude mobile MCP Custom Connector.
+	s.mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.handleOAuthDiscovery)
+	s.mux.HandleFunc("GET /oauth/authorize", s.handleOAuthAuthorize)
+	s.mux.HandleFunc("POST /oauth/token", s.handleOAuthToken)
+	s.mux.HandleFunc("POST /oauth/revoke", s.handleOAuthRevoke)
 
 	if s.cfg.MCPHandler != nil {
 		handler := s.cfg.MCPHandler

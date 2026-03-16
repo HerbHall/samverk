@@ -2,6 +2,7 @@ package claudecli
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -163,5 +164,92 @@ func TestNewWithTimeout(t *testing.T) {
 	c := NewWithTimeout("model", 42*time.Second)
 	if c.timeout != 42*time.Second {
 		t.Errorf("timeout = %v, want 42s", c.timeout)
+	}
+}
+
+// TestNewWithOptions verifies AllowedTools and MaxTurns are stored.
+func TestNewWithOptions(t *testing.T) {
+	opts := Options{
+		AllowedTools: "Bash,Read,Edit,Write,Glob,Grep",
+		MaxTurns:     25,
+	}
+	c := New("model", opts)
+	if c.allowedTools != opts.AllowedTools {
+		t.Errorf("allowedTools = %q, want %q", c.allowedTools, opts.AllowedTools)
+	}
+	if c.maxTurns != opts.MaxTurns {
+		t.Errorf("maxTurns = %d, want %d", c.maxTurns, opts.MaxTurns)
+	}
+}
+
+// TestNewWithoutOptions verifies defaults when no options are passed.
+func TestNewWithoutOptions(t *testing.T) {
+	c := New("model")
+	if c.allowedTools != "" {
+		t.Errorf("allowedTools = %q, want empty", c.allowedTools)
+	}
+	if c.maxTurns != 0 {
+		t.Errorf("maxTurns = %d, want 0", c.maxTurns)
+	}
+}
+
+// TestChatIncludesAllowedTools verifies --allowedTools appears in CLI args.
+// Uses echo which outputs the args, so we can verify they are present.
+func TestChatIncludesAllowedTools(t *testing.T) {
+	c := &Client{
+		claudeBin:    "echo",
+		model:        "",
+		timeout:      defaultTimeout,
+		allowedTools: "Bash,Read,Edit",
+		maxTurns:     10,
+	}
+
+	resp, err := c.Chat(context.Background(), provider.ChatRequest{
+		Messages: []provider.Message{
+			{Role: provider.RoleUser, Content: "test"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	content := resp.Message.Content
+	if !strings.Contains(content, "--allowedTools") {
+		t.Errorf("output missing --allowedTools flag, got: %s", content)
+	}
+	if !strings.Contains(content, "Bash,Read,Edit") {
+		t.Errorf("output missing tool list, got: %s", content)
+	}
+	if !strings.Contains(content, "--max-turns") {
+		t.Errorf("output missing --max-turns flag, got: %s", content)
+	}
+	if !strings.Contains(content, "10") {
+		t.Errorf("output missing max-turns value, got: %s", content)
+	}
+}
+
+// TestChatOmitsOptionalFlags verifies flags are omitted when not configured.
+func TestChatOmitsOptionalFlags(t *testing.T) {
+	c := &Client{
+		claudeBin: "echo",
+		model:     "",
+		timeout:   defaultTimeout,
+	}
+
+	resp, err := c.Chat(context.Background(), provider.ChatRequest{
+		Messages: []provider.Message{
+			{Role: provider.RoleUser, Content: "test"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	content := resp.Message.Content
+	if strings.Contains(content, "--allowedTools") {
+		t.Errorf("output should not contain --allowedTools when not configured, got: %s", content)
+	}
+	if strings.Contains(content, "--max-turns") {
+		t.Errorf("output should not contain --max-turns when not configured, got: %s", content)
 	}
 }

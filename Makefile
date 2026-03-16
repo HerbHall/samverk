@@ -1,5 +1,5 @@
 .PHONY: build test test-race test-coverage test-integration test-all lint lint-md lint-all ci hooks run clean web dev-web \
-       cross-build cross-build-full deploy deploy-force redeploy ssh
+       cross-build cross-build-full deploy deploy-force deploy-staging redeploy ssh ssh-staging
 
 # Binary
 BIN=samverk
@@ -92,9 +92,19 @@ deploy-force: cross-build-full
 		systemctl start samverk-serve samverk-dispatch'
 	@echo "Force deployment complete. Services restarted."
 
+# Deploy to staging (CT 203)
+STAGING_HOST ?= 192.168.1.199
+
+deploy-staging: cross-build-full
+	bash scripts/safe-deploy.sh $(STAGING_HOST)
+
 # Quick SSH access to production server
 ssh:
 	ssh root@192.168.1.162
+
+# Quick SSH access to staging server
+ssh-staging:
+	ssh root@$(STAGING_HOST)
 
 clean:
 	rm -rf bin/ coverage.out
