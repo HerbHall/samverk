@@ -6,13 +6,13 @@ function typeBadgeColor(type: string): string {
   switch (type) {
     case 'claude':
     case 'claude-cli':
-      return 'bg-orange-100 text-orange-800'
+      return 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300'
     case 'ollama':
-      return 'bg-purple-100 text-purple-800'
+      return 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300'
     case 'openai':
-      return 'bg-green-100 text-green-800'
+      return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
     default:
-      return 'bg-gray-100 text-gray-700'
+      return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
   }
 }
 
@@ -39,9 +39,9 @@ function ProviderCard({
   const chains = routingChainsForProvider(provider.name, routingChains)
 
   return (
-    <div className="rounded-lg border bg-white p-5">
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base font-semibold text-gray-900">{provider.name}</h3>
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{provider.name}</h3>
         <span
           className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${typeBadgeColor(provider.type)}`}
         >
@@ -49,7 +49,7 @@ function ProviderCard({
         </span>
       </div>
 
-      <p className="mb-3 font-mono text-sm text-gray-600">{provider.model}</p>
+      <p className="mb-3 font-mono text-sm text-gray-600 dark:text-gray-400">{provider.model}</p>
 
       <div className="flex items-center gap-2 mb-3">
         <span
@@ -65,7 +65,7 @@ function ProviderCard({
           {chains.map((chain) => (
             <span
               key={chain}
-              className="inline-block rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700"
+              className="inline-block rounded-full bg-blue-50 dark:bg-blue-900/30 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300"
             >
               {chain}
             </span>
@@ -78,7 +78,7 @@ function ProviderCard({
           href={provider.account_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          className="inline-flex items-center gap-1 rounded border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
         >
           Manage Account
           <svg
@@ -102,9 +102,9 @@ function ProviderCard({
 
 function EmptyState() {
   return (
-    <div className="rounded-lg border bg-white p-10 text-center">
-      <p className="text-sm text-gray-500">No providers configured</p>
-      <p className="mt-1 text-xs text-gray-400">
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-10 text-center">
+      <p className="text-sm text-gray-500 dark:text-gray-400">No providers configured</p>
+      <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
         Add providers to .samverk/providers.yaml to see them here.
       </p>
     </div>
@@ -123,20 +123,20 @@ export function Agents() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Agents</h2>
-        <span className="text-xs text-gray-400">Auto-refreshes every 5s</span>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Agents</h2>
+        <span className="text-xs text-gray-400 dark:text-gray-500">Auto-refreshes every 5s</span>
       </div>
 
       {metrics.isLoading && (
         <div className="flex items-center justify-center py-20">
-          <p className="text-gray-500">Loading providers...</p>
+          <p className="text-gray-500 dark:text-gray-400">Loading providers...</p>
         </div>
       )}
 
       {metrics.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-          <p className="font-medium text-red-800">Failed to load provider data</p>
-          <p className="mt-1 text-sm text-red-600">{metrics.error?.message ?? 'Unknown error'}</p>
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
+          <p className="font-medium text-red-800 dark:text-red-300">Failed to load provider data</p>
+          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{metrics.error?.message ?? 'Unknown error'}</p>
         </div>
       )}
 
