@@ -50,7 +50,7 @@ func (s *oauthCodeStore) loadAndDelete(code string) (*oauthPending, bool) {
 
 // oauthTokenResponse is returned by the token endpoint.
 type oauthTokenResponse struct {
-	AccessToken string `json:"access_token"`
+	AccessToken string `json:"access_token"` //nolint:gosec // G117: OAuth spec field name, not a hardcoded credential
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int    `json:"expires_in"`
 }
