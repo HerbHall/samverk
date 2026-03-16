@@ -301,6 +301,7 @@ func serveCmd() *cobra.Command {
 			if ls != nil {
 				apiHandler.SetLogStore(ls)
 			}
+			apiHandler.SetSynapsetProxy("https://synapset.herbhall.net")
 			cfg.APIHandler = apiHandler
 			cfg.PressureProvider = apiHandler
 			logger.Info("REST API enabled")

@@ -64,6 +64,14 @@ export function Layout() {
               <span className="px-3 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">External</span>
             </div>
             <NavLink
+              to="/synapset"
+              className={({ isActive }) =>
+                `block rounded px-3 py-2 text-sm ${isActive ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
+              }
+            >
+              Synapset
+            </NavLink>
+            <NavLink
               to="/devkit"
               className={({ isActive }) =>
                 `block rounded px-3 py-2 text-sm ${isActive ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
