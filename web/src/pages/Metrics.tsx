@@ -15,7 +15,7 @@ function formatBytes(bytes: number): string {
 }
 
 function formatMs(ms: number): string {
-  if (ms === 0) return '—'
+  if (ms === 0) return '\u2014'
   if (ms >= 1_000) return `${(ms / 1_000).toFixed(2)}s`
   return `${ms.toFixed(1)}ms`
 }
@@ -63,17 +63,21 @@ function GaugeCard({ label, percent, usedLabel, totalLabel, warnPct, critPct }: 
   critPct: number
 }) {
   const color = percent >= critPct ? 'text-red-600' : percent >= warnPct ? 'text-amber-600' : 'text-green-600'
-  const bgColor = percent >= critPct ? 'bg-red-100' : percent >= warnPct ? 'bg-amber-100' : 'bg-green-100'
+  const bgColor = percent >= critPct
+    ? 'bg-red-100 dark:bg-red-900/30'
+    : percent >= warnPct
+      ? 'bg-amber-100 dark:bg-amber-900/30'
+      : 'bg-green-100 dark:bg-green-900/30'
   const barColor = percent >= critPct ? 'bg-red-500' : percent >= warnPct ? 'bg-amber-500' : 'bg-green-500'
 
   return (
-    <div className={`rounded-lg border p-4 ${bgColor}`}>
-      <div className="text-xs font-medium text-gray-500 uppercase">{label}</div>
+    <div className={`rounded-lg border dark:border-gray-700 p-4 ${bgColor}`}>
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{label}</div>
       <div className={`text-2xl font-bold ${color}`}>{percent.toFixed(1)}%</div>
-      <div className="mt-2 h-2 rounded-full bg-gray-200">
+      <div className="mt-2 h-2 rounded-full bg-gray-200 dark:bg-gray-700">
         <div className={`h-2 rounded-full ${barColor}`} style={{ width: `${Math.min(percent, 100)}%` }} />
       </div>
-      <div className="mt-1 text-xs text-gray-500">{usedLabel} / {totalLabel}</div>
+      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{usedLabel} / {totalLabel}</div>
     </div>
   )
 }
@@ -83,8 +87,8 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
   const diskTrend = estimateDaysToThreshold(history, current.disk_percent, 70)
 
   return (
-    <div className="rounded-lg border bg-white p-4">
-      <h3 className="mb-3 text-sm font-semibold text-gray-900">Host Resources</h3>
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+      <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-gray-100">Host Resources</h3>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <GaugeCard
           label="Disk"
@@ -124,7 +128,7 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
           {current.alerts.map((a, i) => (
             <div
               key={i}
-              className={`rounded px-3 py-1 text-xs ${a.level === 'critical' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}
+              className={`rounded px-3 py-1 text-xs ${a.level === 'critical' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'}`}
             >
               {a.message}
             </div>
@@ -132,7 +136,7 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
         </div>
       )}
       {history.length > 1 && (
-        <div className="mt-2 text-xs text-gray-500">
+        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           Disk trend: {diskTrend || 'stable'}
         </div>
       )}
@@ -142,27 +146,27 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
 
 function MetricRow({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) {
   return (
-    <div className="flex items-center justify-between py-2 border-b last:border-b-0">
+    <div className="flex items-center justify-between py-2 border-b dark:border-gray-700 last:border-b-0">
       {tooltip ? (
-        <span className="group relative text-sm text-gray-600 cursor-help underline decoration-dotted decoration-gray-400 underline-offset-2">
+        <span className="group relative text-sm text-gray-600 dark:text-gray-400 cursor-help underline decoration-dotted decoration-gray-400 dark:decoration-gray-600 underline-offset-2">
           {label}
-          <span className="pointer-events-none absolute left-0 bottom-full mb-1 z-10 hidden w-64 rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-gray-100 shadow-lg group-hover:block">
+          <span className="pointer-events-none absolute left-0 bottom-full mb-1 z-10 hidden w-64 rounded bg-gray-900 dark:bg-gray-700 px-3 py-2 text-xs leading-relaxed text-gray-100 shadow-lg group-hover:block">
             {tooltip}
           </span>
         </span>
       ) : (
-        <span className="text-sm text-gray-600">{label}</span>
+        <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>
       )}
-      <span className="text-sm font-medium text-gray-900 font-mono">{value}</span>
+      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-mono">{value}</span>
     </div>
   )
 }
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border bg-white">
-      <div className="px-4 py-3 border-b bg-gray-50">
-        <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div className="px-4 py-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{title}</h3>
       </div>
       <div className="px-4 py-2">{children}</div>
     </div>
@@ -171,21 +175,21 @@ function SectionCard({ title, children }: { title: string; children: React.React
 
 function NullSection({ title }: { title: string }) {
   return (
-    <div className="rounded-lg border bg-white">
-      <div className="px-4 py-3 border-b bg-gray-50">
-        <h3 className="text-sm font-semibold text-gray-400">{title}</h3>
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div className="px-4 py-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+        <h3 className="text-sm font-semibold text-gray-400 dark:text-gray-500">{title}</h3>
       </div>
-      <div className="px-4 py-6 text-center text-sm text-gray-400">Not running</div>
+      <div className="px-4 py-6 text-center text-sm text-gray-400 dark:text-gray-500">Not running</div>
     </div>
   )
 }
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="rounded-lg border bg-white px-4 py-3">
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${color ?? 'text-gray-900'}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
+      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${color ?? 'text-gray-900 dark:text-gray-100'}`}>{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{sub}</p>}
     </div>
   )
 }
@@ -260,27 +264,27 @@ function ActivityFeed({ sessions }: { sessions: Session[] }) {
   }, [sessions])
 
   const statusColor: Record<string, string> = {
-    completed: 'bg-green-100 text-green-700',
-    running: 'bg-blue-100 text-blue-700',
-    failed: 'bg-red-100 text-red-700',
-    timeout: 'bg-orange-100 text-orange-700',
+    completed: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
+    running: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+    failed: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+    timeout: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
   }
 
   return (
     <SectionCard title="Recent Activity">
       {recent.length === 0 ? (
-        <div className="py-6 text-center text-sm text-gray-400">No sessions recorded</div>
+        <div className="py-6 text-center text-sm text-gray-400 dark:text-gray-500">No sessions recorded</div>
       ) : (
         <div className="max-h-80 overflow-auto">
           {recent.map((s) => (
-            <div key={s.id} className="flex items-center gap-3 border-b py-2 last:border-b-0">
-              <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[s.status] ?? 'bg-gray-100 text-gray-600'}`}>
+            <div key={s.id} className="flex items-center gap-3 border-b dark:border-gray-700 py-2 last:border-b-0">
+              <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[s.status] ?? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
                 {s.status}
               </span>
-              <span className="text-sm text-gray-900 font-medium">#{s.issue_number}</span>
-              <span className="text-xs text-gray-500">{s.agent_type}</span>
-              <span className="text-xs text-gray-400 font-mono">{s.provider}</span>
-              <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">{formatRelative(s.started_at)}</span>
+              <span className="text-sm text-gray-900 dark:text-gray-100 font-medium">#{s.issue_number}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{s.agent_type}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{s.provider}</span>
+              <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">{formatRelative(s.started_at)}</span>
             </div>
           ))}
         </div>
@@ -295,7 +299,7 @@ function TrendingSection({ entries }: { entries: HistoryEntry[] }) {
   if (entries.length < 2) {
     return (
       <SectionCard title="Trending (24h)">
-        <div className="py-6 text-center text-sm text-gray-400">Collecting data...</div>
+        <div className="py-6 text-center text-sm text-gray-400 dark:text-gray-500">Collecting data...</div>
       </SectionCard>
     )
   }
@@ -322,10 +326,10 @@ function TrendingSection({ entries }: { entries: HistoryEntry[] }) {
     <SectionCard title="Trending (24h)">
       <div className="space-y-1 py-1">
         {rows.map((r) => (
-          <div key={r.label} className="flex items-center justify-between py-1.5 border-b last:border-b-0">
-            <span className="text-sm text-gray-600 w-36">{r.label}</span>
+          <div key={r.label} className="flex items-center justify-between py-1.5 border-b dark:border-gray-700 last:border-b-0">
+            <span className="text-sm text-gray-600 dark:text-gray-400 w-36">{r.label}</span>
             <Sparkline data={r.data} color={r.color} />
-            <span className="text-sm font-medium text-gray-900 font-mono w-16 text-right">{r.current}</span>
+            <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-mono w-16 text-right">{r.current}</span>
           </div>
         ))}
       </div>
@@ -336,10 +340,10 @@ function TrendingSection({ entries }: { entries: HistoryEntry[] }) {
 // --- Existing Section Components (unchanged) ---
 
 const pressureColors: Record<string, string> = {
-  low: 'bg-green-50 border-green-200 text-green-800',
-  moderate: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-  high: 'bg-orange-50 border-orange-200 text-orange-800',
-  critical: 'bg-red-50 border-red-200 text-red-800',
+  low: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300',
+  moderate: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300',
+  high: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300',
+  critical: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300',
 }
 
 function PressureSection({ pressure }: { pressure: PressureMetrics }) {
@@ -434,35 +438,35 @@ function ScalingSection({
       <MetricRow label="Current Target" value={config.current_target.toString()} />
       {events != null && events.length > 0 && (
         <div className="mt-3">
-          <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
             Recent Events
           </p>
           <div className="space-y-1">
             {events.map((e) => (
-              <div key={e.timestamp} className="rounded bg-gray-50 px-3 py-2 text-xs">
+              <div key={e.timestamp} className="rounded bg-gray-50 dark:bg-gray-900 px-3 py-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span
                     className={
                       e.action === 'scale-up'
-                        ? 'font-semibold text-green-700'
-                        : 'font-semibold text-amber-700'
+                        ? 'font-semibold text-green-700 dark:text-green-400'
+                        : 'font-semibold text-amber-700 dark:text-amber-400'
                     }
                   >
-                    {e.action === 'scale-up' ? '▲' : '▼'} {e.from_workers}→{e.to_workers} workers
+                    {e.action === 'scale-up' ? '\u25B2' : '\u25BC'} {e.from_workers}\u2192{e.to_workers} workers
                   </span>
-                  <span className="text-gray-400">
+                  <span className="text-gray-400 dark:text-gray-500">
                     {Math.round(e.confidence * 100)}% conf
                   </span>
                 </div>
-                <p className="mt-0.5 text-gray-500 truncate">{e.reason}</p>
-                <p className="text-gray-400">{new Date(e.timestamp).toLocaleString()}</p>
+                <p className="mt-0.5 text-gray-500 dark:text-gray-400 truncate">{e.reason}</p>
+                <p className="text-gray-400 dark:text-gray-500">{new Date(e.timestamp).toLocaleString()}</p>
               </div>
             ))}
           </div>
         </div>
       )}
       {(events == null || events.length === 0) && (
-        <div className="py-4 text-center text-xs text-gray-400">No scaling events yet</div>
+        <div className="py-4 text-center text-xs text-gray-400 dark:text-gray-500">No scaling events yet</div>
       )}
     </SectionCard>
   )
@@ -481,17 +485,17 @@ function CapacitySection({ capacity, maxWorkers }: { capacity: CapacityInfo | nu
       <MetricRow label="Routing Chains" value={routingChainNames.length.toString()} />
       {capacity.providers.length > 0 && (
         <div className="mt-3">
-          <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
             Providers
           </p>
           <div className="space-y-1">
             {capacity.providers.map((p) => (
-              <div key={p.name} className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-xs">
+              <div key={p.name} className="flex items-center justify-between rounded bg-gray-50 dark:bg-gray-900 px-3 py-2 text-xs">
                 <div className="flex items-center gap-2">
                   <span className={`inline-block h-2 w-2 rounded-full ${p.healthy ? 'bg-green-500' : 'bg-red-400'}`} />
-                  <span className="font-medium text-gray-700">{p.name}</span>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">{p.name}</span>
                 </div>
-                <span className="text-gray-500 font-mono">{p.model}</span>
+                <span className="text-gray-500 dark:text-gray-400 font-mono">{p.model}</span>
               </div>
             ))}
           </div>
@@ -499,14 +503,14 @@ function CapacitySection({ capacity, maxWorkers }: { capacity: CapacityInfo | nu
       )}
       {routingChainNames.length > 0 && (
         <div className="mt-3">
-          <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
             Routing
           </p>
           <div className="space-y-1">
             {routingChainNames.map((chain) => (
-              <div key={chain} className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-xs">
-                <span className="font-medium text-gray-700">{chain}</span>
-                <span className="text-gray-500 font-mono">{capacity.routing_chains[chain].join(' → ')}</span>
+              <div key={chain} className="flex items-center justify-between rounded bg-gray-50 dark:bg-gray-900 px-3 py-2 text-xs">
+                <span className="font-medium text-gray-700 dark:text-gray-300">{chain}</span>
+                <span className="text-gray-500 dark:text-gray-400 font-mono">{capacity.routing_chains[chain].join(' \u2192 ')}</span>
               </div>
             ))}
           </div>
@@ -571,20 +575,20 @@ export function Metrics() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Metrics</h2>
-        <span className="text-xs text-gray-400">Auto-refreshes every 5s</span>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Metrics</h2>
+        <span className="text-xs text-gray-400 dark:text-gray-500">Auto-refreshes every 5s</span>
       </div>
 
       {metrics.isLoading && (
         <div className="flex items-center justify-center py-20">
-          <p className="text-gray-500">Loading metrics...</p>
+          <p className="text-gray-500 dark:text-gray-400">Loading metrics...</p>
         </div>
       )}
 
       {metrics.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-          <p className="font-medium text-red-800">Failed to load metrics</p>
-          <p className="mt-1 text-sm text-red-600">{metrics.error?.message ?? 'Unknown error'}</p>
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
+          <p className="font-medium text-red-800 dark:text-red-300">Failed to load metrics</p>
+          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{metrics.error?.message ?? 'Unknown error'}</p>
         </div>
       )}
 
@@ -592,7 +596,7 @@ export function Metrics() {
         <div className="space-y-6">
           {/* Top-line stats */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-            <StatCard label="Open Issues" value={openCount.toString()} color="text-blue-700" sub={`${closedCount} closed`} />
+            <StatCard label="Open Issues" value={openCount.toString()} color="text-blue-700 dark:text-blue-400" sub={`${closedCount} closed`} />
             <StatCard label="Sessions" value={totalSessions.toString()} sub={`${completedSessions} completed`} />
             <StatCard
               label="Tasks Completed"
