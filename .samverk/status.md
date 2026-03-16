@@ -39,16 +39,16 @@ Focus: fix agent quality, move data to server, enable planning workflow.
 
 ### High
 
-3. **No planning step** -- agents code without reading codebase first.
-4. **DevKit data on local machine** -- claude.db not on CT 202.
-5. **Copilot review feedback** -- PRs merge without reading comments.
+1. **No planning step** -- agents code without reading codebase first.
+2. **DevKit data on local machine** -- claude.db not on CT 202.
+3. **Copilot review feedback** -- PRs merge without reading comments.
 
 ### Medium
 
-6. Synapset parse error (Synapset#62 filed)
-7. DevKit dashboard native React (replace iframe)
-8. Enhanced Agents page (#590)
-9. Multi-repo dispatch (code ready, config needed)
+1. Synapset parse error (Synapset#62 filed)
+2. DevKit dashboard native React (replace iframe)
+3. Enhanced Agents page (#590)
+4. Multi-repo dispatch (code ready, config needed)
 
 ## Recommended Next Session
 
