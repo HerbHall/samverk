@@ -30,7 +30,8 @@ const (
 
 	// staleOutputTimeout is how long Chat waits for new bytes before treating
 	// the process as hung. Must be shorter than the dispatcher heartbeat timeout.
-	staleOutputTimeout = 3 * time.Minute
+	// 60s balances fast hang detection with allowing slow first tool calls (30-40s).
+	staleOutputTimeout = 60 * time.Second
 
 	// streamBufSize is the read buffer for pipe-based streaming.
 	streamBufSize = 4096
