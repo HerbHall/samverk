@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.17](https://github.com/HerbHall/samverk/compare/v0.1.16...v0.1.17) (2026-03-16)
+
+
+### Features
+
+* add Synapset proxy and native React dashboard page ([#587](https://github.com/HerbHall/samverk/issues/587)) ([#589](https://github.com/HerbHall/samverk/issues/589)) ([5bbb246](https://github.com/HerbHall/samverk/commit/5bbb246531ca43f23cc2e52ec8995509f89b1760))
+* embed DevKit dashboard in Samverk SPA ([#564](https://github.com/HerbHall/samverk/issues/564)) ([#584](https://github.com/HerbHall/samverk/issues/584)) ([c84be39](https://github.com/HerbHall/samverk/commit/c84be398beef44dbef150a98f5de63cb6b615c83))
+
+
+### Bug Fixes
+
+* remove duplicate Synapset/DevKit links from header ([#592](https://github.com/HerbHall/samverk/issues/592)) ([4efbeb4](https://github.com/HerbHall/samverk/commit/4efbeb4bee6c2d1dcc961a81e2d2da73bb956e7c))
+* wider sparklines on all metrics, clickable issue links everywhere ([#591](https://github.com/HerbHall/samverk/issues/591)) ([7d314cd](https://github.com/HerbHall/samverk/commit/7d314cd310a10e831ad83de7b6e3c4ee782a5c0c))
+
 ## [0.1.16](https://github.com/HerbHall/samverk/compare/v0.1.15...v0.1.16) (2026-03-16)
 
 
