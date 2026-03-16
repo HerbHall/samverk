@@ -156,7 +156,7 @@ function IssueRow({
         onClick={onToggle}
         className="cursor-pointer border-b dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700"
       >
-        <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-gray-100">{issue.number}</td>
+        <td className="px-4 py-2.5 font-medium"><a href={`https://github.com/HerbHall/samverk/issues/${issue.number}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400" onClick={(e) => e.stopPropagation()}>#{issue.number}</a></td>
         <td className="px-4 py-2.5">
           <div className="flex items-center gap-2">
             <span

@@ -165,7 +165,7 @@ export function Dashboard() {
               <tbody>
                 {activeSessions.map((s) => (
                   <tr key={s.id} className="border-b dark:border-gray-700 last:border-b-0">
-                    <td className="px-4 py-2 font-medium dark:text-gray-100">#{s.issue_number}</td>
+                    <td className="px-4 py-2 font-medium"><a href={`https://github.com/HerbHall/samverk/issues/${s.issue_number}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">#{s.issue_number}</a></td>
                     <td className="px-4 py-2 dark:text-gray-300">{s.agent_type}</td>
                     <td className="px-4 py-2 dark:text-gray-300">{s.provider}</td>
                     <td className="px-4 py-2 font-mono text-xs dark:text-gray-300">{s.model}</td>

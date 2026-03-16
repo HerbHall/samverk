@@ -146,21 +146,20 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
 
 function MetricRow({ label, value, tooltip, sparkline }: { label: string; value: string; tooltip?: string; sparkline?: number[] }) {
   return (
-    <div className="flex items-center justify-between py-2 border-b dark:border-gray-700 last:border-b-0">
+    <div className="flex items-center gap-2 py-2 border-b dark:border-gray-700 last:border-b-0">
       {tooltip ? (
-        <span className="group relative text-sm text-gray-600 dark:text-gray-400 cursor-help underline decoration-dotted decoration-gray-400 dark:decoration-gray-600 underline-offset-2">
+        <span className="group relative shrink-0 text-sm text-gray-600 dark:text-gray-400 cursor-help underline decoration-dotted decoration-gray-400 dark:decoration-gray-600 underline-offset-2">
           {label}
           <span className="pointer-events-none absolute left-0 bottom-full mb-1 z-10 hidden w-64 rounded bg-gray-900 dark:bg-gray-700 px-3 py-2 text-xs leading-relaxed text-gray-100 shadow-lg group-hover:block">
             {tooltip}
           </span>
         </span>
       ) : (
-        <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>
+        <span className="shrink-0 text-sm text-gray-600 dark:text-gray-400">{label}</span>
       )}
-      <div className="flex items-center gap-2 ml-auto">
-        {sparkline != null && sparkline.length >= 2 && <Sparkline data={sparkline} height={24} />}
-        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-mono w-16 text-right">{value}</span>
-      </div>
+      {sparkline != null && sparkline.length >= 2 && <Sparkline data={sparkline} />}
+      {sparkline == null && <span className="flex-1" />}
+      <span className="shrink-0 text-sm font-medium text-gray-900 dark:text-gray-100 font-mono text-right">{value}</span>
     </div>
   )
 }
@@ -198,23 +197,25 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 }
 
 // Sparkline renders an inline SVG sparkline chart from numeric values.
-function Sparkline({ data, color = '#3b82f6', height = 32 }: { data: number[]; color?: string; height?: number }) {
+// Uses viewBox for responsive scaling -- fills available width.
+function Sparkline({ data, color = '#3b82f6', height = 24 }: { data: number[]; color?: string; height?: number }) {
   if (data.length < 2) return null
-  const width = 120
+  const vw = 200
+  const vh = 40
   const max = Math.max(...data)
   const min = Math.min(...data)
   const range = max - min || 1
   const points = data
     .map((v, i) => {
-      const x = (i / (data.length - 1)) * width
-      const y = height - ((v - min) / range) * (height - 4) - 2
+      const x = (i / (data.length - 1)) * vw
+      const y = vh - ((v - min) / range) * (vh - 4) - 2
       return `${x},${y}`
     })
     .join(' ')
 
   return (
-    <svg width={width} height={height} className="inline-block">
-      <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} />
+    <svg viewBox={`0 0 ${vw} ${vh}`} height={height} className="flex-1 min-w-0" preserveAspectRatio="none">
+      <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
     </svg>
   )
 }
@@ -284,7 +285,7 @@ function ActivityFeed({ sessions }: { sessions: Session[] }) {
               <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[s.status] ?? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
                 {s.status}
               </span>
-              <span className="text-sm text-gray-900 dark:text-gray-100 font-medium">#{s.issue_number}</span>
+              <a href={`https://github.com/HerbHall/samverk/issues/${s.issue_number}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">#{s.issue_number}</a>
               <span className="text-xs text-gray-500 dark:text-gray-400">{s.agent_type}</span>
               <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{s.provider}</span>
               <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">{formatRelative(s.started_at)}</span>
@@ -332,17 +333,20 @@ function PoolSection({ pool, history }: { pool: PoolMetrics | null; history: His
     pool.total_workers > 0 ? Math.round((pool.active_workers / pool.total_workers) * 100) : 0
 
   const workerSparkline = history.map((e) => e.pool?.active_workers ?? 0)
+  const idleSparkline = history.map((e) => e.pool?.idle_workers ?? 0)
   const queueSparkline = history.map((e) => e.pool?.queue_depth ?? 0)
+  const completedSparkline = history.map((e) => e.pool?.tasks_completed ?? 0)
+  const failedSparkline = history.map((e) => e.pool?.tasks_failed ?? 0)
 
   return (
     <SectionCard title="Agent Pool">
       <MetricRow label="Total Workers" value={pool.total_workers.toString()} tooltip="Current number of worker goroutines in the agent pool." />
       <MetricRow label="Active Workers" value={pool.active_workers.toString()} tooltip="Workers currently executing a task." sparkline={workerSparkline} />
-      <MetricRow label="Idle Workers" value={pool.idle_workers.toString()} tooltip="Workers waiting for tasks." />
+      <MetricRow label="Idle Workers" value={pool.idle_workers.toString()} tooltip="Workers waiting for tasks." sparkline={idleSparkline} />
       <MetricRow label="Utilization" value={`${utilization}%`} tooltip="Percentage of workers currently active." />
       <MetricRow label="Queue Depth" value={pool.queue_depth.toString()} tooltip="Tasks waiting for an available worker." sparkline={queueSparkline} />
-      <MetricRow label="Tasks Completed" value={pool.tasks_completed.toLocaleString()} tooltip="Total tasks successfully completed since startup." />
-      <MetricRow label="Tasks Failed" value={pool.tasks_failed.toLocaleString()} tooltip="Total tasks that failed. Failed tasks may be requeued." />
+      <MetricRow label="Tasks Completed" value={pool.tasks_completed.toLocaleString()} tooltip="Total tasks successfully completed since startup." sparkline={completedSparkline} />
+      <MetricRow label="Tasks Failed" value={pool.tasks_failed.toLocaleString()} tooltip="Total tasks that failed. Failed tasks may be requeued." sparkline={failedSparkline} />
       <MetricRow label="Avg Task Duration" value={formatMs(pool.avg_task_duration_ms)} tooltip="Average wall-clock time per completed task." />
       <MetricRow label="P95 Task Duration" value={formatMs(pool.p95_task_duration_ms)} tooltip="95th percentile task duration." />
     </SectionCard>
@@ -357,15 +361,18 @@ function DispatcherSection({ dispatcher, history }: { dispatcher: DispatcherMetr
       ? 'Never'
       : new Date(dispatcher.last_poll_at).toLocaleString()
 
+  const claimedSparkline = history.map((e) => e.dispatcher?.claimed_count ?? 0)
+  const routedSparkline = history.map((e) => e.dispatcher?.total_routed ?? 0)
+  const requeuedSparkline = history.map((e) => e.dispatcher?.total_requeued ?? 0)
   const latencySparkline = history.map((e) => e.dispatcher?.avg_poll_latency_ms ?? 0)
   const events = history.map((e) => e.dispatcher?.total_events_processed ?? 0)
   const eventDeltaSparkline = events.slice(1).map((v, i) => Math.max(0, v - events[i]))
 
   return (
     <SectionCard title="Dispatcher">
-      <MetricRow label="Claimed Issues" value={dispatcher.claimed_count.toString()} tooltip="Issues currently claimed for processing." />
-      <MetricRow label="Total Routed" value={dispatcher.total_routed.toLocaleString()} tooltip="Total issues routed since startup." />
-      <MetricRow label="Total Requeued" value={dispatcher.total_requeued.toLocaleString()} tooltip="Issues returned to queue for retry." />
+      <MetricRow label="Claimed Issues" value={dispatcher.claimed_count.toString()} tooltip="Issues currently claimed for processing." sparkline={claimedSparkline} />
+      <MetricRow label="Total Routed" value={dispatcher.total_routed.toLocaleString()} tooltip="Total issues routed since startup." sparkline={routedSparkline} />
+      <MetricRow label="Total Requeued" value={dispatcher.total_requeued.toLocaleString()} tooltip="Issues returned to queue for retry." sparkline={requeuedSparkline} />
       <MetricRow label="Events Processed" value={dispatcher.total_events_processed.toLocaleString()} tooltip="Total forge events processed." sparkline={eventDeltaSparkline} />
       <MetricRow label="Avg Poll Latency" value={formatMs(dispatcher.avg_poll_latency_ms)} tooltip="Average time to poll the forge." sparkline={latencySparkline} />
       <MetricRow label="Last Poll" value={lastPoll} tooltip="Most recent forge poll timestamp." />
@@ -378,13 +385,15 @@ function SystemSection({ system, history }: { system: SystemMetrics | null; hist
 
   const goroutineSparkline = history.map((e) => e.system?.goroutines ?? 0)
   const heapSparkline = history.map((e) => e.system?.heap_alloc_bytes ?? 0)
+  const osMemSparkline = history.map((e) => e.system?.sys_bytes_total ?? 0)
+  const gcSparkline = history.map((e) => e.system?.gc_cycles ?? 0)
 
   return (
     <SectionCard title="System">
       <MetricRow label="Goroutines" value={system.goroutines.toString()} sparkline={goroutineSparkline} />
       <MetricRow label="Heap Allocated" value={formatBytes(system.heap_alloc_bytes)} sparkline={heapSparkline} />
-      <MetricRow label="OS Memory" value={formatBytes(system.sys_bytes_total)} />
-      <MetricRow label="GC Cycles" value={system.gc_cycles.toString()} />
+      <MetricRow label="OS Memory" value={formatBytes(system.sys_bytes_total)} sparkline={osMemSparkline} />
+      <MetricRow label="GC Cycles" value={system.gc_cycles.toString()} sparkline={gcSparkline} />
       <MetricRow label="Next GC Target" value={formatBytes(system.next_gc_bytes)} />
     </SectionCard>
   )
