@@ -120,12 +120,15 @@ func TestSPATokenInjection(t *testing.T) {
 			}
 			html := string(body)
 
-			wantTag := `<script>window.__SAMVERK_TOKEN__="test-dashboard-token";</script>`
-			if !strings.Contains(html, wantTag) {
-				t.Errorf("token script tag not found in response:\n%s", html)
+			// Verify token and version are injected.
+			if !strings.Contains(html, `__SAMVERK_TOKEN__="test-dashboard-token"`) {
+				t.Errorf("token not found in response:\n%s", html)
 			}
-			// Tag must appear before </head>.
-			tagIdx := strings.Index(html, wantTag)
+			if !strings.Contains(html, `__SAMVERK_VERSION__=`) {
+				t.Errorf("version not found in response:\n%s", html)
+			}
+			// Injection script must appear before </head>.
+			tagIdx := strings.Index(html, "__SAMVERK_VERSION__")
 			headIdx := strings.Index(html, "</head>")
 			if tagIdx > headIdx {
 				t.Errorf("token tag at %d appears after </head> at %d", tagIdx, headIdx)
@@ -145,8 +148,13 @@ func TestSPANoTokenWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	if strings.Contains(string(body), "__SAMVERK_TOKEN__") {
-		t.Errorf("token tag should not be present when AuthToken is empty:\n%s", body)
+	html := string(body)
+	if strings.Contains(html, "__SAMVERK_TOKEN__") {
+		t.Errorf("token should not be present when AuthToken is empty:\n%s", html)
+	}
+	// Version should always be injected, even without auth token.
+	if !strings.Contains(html, "__SAMVERK_VERSION__") {
+		t.Errorf("version should always be injected:\n%s", html)
 	}
 }
 

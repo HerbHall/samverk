@@ -4,6 +4,8 @@ const BASE = '/api/v1'
 declare global {
   interface Window {
     __SAMVERK_TOKEN__?: string
+    __SAMVERK_VERSION__?: string
+    __SAMVERK_COMMIT__?: string
   }
 }
 
