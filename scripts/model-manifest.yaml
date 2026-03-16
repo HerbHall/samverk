@@ -1,0 +1,17 @@
+# Model assignments per Ollama host.
+# Used by deploy-models.sh to ensure consistent model versions.
+hosts:
+  ollama-nzxt:
+    url: http://192.168.1.202:11434
+    models:
+      - qwen3-coder:30b
+      - nomic-embed-text:latest
+  ollama-vm300:
+    url: http://192.168.1.207:11434
+    models:
+      - qwen2.5-coder:14b
+      - nomic-embed-text:latest
+  ollama-cmasus:
+    url: http://100.88.37.47:11434
+    models:
+      - qwen2.5-coder:7b
