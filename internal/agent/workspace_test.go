@@ -364,3 +364,67 @@ func TestExtractFileContext_NoDir(t *testing.T) {
 		t.Errorf("expected empty content without dir, got %q", result["cmd/samverk/root.go"])
 	}
 }
+
+func TestCheckDocGate(t *testing.T) {
+	tests := []struct {
+		name      string
+		changed   []string
+		wantGate  bool
+		wantFiles int
+	}{
+		{
+			name:     "docs only -- no gate",
+			changed:  []string{"docs/architecture.md", "README.md"},
+			wantGate: false,
+		},
+		{
+			name:     "tests only -- no gate",
+			changed:  []string{"internal/agent/runner_test.go", "internal/store/store_test.go"},
+			wantGate: false,
+		},
+		{
+			name:      "code without docs -- gate fires",
+			changed:   []string{"internal/agent/runner.go", "cmd/samverk/main.go"},
+			wantGate:  true,
+			wantFiles: 2,
+		},
+		{
+			name:     "code with docs -- no gate",
+			changed:  []string{"internal/agent/runner.go", "docs/architecture.md"},
+			wantGate: false,
+		},
+		{
+			name:     "code with status -- no gate",
+			changed:  []string{"internal/server/server.go", ".samverk/status.md"},
+			wantGate: false,
+		},
+		{
+			name:      "deploy without docs -- gate fires",
+			changed:   []string{"deploy/Dockerfile"},
+			wantGate:  true,
+			wantFiles: 1,
+		},
+		{
+			name:     "empty -- no gate",
+			changed:  []string{},
+			wantGate: false,
+		},
+		{
+			name:      "mixed code and tests without docs -- gate fires for code only",
+			changed:   []string{"internal/agent/runner.go", "internal/agent/runner_test.go"},
+			wantGate:  true,
+			wantFiles: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			needsDoc, codeFiles := CheckDocGate(tt.changed)
+			if needsDoc != tt.wantGate {
+				t.Errorf("CheckDocGate() needsDoc = %v, want %v", needsDoc, tt.wantGate)
+			}
+			if tt.wantGate && len(codeFiles) != tt.wantFiles {
+				t.Errorf("CheckDocGate() codeFiles count = %d, want %d", len(codeFiles), tt.wantFiles)
+			}
+		})
+	}
+}

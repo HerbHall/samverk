@@ -443,6 +443,8 @@ func (r *Runner) postProcess(ctx context.Context, task Task, response, workDir s
 			return err
 		}
 		if changed {
+			// Check doc gate: warn if code changed without doc updates.
+			r.checkDocGate(ctx, task, workDir)
 			// Post the agent's response as an informational comment.
 			_ = r.postComment(ctx, task, response)
 			return nil
@@ -467,6 +469,30 @@ func (r *Runner) postProcess(ctx context.Context, task Task, response, workDir s
 		return r.postComment(ctx, task, response)
 	default:
 		return r.postComment(ctx, task, response)
+	}
+}
+
+// checkDocGate posts a warning comment if the session modified code/infra
+// files without updating documentation. Best-effort: errors are logged but
+// do not block the task.
+func (r *Runner) checkDocGate(ctx context.Context, task Task, workDir string) {
+	files, err := ChangedFiles(workDir)
+	if err != nil {
+		r.logger.Debug("doc gate: could not list changed files", zap.Error(err))
+		return
+	}
+	needsDoc, codeFiles := CheckDocGate(files)
+	if !needsDoc {
+		return
+	}
+	warning := fmt.Sprintf(
+		"DOC_GATE [dispatcher] [%s]\nThis session modified %d infrastructure/code file(s) without updating documentation:\n%s\nConsider updating docs/ or .samverk/status.md.",
+		time.Now().UTC().Format(time.RFC3339),
+		len(codeFiles),
+		strings.Join(codeFiles, "\n"),
+	)
+	if _, commentErr := r.tracker.AddComment(ctx, task.Issue.Number, warning); commentErr != nil {
+		r.logger.Warn("doc gate: failed to post warning", zap.Error(commentErr))
 	}
 }
 
