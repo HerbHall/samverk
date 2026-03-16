@@ -1269,6 +1269,73 @@ func TestNoDoubleDispatch_AfterCompletion(t *testing.T) {
 	}
 }
 
+func TestHandleTaskComplete_SignalsWakeup(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.issues[8] = &forge.Issue{
+		Number: 8,
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed"},
+	}
+
+	d.mu.Lock()
+	d.claimed[8] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	d.handleTaskComplete(agent.TaskResult{
+		IssueNumber: 8,
+		SessionID:   "sess-8",
+		AgentType:   models.AgentTypeCodeGen,
+		Success:     true,
+	})
+
+	// The wakeup channel should have a signal.
+	select {
+	case <-d.wakeup:
+		// Expected: wakeup was signaled.
+	default:
+		t.Error("expected wakeup channel to be signaled after task completion")
+	}
+}
+
+func TestHandleTaskComplete_WakeupDoesNotBlock(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Pre-fill the wakeup channel to simulate an already-pending signal.
+	d.wakeup <- struct{}{}
+
+	tracker.issues[9] = &forge.Issue{
+		Number: 9,
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed"},
+	}
+
+	d.mu.Lock()
+	d.claimed[9] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	// This must not block even though the channel is already full.
+	done := make(chan struct{})
+	go func() {
+		d.handleTaskComplete(agent.TaskResult{
+			IssueNumber: 9,
+			SessionID:   "sess-9",
+			AgentType:   models.AgentTypeCodeGen,
+			Success:     true,
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Expected: completed without blocking.
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleTaskComplete blocked on full wakeup channel")
+	}
+}
+
 func hasLabel(labels []string, target string) bool {
 	for _, l := range labels {
 		if l == target {

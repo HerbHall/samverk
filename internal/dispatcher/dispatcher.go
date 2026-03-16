@@ -38,6 +38,7 @@ type Dispatcher struct {
 	issueFailures  map[int]int // in-memory fallback; persisted counter is authoritative when store is set
 	circuitBreaker *CircuitBreaker
 	metrics        *metrics.DispatcherMetrics
+	wakeup         chan struct{}
 	mu             sync.Mutex
 	logger         *zap.Logger
 	stop           context.CancelFunc
@@ -62,6 +63,7 @@ func New(tracker forge.IssueTracker, policy autonomy.AutonomyPolicy, st store.St
 		issueFailures:  make(map[int]int),
 		circuitBreaker: NewCircuitBreaker(logger),
 		metrics:        metrics.NewDispatcherMetrics(),
+		wakeup:         make(chan struct{}, 1),
 		logger:         logger,
 	}
 }
@@ -123,6 +125,13 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		decision := decideCorrection(fc, result.IssueNumber, attempt, 0)
 		d.applyCorrection(ctx, result, decision)
 	}
+
+	// Signal the run loop to immediately check for queued work
+	// instead of waiting for the next tick.
+	select {
+	case d.wakeup <- struct{}{}:
+	default: // already signaled, don't block
+	}
 }
 
 // Run starts the watch loop and heartbeat ticker. It blocks until ctx is
@@ -154,6 +163,16 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			return ctx.Err()
 		case err := <-errCh:
 			return fmt.Errorf("watch stopped: %w", err)
+		case <-d.wakeup:
+			d.logger.Debug("wakeup: task completed, checking for queued work")
+			pollStart := time.Now()
+			if err := d.checkTimeouts(ctx); err != nil {
+				d.logger.Error("heartbeat check", zap.String("error", err.Error()))
+			}
+			if err := d.recheckCrossProjectDeps(ctx); err != nil {
+				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
+			}
+			d.metrics.PollCompleted(time.Since(pollStart))
 		case <-ticker.C:
 			pollStart := time.Now()
 			if err := d.checkTimeouts(ctx); err != nil {
