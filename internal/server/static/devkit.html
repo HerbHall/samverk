@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevKit Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  [data-theme="dark"] {
+    --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --good: #3fb950; --warn: #d29922; --bad: #f85149;
+    --accent: #58a6ff; --header-bg: #010409;
+  }
+  [data-theme="light"] {
+    --bg: #f6f8fa; --card: #ffffff; --border: #d0d7de; --text: #1f2328;
+    --muted: #656d76; --good: #1a7f37; --warn: #9a6700; --bad: #cf222e;
+    --accent: #0969da; --header-bg: #ffffff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: var(--bg); color: var(--text); }
+  .header { background: var(--header-bg); border-bottom: 1px solid var(--border);
+             padding: 16px 24px; display: flex; align-items: center;
+             justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 1.3rem; font-weight: 700; letter-spacing: 0.5px; }
+  .header .version { background: var(--accent); color: #fff; font-size: 0.7rem;
+                      padding: 2px 8px; border-radius: 12px; font-weight: 600; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .cross-link { color: var(--accent); text-decoration: none; font-size: 0.85rem;
+                 font-weight: 500; }
+  .cross-link:hover { text-decoration: underline; }
+  .theme-toggle { background: var(--card); border: 1px solid var(--border);
+                   border-radius: 6px; padding: 4px 10px; cursor: pointer;
+                   color: var(--text); font-size: 0.8rem; }
+  .content { padding: 24px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 0.85rem; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px; margin-bottom: 24px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+           padding: 16px; text-align: center; }
+  .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .stat-label { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+           gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+           padding: 16px; }
+  .card h2 { font-size: 1rem; margin-bottom: 12px; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
+       color: var(--muted); font-weight: 600; }
+  td { padding: 8px; border-bottom: 1px solid var(--border); }
+  .good { color: var(--good); font-weight: 600; }
+  .warn { color: var(--warn); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  canvas { max-height: 250px; }
+  .empty { color: var(--muted); font-style: italic; padding: 16px; }
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr; }
+    .header { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <h1>DEVKIT DASHBOARD</h1>
+    <span class="version">v2.4.0</span>
+  </div>
+  <div class="header-right">
+    <a class="cross-link" href="https://samverk.herbhall.net/metrics" target="_blank">Samverk</a>
+    <a class="cross-link" href="https://synapset.herbhall.net/dashboard" target="_blank">Synapset</a>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">Toggle Theme</button>
+  </div>
+</div>
+
+<div class="content">
+<p class="subtitle">Generated 2026-03-16 14:58 | 146 active patterns across 3 rules files</p>
+
+<div class="stats">
+  <div class="stat"><div class="stat-value">10</div><div class="stat-label">Repos Tracked</div></div>
+  <div class="stat"><div class="stat-value">428</div><div class="stat-label">PRs Collected</div></div>
+  <div class="stat"><div class="stat-value">146</div><div class="stat-label">Active Patterns</div></div>
+  <div class="stat"><div class="stat-value">0</div><div class="stat-label">Pattern Events</div></div>
+  <div class="stat"><div class="stat-value">11/12</div><div class="stat-label">Projects with Rules</div></div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Rules File Stats</h2>
+    <table><thead><tr><th>File</th><th>Entries</th><th>Last Updated</th></tr></thead><tbody><tr>
+                <td>autolearn-patterns.md</td>
+                <td>67</td>
+                <td>2026-03-15</td>
+            </tr><tr>
+                <td>known-gotchas.md</td>
+                <td>63</td>
+                <td>2026-03-16</td>
+            </tr><tr>
+                <td>workflow-preferences.md</td>
+                <td>16</td>
+                <td>2026-03-01</td>
+            </tr></tbody></table>
+  </div>
+  <div class="card">
+    <h2>Cross-Project Coverage</h2>
+    <table><thead><tr><th>Project</th><th>.claude/</th><th>CLAUDE.md</th></tr></thead><tbody><tr>
+            <td>CLI-Play</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>DigitalRain</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>DockPulse</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>IPScan</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>PacketDeck</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>RunNotes</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>Runbooks</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>Samverk</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>SubNetree</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>Synapset</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr><tr>
+            <td>claude-sync</td>
+            <td><span class="bad">No</span></td>
+            <td><span class="bad">No</span></td>
+        </tr><tr>
+            <td>devkit</td>
+            <td><span class="good">Yes</span></td>
+            <td><span class="good">Yes</span></td>
+        </tr></tbody></table>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>CI First-Pass Rate Trend</h2>
+    <canvas id='trendChart'></canvas>
+  </div>
+  <div class="card">
+    <h2>Autolearn Velocity (Last 8 Weeks)</h2>
+    <p class='empty'>No autolearn events yet</p>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>First-Pass Rate by Project (Last 30 Days)</h2>
+    <canvas id='projectChart'></canvas>
+  </div>
+  <div class="card">
+    <h2>Pattern Source Breakdown</h2>
+    <p class='empty'>No data</p>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Rework Rate (Last 30 Days)</h2>
+    <table><thead><tr><th>Project</th><th>PRs</th><th>Avg Pushes</th><th>1st Pass</th><th>Fix Cycles</th></tr></thead><tbody><tr>
+            <td>RunNotes</td><td>20</td>
+            <td>1.2</td>
+            <td class="good">90.0%</td>
+            <td>2</td>
+        </tr><tr>
+            <td>DigitalRain</td><td>17</td>
+            <td>1.3</td>
+            <td class="good">88.0%</td>
+            <td>0</td>
+        </tr><tr>
+            <td>subnetree</td><td>91</td>
+            <td>4.6</td>
+            <td class="good">88.0%</td>
+            <td>52</td>
+        </tr><tr>
+            <td>Runbooks</td><td>76</td>
+            <td>1.7</td>
+            <td class="good">86.0%</td>
+            <td>20</td>
+        </tr><tr>
+            <td>devkit</td><td>93</td>
+            <td>1.6</td>
+            <td class="good">83.0%</td>
+            <td>23</td>
+        </tr><tr>
+            <td>DockPulse</td><td>9</td>
+            <td>1.3</td>
+            <td class="bad">44.0%</td>
+            <td>3</td>
+        </tr><tr>
+            <td>cli-play</td><td>19</td>
+            <td>2.5</td>
+            <td class="bad">37.0%</td>
+            <td>21</td>
+        </tr><tr>
+            <td>IPScan</td><td>6</td>
+            <td>1.5</td>
+            <td class="bad">17.0%</td>
+            <td>3</td>
+        </tr><tr>
+            <td>samverk</td><td>93</td>
+            <td>9.4</td>
+            <td class="bad">6.0%</td>
+            <td>770</td>
+        </tr><tr>
+            <td>PacketDeck</td><td>3</td>
+            <td>1.0</td>
+            <td class="bad">0.0%</td>
+            <td>0</td>
+        </tr></tbody></table>
+  </div>
+  <div class="card">
+    <h2>Pattern Impact (Last 30 Days)</h2>
+    <p class='empty'>No pattern events recorded yet</p>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Skill Usage (Last 30 Days)</h2>
+    <p class='empty'>No skill usage recorded yet</p>
+  </div>
+  <div class="card">
+    <h2>Conformance Scores (Latest)</h2>
+    <p class='empty'>Run /conformance-audit first</p>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Autolearn Pipeline (Last 30 Days)</h2>
+    <p class='empty'>No autolearn events yet</p>
+  </div>
+</div>
+
+</div>
+
+<script>
+Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#8b949e';
+Chart.defaults.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#30363d';
+
+function toggleTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    localStorage.setItem('devkit-theme', next);
+    Chart.defaults.color = getComputedStyle(html).getPropertyValue('--muted').trim();
+    Chart.defaults.borderColor = getComputedStyle(html).getPropertyValue('--border').trim();
+    Chart.instances.forEach(c => c.update());
+}
+(function() {
+    const saved = localStorage.getItem('devkit-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+})();
+
+// Trend chart
+
+new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+        labels: ["2026-01", "2026-02", "2026-03"],
+        datasets: [{
+            label: 'First-Pass CI %',
+            data: [0.0, 75.0, 59.0],
+            borderColor: '#3fb950',
+            backgroundColor: 'rgba(63,185,80,0.1)',
+            fill: true, tension: 0.3
+        }, {
+            label: 'Avg Pushes/PR',
+            data: [1.0, 3.2, 4.3],
+            borderColor: '#58a6ff',
+            yAxisID: 'y1',
+            tension: 0.3
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } },
+            y1: { position: 'right', beginAtZero: true, title: { display: true, text: 'Pushes' }, grid: { drawOnChartArea: false } }
+        }
+    }
+});
+
+
+
+
+
+new Chart(document.getElementById('projectChart'), {
+    type: 'bar',
+    data: {
+        labels: ["RunNotes", "DigitalRain", "subnetree", "Runbooks", "devkit", "DockPulse", "cli-play", "IPScan", "samverk", "PacketDeck"],
+        datasets: [{
+            label: 'First-Pass %',
+            data: [90.0, 88.0, 88.0, 86.0, 83.0, 44.0, 37.0, 17.0, 6.0, 0.0],
+            backgroundColor: [90.0, 88.0, 88.0, 86.0, 83.0, 44.0, 37.0, 17.0, 6.0, 0.0].map(v => v >= 80 ? '#3fb950' : v >= 50 ? '#d29922' : '#f85149')
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, max: 100 } },
+        plugins: { legend: { display: false } }
+    }
+});
+
+
+
+
+
+</script>
+</body>
+</html>
