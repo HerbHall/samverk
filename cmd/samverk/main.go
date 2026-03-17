@@ -76,6 +76,7 @@ func run() int {
 	root.AddCommand(statusCmd())
 	root.AddCommand(wakeCmd())
 	root.AddCommand(docAuditCmd())
+	root.AddCommand(auditCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {

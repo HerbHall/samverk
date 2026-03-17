@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/api"
+	"github.com/herbhall/samverk/internal/audit"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/store"
@@ -187,6 +188,12 @@ func (m *mockStore) SaveCorrectionEvent(_ context.Context, _ *models.CorrectionE
 	return nil
 }
 func (m *mockStore) ListCorrectionEvents(_ context.Context, _ int) ([]*models.CorrectionEvent, error) {
+	return nil, nil
+}
+func (m *mockStore) SaveAuditResults(_ context.Context, _ []audit.AuditResult) error {
+	return nil
+}
+func (m *mockStore) GetLastAudit(_ context.Context) ([]audit.AuditResult, error) {
 	return nil, nil
 }
 
