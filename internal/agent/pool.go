@@ -432,6 +432,47 @@ func (p *Pool) processTask(task Task) {
 	runErr := runner.Run(ctx, task)
 	duration := time.Since(start)
 
+	// Failover: if the runner failed with a retryable timeout error, try the
+	// next provider in the routing chain (max 1 retry to avoid long loops).
+	if runErr != nil && provider.IsRetryable(runErr) {
+		provName := p.registry.NameOf(prov)
+		logger.Warn("provider timeout, attempting failover to next in chain",
+			zap.String("timed_out_provider", provName),
+			zap.String("error", runErr.Error()),
+			zap.Duration("duration", duration.Truncate(time.Millisecond)),
+		)
+
+		nextProv, nextModel, nextErr := p.registry.GetAfter(ctx, routingKey, provName)
+		if nextErr == nil {
+			// Re-stagger to avoid overwhelming the fallback provider.
+			p.spawnMu.Lock()
+			if since := time.Since(p.lastSpawn); since < spawnStagger {
+				time.Sleep(spawnStagger - since)
+			}
+			p.lastSpawn = time.Now()
+			p.spawnMu.Unlock()
+
+			fallbackRunner := NewRunner(nextProv, nextModel, taskTracker, p.store, p.costs, p.logger)
+			fallbackRunner.cleanupCtx = cleanupCtx
+			fallbackRunner.synapset = p.synapset
+			fallbackRunner.SetRepoDir(p.repoDir)
+
+			logger.Info("failover: retrying task with next provider",
+				zap.String("provider", nextProv.Name()),
+				zap.String("model", nextModel),
+			)
+
+			start = time.Now()
+			runErr = fallbackRunner.Run(ctx, task)
+			duration = time.Since(start)
+		} else {
+			logger.Warn("failover: no next provider available",
+				zap.String("error", nextErr.Error()),
+			)
+			// Keep the original timeout error.
+		}
+	}
+
 	// Notify dispatcher of completion (success or failure).
 	result := TaskResult{
 		IssueNumber: task.Issue.Number,

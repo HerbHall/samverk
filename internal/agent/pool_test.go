@@ -722,6 +722,188 @@ func TestResize_RapidSequential(t *testing.T) {
 	}
 }
 
+func TestPool_FailoverOnProviderTimeout(t *testing.T) {
+	var results []TaskResult
+	var mu sync.Mutex
+
+	// First provider returns a retryable timeout error.
+	// Second provider succeeds.
+	callCount := 0
+	firstProvider := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			callCount++
+			return nil, &provider.ErrProviderTimeout{
+				Provider:    "first",
+				TimeoutType: provider.TimeoutStale,
+				Duration:    30 * time.Second,
+			}
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "first" },
+	}
+
+	secondProvider := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			return &provider.ChatResponse{
+				Message: provider.Message{Role: provider.RoleAssistant, Content: "done via fallback"},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "second" },
+	}
+
+	ms := &mockStore{
+		getSessionFn: func(_ context.Context, id string) (*models.Session, error) {
+			return &models.Session{
+				ID:        id,
+				Status:    models.SessionStatusPending,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}, nil
+		},
+		updateSessionFn: func(_ context.Context, _ *models.Session) error { return nil },
+		computeCostFn: func(_ context.Context, _ time.Time) (*models.CostSummary, error) {
+			return &models.CostSummary{}, nil
+		},
+	}
+
+	reg := provider.NewRegistry(nil)
+	reg.Register("first", "claude-cli", firstProvider, "model-1")
+	reg.Register("second", "claude", secondProvider, "model-2")
+	reg.SetRouting(map[string][]string{
+		"default": {"first", "second"},
+	})
+
+	costs := cost.NewTracker(ms, 0, 24)
+	pool := NewPool(reg, &mockTracker{}, ms, costs, 1, zap.NewNop())
+	defer pool.Shutdown()
+
+	pool.SetOnComplete(func(r TaskResult) {
+		mu.Lock()
+		results = append(results, r)
+		mu.Unlock()
+	})
+
+	task := Task{
+		Issue:     &forge.Issue{Number: 100, Title: "Timeout test", Body: "body"},
+		AgentType: models.AgentTypeCodeGen,
+		SessionID: "sess-timeout",
+	}
+	if err := pool.Submit(task); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(results)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 callback, got %d", len(results))
+	}
+	if !results[0].Success {
+		t.Errorf("expected Success=true after failover, got false (err=%s)", results[0].Error)
+	}
+}
+
+func TestPool_NoFailoverOnNonTimeout(t *testing.T) {
+	var results []TaskResult
+	var mu sync.Mutex
+
+	// Provider returns a non-retryable error. No failover should happen.
+	firstProvider := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			return nil, errors.New("permanent failure")
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "first" },
+	}
+
+	secondCallCount := atomic.Int32{}
+	secondProvider := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			secondCallCount.Add(1)
+			return &provider.ChatResponse{
+				Message: provider.Message{Role: provider.RoleAssistant, Content: "should not be called"},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "second" },
+	}
+
+	ms := &mockStore{
+		getSessionFn: func(_ context.Context, id string) (*models.Session, error) {
+			return &models.Session{
+				ID:        id,
+				Status:    models.SessionStatusPending,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}, nil
+		},
+		updateSessionFn: func(_ context.Context, _ *models.Session) error { return nil },
+		computeCostFn: func(_ context.Context, _ time.Time) (*models.CostSummary, error) {
+			return &models.CostSummary{}, nil
+		},
+	}
+
+	reg := provider.NewRegistry(nil)
+	reg.Register("first", "claude-cli", firstProvider, "model-1")
+	reg.Register("second", "claude", secondProvider, "model-2")
+	reg.SetRouting(map[string][]string{
+		"default": {"first", "second"},
+	})
+
+	costs := cost.NewTracker(ms, 0, 24)
+	pool := NewPool(reg, &mockTracker{}, ms, costs, 1, zap.NewNop())
+	defer pool.Shutdown()
+
+	pool.SetOnComplete(func(r TaskResult) {
+		mu.Lock()
+		results = append(results, r)
+		mu.Unlock()
+	})
+
+	task := Task{
+		Issue:     &forge.Issue{Number: 101, Title: "Non-timeout test", Body: "body"},
+		AgentType: models.AgentTypeCodeGen,
+		SessionID: "sess-noretry",
+	}
+	if err := pool.Submit(task); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(results)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 callback, got %d", len(results))
+	}
+	if results[0].Success {
+		t.Error("expected Success=false for non-retryable error")
+	}
+	if secondCallCount.Load() != 0 {
+		t.Errorf("second provider should not have been called, but was called %d times", secondCallCount.Load())
+	}
+}
+
 func TestPoolSetRepoDir(t *testing.T) {
 	mp := &mockProvider{
 		healthyFn: func(_ context.Context) bool { return true },
@@ -854,6 +1036,10 @@ func (m *mockStore) GetBudgetStatus(ctx context.Context, dailyBudgetUSD float64)
 }
 
 func (m *mockStore) UpdateTaskProfile(_ context.Context, _, _ string) error {
+	return nil
+}
+
+func (m *mockStore) SaveFailureEvent(_ context.Context, _ *models.FailureEvent) error {
 	return nil
 }
 

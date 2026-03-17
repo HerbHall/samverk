@@ -355,6 +355,113 @@ routing:
 	}
 }
 
+func TestGetAfter_ReturnsNextHealthy(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	p1 := &mockProvider{name: "ollama-nzxt", healthy: true}
+	p2 := &mockProvider{name: "claude-cli", healthy: true}
+	p3 := &mockProvider{name: "claude-api", healthy: true}
+
+	reg.Register("ollama-nzxt", "ollama", p1, "qwen3-coder:30b")
+	reg.Register("claude-cli", "claude-cli", p2, "claude-sonnet-4-6")
+	reg.Register("claude-api", "claude", p3, "claude-sonnet-4-6")
+	reg.SetRouting(map[string][]string{
+		"default": {"ollama-nzxt", "claude-cli", "claude-api"},
+	})
+
+	got, model, err := reg.GetAfter(ctx, "default", "ollama-nzxt")
+	if err != nil {
+		t.Fatalf("GetAfter: unexpected error: %v", err)
+	}
+	if got != p2 {
+		t.Errorf("GetAfter: expected claude-cli, got %s", got.Name())
+	}
+	if model != "claude-sonnet-4-6" {
+		t.Errorf("GetAfter: model = %q, want %q", model, "claude-sonnet-4-6")
+	}
+}
+
+func TestGetAfter_SkipsUnhealthyNext(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	p1 := &mockProvider{name: "first", healthy: true}
+	p2 := &mockProvider{name: "second", healthy: false}
+	p3 := &mockProvider{name: "third", healthy: true}
+
+	reg.Register("first", "ollama", p1, "model-1")
+	reg.Register("second", "claude-cli", p2, "model-2")
+	reg.Register("third", "claude", p3, "model-3")
+	reg.SetRouting(map[string][]string{
+		"default": {"first", "second", "third"},
+	})
+
+	got, model, err := reg.GetAfter(ctx, "default", "first")
+	if err != nil {
+		t.Fatalf("GetAfter: unexpected error: %v", err)
+	}
+	if got != p3 {
+		t.Errorf("GetAfter: expected third (skip unhealthy second), got %s", got.Name())
+	}
+	if model != "model-3" {
+		t.Errorf("GetAfter: model = %q, want %q", model, "model-3")
+	}
+}
+
+func TestGetAfter_NoNextProvider(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	p1 := &mockProvider{name: "only", healthy: true}
+	reg.Register("only", "claude-cli", p1, "model-1")
+	reg.SetRouting(map[string][]string{
+		"default": {"only"},
+	})
+
+	_, _, err := reg.GetAfter(ctx, "default", "only")
+	if !errors.Is(err, ErrNoHealthyProvider) {
+		t.Errorf("GetAfter: expected ErrNoHealthyProvider when last in chain, got %v", err)
+	}
+}
+
+func TestGetAfter_ProviderNotInChain(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	p1 := &mockProvider{name: "a", healthy: true}
+	reg.Register("a", "ollama", p1, "model-a")
+	reg.SetRouting(map[string][]string{
+		"default": {"a"},
+	})
+
+	_, _, err := reg.GetAfter(ctx, "default", "nonexistent")
+	if !errors.Is(err, ErrNoHealthyProvider) {
+		t.Errorf("GetAfter: expected ErrNoHealthyProvider for unknown provider, got %v", err)
+	}
+}
+
+func TestNameOf_Found(t *testing.T) {
+	reg := NewRegistry(nil)
+	p := &mockProvider{name: "claude-cli", healthy: true}
+	reg.Register("my-claude", "claude-cli", p, "model")
+
+	got := reg.NameOf(p)
+	if got != "my-claude" {
+		t.Errorf("NameOf: got %q, want %q", got, "my-claude")
+	}
+}
+
+func TestNameOf_NotFound(t *testing.T) {
+	reg := NewRegistry(nil)
+	p := &mockProvider{name: "unknown", healthy: true}
+
+	got := reg.NameOf(p)
+	if got != "" {
+		t.Errorf("NameOf: got %q, want empty", got)
+	}
+}
+
 func TestLoadRegistry_FactoryError(t *testing.T) {
 	content := `providers:
   broken:
