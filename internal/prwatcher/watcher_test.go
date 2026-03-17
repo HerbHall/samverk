@@ -2,6 +2,7 @@ package prwatcher
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/herbhall/samverk/internal/autonomy"
@@ -173,6 +174,7 @@ type mockIssueTracker struct {
 	listErr        error
 	createdIssue   *forge.CreateIssueRequest
 	createErr      error
+	prComments     map[int][]string // PR number -> comments added
 }
 
 func (m *mockIssueTracker) CreateIssue(_ context.Context, req *forge.CreateIssueRequest) (*forge.Issue, error) {
@@ -191,8 +193,12 @@ func (m *mockIssueTracker) UpdateIssue(context.Context, int, *forge.UpdateIssueR
 func (m *mockIssueTracker) ListIssues(_ context.Context, _ *forge.ListOptions) ([]*forge.Issue, error) {
 	return m.existingIssues, m.listErr
 }
-func (m *mockIssueTracker) AddComment(context.Context, int, string) (*forge.Comment, error) {
-	panic("not called")
+func (m *mockIssueTracker) AddComment(_ context.Context, number int, body string) (*forge.Comment, error) {
+	if m.prComments == nil {
+		m.prComments = make(map[int][]string)
+	}
+	m.prComments[number] = append(m.prComments[number], body)
+	return &forge.Comment{ID: 1, Body: body}, nil
 }
 func (m *mockIssueTracker) ListComments(context.Context, int) ([]*forge.Comment, error) {
 	panic("not called")
@@ -238,11 +244,11 @@ func TestCheckReviewComments_CreatesRemediationIssue(t *testing.T) {
 	if it.createdIssue == nil {
 		t.Fatal("expected issue to be created")
 	}
-	wantTitle := `fix(#42): address review comments on "Add feature X"`
+	wantTitle := `fix(#42): address Copilot review feedback on "Add feature X"`
 	if it.createdIssue.Title != wantTitle {
 		t.Errorf("title = %q, want %q", it.createdIssue.Title, wantTitle)
 	}
-	wantLabels := map[string]bool{"status:queued": true, "agent:code-gen": true, "pr:42": true}
+	wantLabels := map[string]bool{"agent:code-gen": true, "priority:high": true, "pr:42": true}
 	for _, l := range it.createdIssue.Labels {
 		if !wantLabels[l] {
 			t.Errorf("unexpected label %q", l)
@@ -251,6 +257,12 @@ func TestCheckReviewComments_CreatesRemediationIssue(t *testing.T) {
 	}
 	if len(wantLabels) > 0 {
 		t.Errorf("missing labels: %v", wantLabels)
+	}
+	// Verify PR comment was added.
+	if comments, ok := it.prComments[42]; !ok || len(comments) == 0 {
+		t.Error("expected a comment on the PR")
+	} else if !strings.Contains(comments[0], "Copilot feedback detected") {
+		t.Errorf("PR comment = %q, want to contain 'Copilot feedback detected'", comments[0])
 	}
 }
 
@@ -375,5 +387,113 @@ func TestIsTrustedReviewer_EmptyList(t *testing.T) {
 	w := &Watcher{mergeCfg: autonomy.MergeConfig{TrustedReviewers: nil}}
 	if w.isTrustedReviewer("anyone") {
 		t.Error("empty trusted reviewers list should not trust anyone")
+	}
+}
+
+func TestCheckReviewComments_CopilotAuthorNotInTrustedList(t *testing.T) {
+	// Copilot comments should be detected even when not in TrustedReviewers.
+	pm := &mockPRManager{
+		reviewComments: []forge.ReviewComment{
+			{Author: "copilot[bot]", Body: "Consider using a constant here", Path: "main.go", EndLine: 5},
+		},
+	}
+	it := &mockIssueTracker{}
+
+	w := &Watcher{
+		prManager:    pm,
+		issueTracker: it,
+		mergeCfg:     autonomy.MergeConfig{TrustedReviewers: []string{"some-other-reviewer"}},
+	}
+
+	pr := &forge.PullRequest{Number: 50, Title: "feat: add caching", Head: "feature/caching", Labels: []string{"auto"}}
+
+	hasBlocking, err := w.checkReviewComments(context.Background(), pr)
+	if err != nil {
+		t.Fatalf("checkReviewComments: %v", err)
+	}
+	if !hasBlocking {
+		t.Error("expected hasBlocking=true for Copilot-authored comment")
+	}
+	if it.createdIssue == nil {
+		t.Fatal("expected remediation issue to be created")
+	}
+	if !strings.Contains(it.createdIssue.Title, "Copilot review feedback") {
+		t.Errorf("title = %q, want to contain 'Copilot review feedback'", it.createdIssue.Title)
+	}
+}
+
+func TestCheckReviewComments_LooksGoodCommentMergesNormally(t *testing.T) {
+	// Approval-like comments should not block merge.
+	pm := &mockPRManager{
+		reviewComments: []forge.ReviewComment{
+			{Author: "copilot[bot]", Body: "Looks good to me! No issues found.", Path: "main.go", EndLine: 1},
+		},
+	}
+	it := &mockIssueTracker{}
+
+	w := &Watcher{
+		prManager:    pm,
+		issueTracker: it,
+		mergeCfg:     autonomy.MergeConfig{TrustedReviewers: []string{"copilot[bot]"}},
+	}
+
+	pr := &forge.PullRequest{Number: 60, Title: "docs: update readme", Labels: []string{"auto"}}
+
+	hasBlocking, err := w.checkReviewComments(context.Background(), pr)
+	if err != nil {
+		t.Fatalf("checkReviewComments: %v", err)
+	}
+	if hasBlocking {
+		t.Error("expected hasBlocking=false for approval-like comment")
+	}
+	if it.createdIssue != nil {
+		t.Error("should not create remediation issue for approval comment")
+	}
+}
+
+func TestIsCopilotAuthor(t *testing.T) {
+	tests := []struct {
+		author string
+		want   bool
+	}{
+		{"copilot[bot]", true},
+		{"copilot", true},
+		{"Copilot", true},
+		{"github-copilot[bot]", true},
+		{"random-user", false},
+		{"github-actions[bot]", false},
+		{"bot", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.author, func(t *testing.T) {
+			if got := isCopilotAuthor(tt.author); got != tt.want {
+				t.Errorf("isCopilotAuthor(%q) = %v, want %v", tt.author, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsActionableComment(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"actionable suggestion", "Consider using a constant here instead of a magic number", true},
+		{"security warning", "This function is vulnerable to SQL injection", true},
+		{"bug report", "Missing error check on line 42", true},
+		{"looks good", "Looks good to me!", false},
+		{"lgtm", "LGTM", false},
+		{"no issues", "No issues found in this change", false},
+		{"approved", "Approved -- ship it", false},
+		{"empty body", "", false},
+		{"whitespace only", "   ", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isActionableComment(tt.body); got != tt.want {
+				t.Errorf("isActionableComment(%q) = %v, want %v", tt.body, got, tt.want)
+			}
+		})
 	}
 }
