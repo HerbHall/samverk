@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.20](https://github.com/HerbHall/samverk/compare/v0.1.19...v0.1.20) (2026-03-17)
+
+
+### Features
+
+* add MCP work checkout/checkin protocol for supervised agents ([#640](https://github.com/HerbHall/samverk/issues/640)) ([c644f9e](https://github.com/HerbHall/samverk/commit/c644f9e7f717d0bd368380417b6f5145146faa20)), closes [#637](https://github.com/HerbHall/samverk/issues/637)
+* add project lifecycle phases and tags ([#635](https://github.com/HerbHall/samverk/issues/635)) ([e508b94](https://github.com/HerbHall/samverk/commit/e508b942fcdf47e211fcfc543885f10cb53c1b3d))
+
 ## [0.1.19](https://github.com/HerbHall/samverk/compare/v0.1.18...v0.1.19) (2026-03-17)
 
 
