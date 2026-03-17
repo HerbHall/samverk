@@ -1,6 +1,8 @@
 > **This repository has moved to Gitea.** Active development continues at [gitea.herbhall.net/samverk/samverk](https://gitea.herbhall.net/samverk/samverk). This GitHub repository is a read-only archive. Issues and PRs are disabled.
 
----# Samverk
+---
+
+# Samverk
 
 > *Samverk* -- Old Norse/Icelandic: "cooperative work" (sam = together, verk = work/deed)
 
