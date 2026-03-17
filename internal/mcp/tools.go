@@ -192,15 +192,33 @@ func (h *Handler) handleGetDigest(
 	_ *gosdk.CallToolRequest,
 	input getDigestInput,
 ) (*gosdk.CallToolResult, any, error) {
-	dur, err := time.ParseDuration(input.Since)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid since duration %q: %w", input.Since, err)
+	// Determine the last check-in anchor.
+	// Prefer the persisted timestamp (actual last time get_digest was called) so
+	// the "You've been away X" message reflects real elapsed time rather than
+	// echoing the `since` parameter back to the user.
+	// Fall back to the `since` parameter only when no stored value exists.
+	var lastCheckIn time.Time
+	if h.store != nil {
+		if t, err := h.store.GetLastCheckIn(ctx); err == nil {
+			lastCheckIn = t
+		}
+	}
+	if lastCheckIn.IsZero() {
+		dur, err := time.ParseDuration(input.Since)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid since duration %q: %w", input.Since, err)
+		}
+		lastCheckIn = time.Now().Add(-dur)
 	}
 
-	sinceTime := time.Now().Add(-dur)
-	data, err := digest.BuildDigest(ctx, h.activeTracker(), h.costs, sinceTime)
+	data, err := digest.BuildDigest(ctx, h.activeTracker(), h.costs, lastCheckIn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building digest: %w", err)
+	}
+
+	// Persist the current time as the new check-in anchor for the next call.
+	if h.store != nil {
+		_ = h.store.SetLastCheckIn(ctx, time.Now())
 	}
 
 	// Enrich digest with PR data from all registered projects.
