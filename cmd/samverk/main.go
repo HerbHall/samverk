@@ -348,6 +348,35 @@ func serveCmd() *cobra.Command {
 			s := server.New(cfg, logger)
 			logger.Info("starting samverk server", zap.String("addr", addr))
 
+			// Start a standalone MCP-only listener on port 8081 for
+			// external access via mcp.herbhall.net. No SPA, no API --
+			// just the MCP handler. This avoids Cloudflare WAF's
+			// "Validate Headers" rule which blocks /mcp on servers
+			// that serve HTML (the SPA catch-all triggers it).
+			if cfg.MCPHandler != nil {
+				mcpMux := http.NewServeMux()
+				mcpMux.Handle("/", cfg.MCPHandler)
+				mcpMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"status":"ok"}`))
+				})
+				mcpSrv := &http.Server{
+					Addr:              ":8081",
+					Handler:           mcpMux,
+					ReadHeaderTimeout: 10 * time.Second,
+				}
+				go func() {
+					logger.Info("MCP-only listener starting", zap.String("addr", ":8081"))
+					if err := mcpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+						logger.Error("MCP-only listener failed", zap.Error(err))
+					}
+				}()
+				go func() {
+					<-ctx.Done()
+					_ = mcpSrv.Shutdown(context.Background())
+				}()
+			}
+
 			if err := s.Start(ctx); err != nil {
 				return fmt.Errorf("server error: %w", err)
 			}

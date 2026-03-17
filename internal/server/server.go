@@ -128,23 +128,30 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
+	// Return 404 for /.well-known/ paths so the SPA catch-all doesn't
+	// serve HTML with a 200 status. Claude.ai probes this endpoint and
+	// interprets a 200 as "OAuth is available", breaking MCP connectivity.
+	s.mux.HandleFunc("GET /.well-known/", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusNotFound, errorResponse{Error: "not found"})
+	})
+
 	if s.cfg.MCPHandler != nil {
 		// MCP endpoint is unauthenticated -- security is handled by
-		// Cloudflare Tunnel (same model as Synapset MCP). OAuth 2.1
-		// endpoints were removed because Claude.ai probes for them and
-		// attempts the flow, which fails; without them Claude.ai falls
-		// back to unauthenticated mode and connects successfully.
-		s.mux.Handle("POST /mcp", s.cfg.MCPHandler)
+		// Cloudflare Tunnel (same model as Synapset MCP).
+		// Register without method prefix so StreamableHTTPHandler receives
+		// POST (messages), GET (SSE streams), and DELETE (session teardown).
+		//
+		// Cloudflare AI protection blocks paths it recognizes as AI
+		// endpoints (/mcp, /sse) with 403 "invalid Host header".
+		// Use /connect for external access through Cloudflare Tunnel.
+		// Custom Connector URL: https://samverk.herbhall.net/connect
+		// Keep /mcp for LAN/Tailscale and existing configs.
+		s.mux.Handle("/connect", s.cfg.MCPHandler)
+		s.mux.Handle("/mcp", s.cfg.MCPHandler)
 	} else {
-		s.mux.HandleFunc("POST /mcp", s.handleNotImplemented)
+		s.mux.HandleFunc("/connect", s.handleNotImplemented)
+		s.mux.HandleFunc("/mcp", s.handleNotImplemented)
 	}
-
-	// Handle non-POST methods on /mcp explicitly so the SPA catch-all
-	// doesn't swallow them and return HTML to MCP clients probing the endpoint.
-	s.mux.HandleFunc("GET /mcp", s.handleMCPMethodNotAllowed)
-	s.mux.HandleFunc("DELETE /mcp", s.handleMCPMethodNotAllowed)
-	s.mux.HandleFunc("PUT /mcp", s.handleMCPMethodNotAllowed)
-	s.mux.HandleFunc("PATCH /mcp", s.handleMCPMethodNotAllowed)
 
 	if s.cfg.APIHandler != nil {
 		apiMux := http.NewServeMux()
@@ -186,14 +193,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // handleNotImplemented returns 501 {"error":"not implemented"}.
 func (s *Server) handleNotImplemented(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, errorResponse{Error: "not implemented"})
-}
-
-// handleMCPMethodNotAllowed returns 405 for non-POST requests to /mcp.
-// Without this, the SPA catch-all returns HTML to MCP clients probing
-// the endpoint with GET, which breaks mobile MCP connectivity.
-func (s *Server) handleMCPMethodNotAllowed(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Allow", "POST")
-	writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "MCP endpoint accepts POST only"})
 }
 
 // writeJSON encodes v as JSON and writes it with the given status code.
