@@ -197,7 +197,9 @@ func (m *mockStore) GetLastAudit(_ context.Context) ([]audit.AuditResult, error)
 	return nil, nil
 }
 
-func (m *mockStore) Close() error { return nil }
+func (m *mockStore) GetLastCheckIn(_ context.Context) (time.Time, error) { return time.Time{}, nil }
+func (m *mockStore) SetLastCheckIn(_ context.Context, _ time.Time) error { return nil }
+func (m *mockStore) Close() error                                        { return nil }
 
 // Compile-time check: mockStore implements store.Store.
 var _ store.Store = (*mockStore)(nil)
