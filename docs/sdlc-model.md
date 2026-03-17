@@ -274,7 +274,7 @@ adding a phase is a one-line change plus documentation, not a code audit.
 
 - Standard SDLC: Planning → Analysis → Design → Development → Testing →
   Deployment → Maintenance
-- [ADR-031: Forge Policy (being revised)](#616)
+- ADR-031: Forge Policy (being revised, see issue #616)
 - [ADR-013: Forge Abstraction](decisions/ADR-013-forge-abstraction.md)
 - [ADR-015: Three-Tier Autonomy](decisions/ADR-015-three-tier-autonomy.md)
 - [Project Lifecycle](project-lifecycle.md)
