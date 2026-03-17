@@ -206,7 +206,7 @@ func (h *Handler) handleListOpenPRs(
 
 	if h.projects != nil {
 		for _, proj := range h.projects.List() {
-			if proj.PRManager == nil {
+			if proj.PRManager == nil || proj.Phase == "inactive" {
 				continue
 			}
 			prs, err := proj.PRManager.ListPullRequests(ctx, &forge.ListPROptions{

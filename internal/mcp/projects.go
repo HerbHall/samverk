@@ -10,14 +10,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ValidPhases defines the allowed lifecycle phases for a project.
+var ValidPhases = map[string]bool{
+	"research":    true,
+	"planning":    true,
+	"design":      true,
+	"development": true,
+	"deployed":    true,
+	"maintenance": true,
+	"inactive":    true,
+}
+
 // Project represents a registered project with its forge connection.
 type Project struct {
-	Name      string                    `json:"name" yaml:"name"`
-	Owner     string                    `json:"owner" yaml:"owner"`
-	Repo      string                    `json:"repo" yaml:"repo"`
-	Tracker   forge.IssueTracker        `json:"-" yaml:"-"`
-	Reader    forge.RepoReader          `json:"-" yaml:"-"`
-	PRManager forge.PullRequestManager  `json:"-" yaml:"-"`
+	Name      string                   `json:"name" yaml:"name"`
+	Owner     string                   `json:"owner" yaml:"owner"`
+	Repo      string                   `json:"repo" yaml:"repo"`
+	Phase     string                   `json:"phase" yaml:"phase"`
+	Tags      []string                 `json:"tags,omitempty" yaml:"tags"`
+	Tracker   forge.IssueTracker       `json:"-" yaml:"-"`
+	Reader    forge.RepoReader         `json:"-" yaml:"-"`
+	PRManager forge.PullRequestManager `json:"-" yaml:"-"`
 }
 
 // ProjectRegistry manages the set of available projects.
@@ -143,12 +156,14 @@ func (r *ProjectRegistry) ActiveName() string {
 // Forge may be "github" (default) or "gitea". Gitea projects require GiteaURL
 // and optionally GiteaToken (falls back to GITEA_TOKEN environment variable).
 type ProjectConfig struct {
-	Name       string `yaml:"name"`
-	Owner      string `yaml:"owner"`
-	Repo       string `yaml:"repo"`
-	Forge      string `yaml:"forge"`       // "github" (default) or "gitea"
-	GiteaURL   string `yaml:"gitea_url"`   // required when forge = "gitea"
-	GiteaToken string `yaml:"gitea_token"` // optional; falls back to GITEA_TOKEN env var
+	Name       string   `yaml:"name"`
+	Owner      string   `yaml:"owner"`
+	Repo       string   `yaml:"repo"`
+	Forge      string   `yaml:"forge"`       // "github" (default) or "gitea"
+	GiteaURL   string   `yaml:"gitea_url"`   // required when forge = "gitea"
+	GiteaToken string   `yaml:"gitea_token"` // optional; falls back to GITEA_TOKEN env var
+	Phase      string   `yaml:"phase"`       // lifecycle phase; defaults to "development"
+	Tags       []string `yaml:"tags"`        // optional classification tags
 }
 
 // projectsFileConfig is the top-level YAML structure for the projects config file.
@@ -169,7 +184,8 @@ func LoadProjectConfig(path string) ([]ProjectConfig, error) {
 	}
 
 	// Validate each project entry.
-	for i, p := range cfg.Projects {
+	for i := range cfg.Projects {
+		p := &cfg.Projects[i]
 		if p.Name == "" {
 			return nil, fmt.Errorf("project at index %d: name is required", i)
 		}
@@ -184,6 +200,13 @@ func LoadProjectConfig(path string) ([]ProjectConfig, error) {
 		}
 		if p.Forge == "gitea" && p.GiteaURL == "" {
 			return nil, fmt.Errorf("project %q: gitea_url is required when forge = \"gitea\"", p.Name)
+		}
+
+		// Default phase to "development" if not specified.
+		if p.Phase == "" {
+			p.Phase = "development"
+		} else if !ValidPhases[p.Phase] {
+			return nil, fmt.Errorf("project %q: invalid phase %q", p.Name, p.Phase)
 		}
 	}
 
