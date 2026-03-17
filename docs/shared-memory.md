@@ -28,9 +28,9 @@ Samverk is a **consumer** of Synapset, not the owner. Samverk-specific integrati
 | Original Open Brain brief | `Synapset/docs/research/openbrain.txt` |
 | Proof of concepts (3 passing) | `Synapset/poc/` |
 
-**Repository**: `samverk-admin/synapset` on Gitea (`D:\DevSpace\Synapset\`)
+**Repository**: `samverk/synapset` on Gitea (`D:\DevSpace\Synapset\`)
 
 ## References
 
-- [Nate Jones "Open Brain" concept](https://gitea.herbhall.net/samverk-admin/synapset) -- Inspiration, now in Synapset
+- [Nate Jones "Open Brain" concept](https://gitea.herbhall.net/samverk/synapset) -- Inspiration, now in Synapset
 - [ADR-012: Git Issues as Protocol](decisions/ADR-012-git-issues-protocol.md) -- Current communication layer (Samverk-specific)
