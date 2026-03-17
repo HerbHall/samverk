@@ -189,9 +189,10 @@ func serveCmd() *cobra.Command {
 
 				// Register the default project from --owner/--repo flags.
 				defaultProject := &internalmcp.Project{
-					Name:    repo,
-					Owner:   owner,
-					Repo:    repo,
+					Name:      repo,
+					Owner:     owner,
+					Repo:      repo,
+					Phase:     "development",
 					Tracker:   tracker,
 					Reader:    repoReader,
 					PRManager: ghClient,
@@ -203,7 +204,8 @@ func serveCmd() *cobra.Command {
 				// Load additional projects from config file if it exists.
 				if projectsConfig != "" {
 					if configs, loadErr := internalmcp.LoadProjectConfig(projectsConfig); loadErr == nil {
-						for _, pc := range configs {
+						for i := range configs {
+							pc := &configs[i]
 							// Skip if already registered as the default.
 							if pc.Name == repo && pc.Owner == owner && pc.Repo == repo {
 								continue
@@ -226,6 +228,8 @@ func serveCmd() *cobra.Command {
 									Name:      pc.Name,
 									Owner:     pc.Owner,
 									Repo:      pc.Repo,
+									Phase:     pc.Phase,
+									Tags:      pc.Tags,
 									Tracker:   gtClient,
 									Reader:    gtClient,
 									PRManager: gtClient,
@@ -239,6 +243,8 @@ func serveCmd() *cobra.Command {
 									Name:      pc.Name,
 									Owner:     pc.Owner,
 									Repo:      pc.Repo,
+									Phase:     pc.Phase,
+									Tags:      pc.Tags,
 									Tracker:   ghExtra,
 									Reader:    ghExtra,
 									PRManager: ghExtra,

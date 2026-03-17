@@ -231,6 +231,100 @@ func TestLoadProjectConfig(t *testing.T) {
 	}
 }
 
+func TestLoadProjectConfig_PhaseValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		content   string
+		wantPhase string
+		wantTags  []string
+		wantErr   string
+	}{
+		{
+			name: "valid phase accepted",
+			content: `projects:
+  - name: alpha
+    owner: org
+    repo: alpha
+    phase: deployed
+`,
+			wantPhase: "deployed",
+		},
+		{
+			name: "empty phase defaults to development",
+			content: `projects:
+  - name: alpha
+    owner: org
+    repo: alpha
+`,
+			wantPhase: "development",
+		},
+		{
+			name: "unknown phase rejected",
+			content: `projects:
+  - name: alpha
+    owner: org
+    repo: alpha
+    phase: archived
+`,
+			wantErr: "invalid phase",
+		},
+		{
+			name: "tags parsed correctly",
+			content: `projects:
+  - name: alpha
+    owner: org
+    repo: alpha
+    phase: development
+    tags:
+      - go
+      - infrastructure
+`,
+			wantPhase: "development",
+			wantTags:  []string{"go", "infrastructure"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "server.yaml")
+			if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
+				t.Fatalf("writing test config: %v", err)
+			}
+
+			configs, err := internalmcp.LoadProjectConfig(path)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("expected error containing %q, got %q", tc.wantErr, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(configs) == 0 {
+				t.Fatal("expected at least one config")
+			}
+			if configs[0].Phase != tc.wantPhase {
+				t.Errorf("expected phase %q, got %q", tc.wantPhase, configs[0].Phase)
+			}
+			if tc.wantTags != nil {
+				if len(configs[0].Tags) != len(tc.wantTags) {
+					t.Fatalf("expected %d tags, got %d", len(tc.wantTags), len(configs[0].Tags))
+				}
+				for i, tag := range tc.wantTags {
+					if configs[0].Tags[i] != tag {
+						t.Errorf("tag[%d]: expected %q, got %q", i, tag, configs[0].Tags[i])
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestLoadProjectConfig_Invalid(t *testing.T) {
 	tests := []struct {
 		name    string
