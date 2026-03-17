@@ -150,8 +150,9 @@ var mcpConfig = map[string]interface{}{
 
 // GenerateAgentCLAUDEMD builds a per-worktree CLAUDE.md for agents. It includes
 // core principles, git safety rules, a CI checklist selected by project type,
-// known gotchas, and the issue body as task context.
-func GenerateAgentCLAUDEMD(projectType, issueBody string) string {
+// known gotchas, explored key files, and the issue body as task context.
+// The keyFiles parameter lists files the agent should read first (from explore phase).
+func GenerateAgentCLAUDEMD(projectType, issueBody string, keyFiles ...string) string {
 	var b strings.Builder
 
 	b.WriteString("# Agent Task\n\n")
@@ -171,6 +172,14 @@ func GenerateAgentCLAUDEMD(projectType, issueBody string) string {
 
 	b.WriteString("\n\n")
 	b.WriteString(knownGotchas)
+
+	if len(keyFiles) > 0 {
+		b.WriteString("\n\n## Key Files\n\n")
+		b.WriteString("Read these files first before making changes:\n\n")
+		for _, f := range keyFiles {
+			fmt.Fprintf(&b, "- `%s`\n", f)
+		}
+	}
 
 	if issueBody != "" {
 		b.WriteString("\n\n## Task Context\n\n")

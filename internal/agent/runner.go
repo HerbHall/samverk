@@ -176,7 +176,8 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 					)
 				}
 				projectType := DetectProjectType(task.Issue.Labels)
-				claudeMD := GenerateAgentCLAUDEMD(projectType, task.Issue.Body)
+				keyFiles := ExploreFileList(workDir, task.Issue.Body)
+				claudeMD := GenerateAgentCLAUDEMD(projectType, task.Issue.Body, keyFiles...)
 				if writeErr := os.WriteFile(filepath.Join(workDir, "CLAUDE.md"), []byte(claudeMD), 0o600); writeErr != nil {
 					r.logger.Warn("failed to write CLAUDE.md to workspace",
 						zap.Int("issue", task.Issue.Number),
@@ -204,8 +205,33 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		}
 	}
 
+	// Step 3d: Explore repo context (CLAUDE.md, sibling files) before prompt building.
+	exploreDir := workDir
+	if exploreDir == "" {
+		exploreDir = r.repoDir
+	}
+	exploreCtx := ExploreContext(exploreDir, task.Issue.Body)
+	if len(exploreCtx) > 0 {
+		r.logger.Info("explore phase complete",
+			zap.Int("issue", task.Issue.Number),
+			zap.Int("files_discovered", len(exploreCtx)),
+		)
+	}
+
 	// Step 4: Build chat request.
 	fileContext := r.extractFileContext(task.Issue.Body, workDir)
+	// Merge explored context into fileContext (explore provides base context,
+	// extractFileContext may override with workspace-specific versions).
+	if len(exploreCtx) > 0 {
+		if fileContext == nil {
+			fileContext = make(map[string]string, len(exploreCtx))
+		}
+		for path, content := range exploreCtx {
+			if _, exists := fileContext[path]; !exists {
+				fileContext[path] = content
+			}
+		}
+	}
 	systemPrompt := BuildSystemPrompt(task, fileContext, patterns...)
 	messages := []provider.Message{
 		{Role: provider.RoleSystem, Content: systemPrompt},
