@@ -45,6 +45,13 @@ func ValidateBeforePost(ctx context.Context, agentType models.AgentType, workDir
 	switch agentType {
 	case models.AgentTypeCodeGen, models.AgentTypeTest:
 		if workDir != "" {
+			// Check for bad output (config-only changes) before running build/test.
+			// This is a non-retryable failure -- retrying won't help if the model
+			// fundamentally misunderstood the task (e.g., Ollama overwriting CLAUDE.md).
+			if badResult := ValidateWorkspaceOutput(workDir, logger); badResult != nil {
+				badResult.Duration = time.Since(start)
+				return badResult
+			}
 			result := validateWorktree(ctx, workDir, logger)
 			result.Duration = time.Since(start)
 			return result
@@ -140,6 +147,98 @@ func runInDir(ctx context.Context, dir, name string, args ...string) (string, er
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// configOnlyPatterns are file path patterns that indicate an agent only modified
+// project configuration files instead of implementing the actual feature.
+var configOnlyPatterns = []string{
+	"CLAUDE.md",
+	".claude/",
+	".samverk/",
+	".github/",
+	".gitignore",
+	".editorconfig",
+}
+
+// IsBadOutput returns true when all changed files match config-only patterns,
+// indicating the agent overwrote project config instead of implementing the feature.
+// Returns false if changedFiles is empty (no changes is handled elsewhere).
+func IsBadOutput(changedFiles []string) bool {
+	if len(changedFiles) == 0 {
+		return false
+	}
+	for _, f := range changedFiles {
+		if !isConfigOnlyFile(f) {
+			return false
+		}
+	}
+	return true
+}
+
+// isConfigOnlyFile returns true if the file path matches a config-only pattern.
+func isConfigOnlyFile(path string) bool {
+	for _, pattern := range configOnlyPatterns {
+		if strings.HasSuffix(pattern, "/") {
+			// Directory prefix match.
+			if strings.HasPrefix(path, pattern) {
+				return true
+			}
+		} else {
+			// Exact filename match (anywhere in path).
+			if path == pattern || strings.HasSuffix(path, "/"+pattern) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ValidateWorkspaceOutput checks whether a code-gen agent's workspace changes
+// are meaningful. If the agent only modified config files (CLAUDE.md, .claude/,
+// etc.), it returns a non-retryable validation failure. This catches Ollama
+// models that overwrite CLAUDE.md instead of implementing features.
+func ValidateWorkspaceOutput(workDir string, logger *zap.Logger) *ValidationResult {
+	if workDir == "" {
+		return nil
+	}
+
+	files, err := ChangedFiles(workDir)
+	if err != nil {
+		// If we can't list files, don't block -- other validators will catch real issues.
+		if logger != nil {
+			logger.Debug("bad output check: could not list changed files", zap.Error(err))
+		}
+		return nil
+	}
+
+	if len(files) == 0 {
+		return nil // No changes is handled by the caller.
+	}
+
+	if IsBadOutput(files) {
+		msg := fmt.Sprintf(
+			"output rejected: agent only modified project config files (%s) instead of implementing the feature",
+			strings.Join(files, ", "),
+		)
+		if logger != nil {
+			logger.Warn("bad output detected",
+				zap.Strings("changed_files", files),
+				zap.String("failure_class", "bad-output"),
+			)
+		}
+		return &ValidationResult{
+			Pass:      false,
+			Retryable: false,
+			Errors: []ValidationError{
+				{
+					Phase:   "output-quality",
+					Message: msg,
+				},
+			},
+		}
+	}
+
+	return nil
 }
 
 // truncate returns at most maxLen characters from s.
