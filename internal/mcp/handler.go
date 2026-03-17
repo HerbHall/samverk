@@ -31,6 +31,7 @@ type Handler struct {
 	sysM          systemMetricsSource     // may be nil
 	scalingEvents scalingEventReader      // may be nil (reads from store)
 	workersM      workerLister            // may be nil (no PC agent workers registered)
+	work          WorkCoordinator         // may be nil (dispatcher not connected)
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
@@ -65,6 +66,23 @@ func (h *Handler) SetProjects(reg *ProjectRegistry) {
 // SetWorkerLister attaches a worker lister so the digest includes PC agent status.
 func (h *Handler) SetWorkerLister(wl workerLister) {
 	h.workersM = wl
+}
+
+// SetWorkCoordinator attaches a work coordinator (dispatcher) for interactive
+// work checkout/checkin tools.
+func (h *Handler) SetWorkCoordinator(wc WorkCoordinator) {
+	h.work = wc
+}
+
+// activeOwnerRepo returns the owner and repo for the currently active project.
+func (h *Handler) activeOwnerRepo() (owner, repo string, err error) {
+	if h.projects != nil {
+		p, pErr := h.projects.Active()
+		if pErr == nil {
+			return p.Owner, p.Repo, nil
+		}
+	}
+	return "", "", fmt.Errorf("no active project configured")
 }
 
 // activeTracker returns the IssueTracker to use for the current context.
@@ -147,6 +165,7 @@ func newMCPServer(h *Handler) *gosdk.Server {
 	registerPRTools(srv, h)
 	registerPRReviewTools(srv, h)
 	registerScalingTools(srv, h)
+	registerWorkerTools(srv, h)
 	return srv
 }
 
