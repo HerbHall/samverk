@@ -32,6 +32,9 @@ Decisions are recorded as ADR files in this directory.
 | [031](ADR-031-dual-forge-operational-model.md) | Single-Forge-Per-Project Model | Revised |
 | [032](ADR-032-adaptive-worker-scaling.md) | Adaptive Worker Scaling | Accepted |
 | [033](ADR-033-pc-agent-worker-node.md) | PC Agent Worker Node with Isolated Workspaces | Accepted |
+| [034](ADR-034-cross-agent-coordination.md) | Cross-Agent Coordination Protocol | Proposed |
+| [035](ADR-035-solo-developer-agent-model.md) | Solo Developer Agent Model | Proposed |
+| [036](ADR-036-multi-machine-free-agent-runtime.md) | Multi-Machine Free Agent Runtime | Proposed |
 
 ## Open Decisions
 
