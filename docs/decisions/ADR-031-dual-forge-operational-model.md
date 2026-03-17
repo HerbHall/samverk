@@ -1,13 +1,14 @@
-# ADR-031: Dual-Forge Operational Model
+# ADR-031: Single-Forge-Per-Project Model
 
-**Status:** Accepted
+**Status:** Revised (2026-03-17)
 **Date:** 2026-03-08
+**Revised:** 2026-03-17
 **Supersedes:** None
 
 ## Context
 
 Samverk originally targeted GitHub as the only issue tracker and forge.
-Three operational concerns drove the need for a second forge:
+Three operational concerns drove support for a second forge:
 
 1. **Autonomy risk** — a dispatcher running autonomously against GitHub has
    write access to a public-facing service. A Gitea instance on the LAN gives
@@ -22,72 +23,92 @@ Three operational concerns drove the need for a second forge:
    comments that live in issues may not be suitable for a public repository
    until they are ready for review.
 
-The goal is a dual-forge model where:
+The initial design described a "dual-forge" model where a project could be
+simultaneously registered on both GitHub and Gitea, with issue state synced
+between them. In practice, issue sync created divergence and was never reliably
+automated. The dual-registration capability was used exclusively during
+migration, not during steady-state operation.
 
-- GitHub remains the public-facing, developer-visible tracker.
-- Gitea (CT 200, `gitea.herbhall.net`) is the primary runtime forge for
-  the dispatcher and agent communication during active development.
+This revision replaces the dual-forge framing with a cleaner
+single-forge-per-project model that reflects how the system actually works.
 
 ## Decision
 
-Samverk supports two forges simultaneously. Key points:
+Each project has exactly one active forge at any given time. The forge
+abstraction layer (ADR-013) makes the choice transparent to the dispatcher and
+all agents.
 
-### Forge abstraction is the interface
+### Seven Principles
 
-`forge.IssueTracker`, `forge.RepoReader`, and `forge.PullRequestManager`
-(ADR-013) remain the single interface layer. Both GitHub and Gitea are
-equal-status implementations. The dispatcher is unaware of which forge it
-is talking to.
+1. **One forge per project.** A project entry in `server.yaml` specifies a
+   single forge (`github` or `gitea`, defaulting to `github`). The dispatcher
+   watches and writes to that forge only.
 
-### Projects can be dual-registered
+2. **Forge is chosen at registration time.** The `forge` field in `server.yaml`
+   is the authoritative source. Changing a project's forge requires updating
+   `server.yaml` and restarting the server — there is no runtime switching.
 
-`server.yaml` supports a `forge` field per project entry (`github` or `gitea`).
-A single logical repository can appear twice — once per forge — so the
-dispatcher watches both. New issues created by agents on Gitea flow back to
-GitHub via the migration script when ready.
+3. **Gitea is the preferred forge for autonomous work.** New projects under
+   active autonomous development are registered on the self-hosted Gitea
+   instance. This keeps autonomous write activity on the LAN, reduces blast
+   radius, and avoids polluting public GitHub issue trackers with intermediate
+   agent state.
 
-### GitHub is the public source of truth for releases
+4. **GitHub is the release forge.** `release-please` and the public changelog
+   live on GitHub. Gitea receives mirrored tags after releases are cut.
+   Human-facing artefacts (releases, binaries, public issues) stay on GitHub.
 
-`release-please` runs only on GitHub. Gitea receives tags mirrored from GitHub
-after releases are cut (B21). This keeps the changelog and semantic versioning
-tied to the public repository where external contributors can see it.
+5. **Dual-registration is migration scaffolding, not operational state.**
+   The multi-project capability in `server.yaml` exists to support migration
+   windows where a project is moving between forges. It is not intended as a
+   steady-state dual-tracker configuration.
 
-### Gitea is the runtime forge for autonomous work
+6. **No issue sync.** There is no synchronisation mechanism between GitHub and
+   Gitea issue trackers. Migration is a one-time, one-direction operation.
+   Attempting to keep both in sync creates divergence and maintenance burden.
 
-The dispatcher preferentially operates against Gitea during the autonomous
-development phase. GitHub issues are migrated to Gitea via `migrate-issues.py`
-so the full backlog is available. Finished work is merged to GitHub via the
-normal PR flow (dual-push remote, configured in B24).
+7. **The forge abstraction is the stability guarantee.** Switching a project
+   from GitHub to Gitea (or any future forge) requires only a `server.yaml`
+   change and a new forge adapter if needed. No dispatcher, agent, or MCP tool
+   logic changes.
 
 ### Authentication
 
-Gitea uses Bearer token auth. The token is stored in `GITEA_TOKEN` environment
-variable or per-project `gitea_token` field in `server.yaml`. The token for
-`samverk-admin` on the self-hosted instance is provisioned separately and not
-committed to the repository.
+Gitea uses Bearer token auth. The token is sourced from the `GITEA_TOKEN`
+environment variable or the per-project `gitea_token` field in `server.yaml`.
+GitHub projects use `GITHUB_TOKEN`. Neither token is committed to the
+repository.
+
+The MCP handler no longer requires `SAMVERK_GITHUB_OWNER` or
+`SAMVERK_GITHUB_REPO` environment variables to initialise. These were a
+bootstrap workaround before the handler was decoupled from the GitHub default
+project (PR #644). They can be removed from all deployments.
 
 ## Consequences
 
 **Positive:**
 
-- Dispatcher blast radius is contained to the LAN Gitea instance.
-- GitHub remains clean and human-readable.
-- Infrastructure is portable — replacing Gitea with another forge only
-  requires implementing a new `IssueTracker` adapter.
-- `server.yaml` dual-entry model generalises to N-forge without code changes.
+- Operational model matches actual usage — no confusion about which forge is
+  the source of truth for a given project.
+- No issue sync maintenance burden.
+- MCP handler boots cleanly with Gitea-only configuration.
+- Infrastructure is portable — switching forges requires only a config change.
 
 **Negative:**
 
-- Issue state must be kept in sync across forges (manual migration or scripted).
-  Divergence is possible if sync is missed.
-- Two forges means two sets of labels, milestones, and webhooks to maintain.
-- The Gitea instance is a single point of failure for autonomous operation
-  (mitigated by fallback to GitHub mode via config change).
+- Projects on GitHub that want autonomous dispatcher operation must be migrated
+  to Gitea or accept the higher blast radius.
+- No automatic mirroring of GitHub issues to Gitea; migration is manual.
+
+## Revision History
+
+| Date | Change |
+|------|--------|
+| 2026-03-08 | Initial: dual-forge operational model, dual-registration, issue sync concept |
+| 2026-03-17 | Revised to single-forge-per-project; removed issue sync; added 7 principles; removed bootstrap env var requirement (#644) |
 
 ## Related
 
 - [ADR-013: Forge Abstraction](ADR-013-forge-abstraction.md)
 - [ADR-019: Self-Hosted First](ADR-019-self-hosted-first.md)
 - [docs/gitea-migration-plan.md](../gitea-migration-plan.md)
-- [docs/gitea-actions-compatibility.md](../gitea-actions-compatibility.md)
-- [B-track issues #256–#283](https://github.com/HerbHall/samverk/milestone/5)
