@@ -155,9 +155,13 @@ func serveCmd() *cobra.Command {
 				}
 			}
 
-			// Wire GitHub forge if credentials are available.
+			// Wire forge clients and MCP handler.
+			// The MCP handler and project registry are always created; GitHub env
+			// vars are only required to register a GitHub default project.
 			var tracker forge.IssueTracker
+			var repoReader forge.RepoReader
 			var mcpHandler *internalmcp.Handler
+
 			token := os.Getenv("GITHUB_TOKEN")
 			if owner == "" {
 				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
@@ -165,29 +169,27 @@ func serveCmd() *cobra.Command {
 			if repo == "" {
 				repo = os.Getenv("SAMVERK_GITHUB_REPO")
 			}
+
+			// Load autonomy policy for tier enforcement.
+			policyCfg, policyErr := autonomy.LoadOrDefault(".")
+			if policyErr != nil {
+				logger.Warn("could not load autonomy config, using defaults", zap.Error(policyErr))
+				policyCfg = autonomy.DefaultConfig()
+			}
+			policy := autonomy.NewPolicy(policyCfg)
+
+			// Build project registry unconditionally.
+			registry := internalmcp.NewProjectRegistry()
+
+			// Register default GitHub project only when all env vars are present.
+			var ghDefaultClient *github.Client
+			var httpClient *http.Client
 			if token != "" && owner != "" && repo != "" {
 				ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-				httpClient := oauth2.NewClient(ctx, ts)
-				ghClient := github.New(owner, repo, httpClient)
-				tracker = ghClient
-
-				// Load autonomy policy for tier enforcement.
-				policyCfg, policyErr := autonomy.LoadOrDefault(".")
-				if policyErr != nil {
-					logger.Warn("could not load autonomy config, using defaults", zap.Error(policyErr))
-					policyCfg = autonomy.DefaultConfig()
-				}
-				policy := autonomy.NewPolicy(policyCfg)
-
-				// The GitHub Client implements both IssueTracker and RepoReader.
-				var repoReader forge.RepoReader = ghClient
-				mcpHandler = internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
-				mcpHandler.SetPRManager(ghClient)
-
-				// Wire multi-project support.
-				registry := internalmcp.NewProjectRegistry()
-
-				// Register the default project from --owner/--repo flags.
+				httpClient = oauth2.NewClient(ctx, ts)
+				ghDefaultClient = github.New(owner, repo, httpClient)
+				tracker = ghDefaultClient
+				repoReader = ghDefaultClient
 				defaultProject := &internalmcp.Project{
 					Name:      repo,
 					Owner:     owner,
@@ -195,86 +197,112 @@ func serveCmd() *cobra.Command {
 					Phase:     "development",
 					Tracker:   tracker,
 					Reader:    repoReader,
-					PRManager: ghClient,
+					PRManager: ghDefaultClient,
 				}
 				if regErr := registry.Register(defaultProject); regErr != nil {
 					logger.Warn("could not register default project", zap.Error(regErr))
 				}
+				logger.Info("GitHub default project registered",
+					zap.String("owner", owner), zap.String("repo", repo))
+			} else {
+				logger.Info("no GitHub default project (GITHUB_TOKEN/SAMVERK_GITHUB_OWNER/SAMVERK_GITHUB_REPO not set)")
+			}
 
-				// Load additional projects from config file if it exists.
-				if projectsConfig != "" {
-					if configs, loadErr := internalmcp.LoadProjectConfig(projectsConfig); loadErr == nil {
-						for i := range configs {
-							pc := &configs[i]
-							// Skip if already registered as the default.
-							if pc.Name == repo && pc.Owner == owner && pc.Repo == repo {
+			// Load projects from config file unconditionally.
+			if projectsConfig != "" {
+				if configs, loadErr := internalmcp.LoadProjectConfig(projectsConfig); loadErr == nil {
+					for i := range configs {
+						pc := &configs[i]
+						// Skip if already registered as the default.
+						if pc.Name == repo && pc.Owner == owner && pc.Repo == repo {
+							continue
+						}
+
+						var p *internalmcp.Project
+						if pc.Forge == "gitea" {
+							// Resolve token: config field takes precedence, then env var.
+							giteaToken := pc.GiteaToken
+							if giteaToken == "" {
+								giteaToken = os.Getenv("GITEA_TOKEN")
+							}
+							gtClient, gtErr := giteaadapter.New(pc.GiteaURL, giteaToken, pc.Owner, pc.Repo)
+							if gtErr != nil {
+								logger.Warn("could not create Gitea client for project",
+									zap.String("name", pc.Name), zap.Error(gtErr))
 								continue
 							}
-
-							var p *internalmcp.Project
-							if pc.Forge == "gitea" {
-								// Resolve token: config field takes precedence, then env var.
-								giteaToken := pc.GiteaToken
-								if giteaToken == "" {
-									giteaToken = os.Getenv("GITEA_TOKEN")
-								}
-								gtClient, gtErr := giteaadapter.New(pc.GiteaURL, giteaToken, pc.Owner, pc.Repo)
-								if gtErr != nil {
-									logger.Warn("could not create Gitea client for project",
-										zap.String("name", pc.Name), zap.Error(gtErr))
-									continue
-								}
-								p = &internalmcp.Project{
-									Name:      pc.Name,
-									Owner:     pc.Owner,
-									Repo:      pc.Repo,
-									Phase:     pc.Phase,
-									Tags:      pc.Tags,
-									Tracker:   gtClient,
-									Reader:    gtClient,
-									PRManager: gtClient,
-								}
-								logger.Info("registered Gitea project from config",
-									zap.String("name", pc.Name), zap.String("owner", pc.Owner), zap.String("repo", pc.Repo), zap.String("url", pc.GiteaURL))
-							} else {
-								// Default: GitHub project.
-								ghExtra := github.New(pc.Owner, pc.Repo, httpClient)
-								p = &internalmcp.Project{
-									Name:      pc.Name,
-									Owner:     pc.Owner,
-									Repo:      pc.Repo,
-									Phase:     pc.Phase,
-									Tags:      pc.Tags,
-									Tracker:   ghExtra,
-									Reader:    ghExtra,
-									PRManager: ghExtra,
-								}
-								logger.Info("registered GitHub project from config",
-									zap.String("name", pc.Name), zap.String("owner", pc.Owner), zap.String("repo", pc.Repo))
+							p = &internalmcp.Project{
+								Name:      pc.Name,
+								Owner:     pc.Owner,
+								Repo:      pc.Repo,
+								Phase:     pc.Phase,
+								Tags:      pc.Tags,
+								Tracker:   gtClient,
+								Reader:    gtClient,
+								PRManager: gtClient,
 							}
-
-							if regErr := registry.Register(p); regErr != nil {
-								logger.Warn("could not register project from config",
-									zap.String("name", pc.Name), zap.Error(regErr))
+							logger.Info("registered Gitea project from config",
+								zap.String("name", pc.Name), zap.String("owner", pc.Owner),
+								zap.String("repo", pc.Repo), zap.String("url", pc.GiteaURL))
+						} else {
+							// GitHub project from config requires httpClient.
+							if httpClient == nil {
+								logger.Warn("skipping GitHub project from config: GITHUB_TOKEN not set",
+									zap.String("name", pc.Name))
+								continue
 							}
+							ghExtra := github.New(pc.Owner, pc.Repo, httpClient)
+							p = &internalmcp.Project{
+								Name:      pc.Name,
+								Owner:     pc.Owner,
+								Repo:      pc.Repo,
+								Phase:     pc.Phase,
+								Tags:      pc.Tags,
+								Tracker:   ghExtra,
+								Reader:    ghExtra,
+								PRManager: ghExtra,
+							}
+							logger.Info("registered GitHub project from config",
+								zap.String("name", pc.Name), zap.String("owner", pc.Owner), zap.String("repo", pc.Repo))
 						}
-					} else if !os.IsNotExist(loadErr) {
-						logger.Warn("could not load projects config",
-							zap.String("path", projectsConfig), zap.Error(loadErr))
-					}
-				}
 
-				mcpHandler.SetProjects(registry)
-				mcpHandler.SetWorkCoordinator(internalmcp.NewForgeWorkCoordinator(registry, logger))
-				if st != nil {
-					poolM, dispM := api.NewStoreBackedMetrics(st)
-					mcpHandler.SetMetrics(poolM, dispM, metrics.NewSystemCollector())
-				} else {
-					mcpHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+						if regErr := registry.Register(p); regErr != nil {
+							logger.Warn("could not register project from config",
+								zap.String("name", pc.Name), zap.Error(regErr))
+						}
+					}
+				} else if !os.IsNotExist(loadErr) {
+					logger.Warn("could not load projects config",
+						zap.String("path", projectsConfig), zap.Error(loadErr))
 				}
-				if st != nil {
-					mcpHandler.SetScalingEventReader(st)
+			}
+
+			// If no GitHub default, fall back to first registry project as the active
+			// tracker. This makes the server functional with Gitea-only config.
+			if tracker == nil {
+				if projects := registry.List(); len(projects) > 0 {
+					tracker = projects[0].Tracker
+					repoReader = projects[0].Reader
+					logger.Info("using first project as default tracker",
+						zap.String("name", projects[0].Name))
 				}
+			}
+
+			// Always create the MCP handler with the resolved tracker.
+			mcpHandler = internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
+			if ghDefaultClient != nil {
+				mcpHandler.SetPRManager(ghDefaultClient)
+			}
+			mcpHandler.SetProjects(registry)
+			mcpHandler.SetWorkCoordinator(internalmcp.NewForgeWorkCoordinator(registry, logger))
+			if st != nil {
+				poolM, dispM := api.NewStoreBackedMetrics(st)
+				mcpHandler.SetMetrics(poolM, dispM, metrics.NewSystemCollector())
+			} else {
+				mcpHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+			}
+			if st != nil {
+				mcpHandler.SetScalingEventReader(st)
 			}
 
 			// Wire REST API handler for dashboard.
@@ -347,13 +375,10 @@ func serveCmd() *cobra.Command {
 
 			// Wire worker lister from API into MCP digest so the get_digest tool
 			// shows registered PC agent workers in the RUNTIME METRICS section.
-			if mcpHandler != nil {
-				mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
-				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
-				logger.Info("MCP handler enabled", zap.String("owner", owner), zap.String("repo", repo))
-			} else {
-				logger.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
-			}
+			mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
+			cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
+			logger.Info("MCP handler enabled",
+				zap.String("owner", owner), zap.String("repo", repo))
 
 			s := server.New(cfg, logger)
 			logger.Info("starting samverk server", zap.String("addr", addr))
