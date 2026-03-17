@@ -17,6 +17,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/api"
+	"github.com/herbhall/samverk/internal/docaudit"
 	"github.com/herbhall/samverk/internal/hostmetrics"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/cost"
@@ -74,6 +75,7 @@ func run() int {
 	root.AddCommand(keyCmd())
 	root.AddCommand(statusCmd())
 	root.AddCommand(wakeCmd())
+	root.AddCommand(docAuditCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -1079,6 +1081,51 @@ func wakeCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&providersConfigWake, "providers-config", ".samverk/providers.yaml", "Path to provider registry YAML config")
+	return cmd
+}
+
+func docAuditCmd() *cobra.Command {
+	var repoRoot string
+
+	cmd := &cobra.Command{
+		Use:   "doc-audit",
+		Short: "Detect documentation drift (stale docs, broken links, missing files)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a := docaudit.New(repoRoot)
+			findings, err := a.Run()
+			if err != nil {
+				return fmt.Errorf("doc audit: %w", err)
+			}
+
+			if len(findings) == 0 {
+				_, _ = fmt.Fprintln(os.Stdout, "No documentation issues found.")
+				return nil
+			}
+
+			// Print findings as a table.
+			_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", "SEVERITY", "FILE", "MESSAGE")
+			_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", "--------", "----------------------------------------", "-------")
+			hasError := false
+			for i := range findings {
+				f := &findings[i]
+				loc := f.File
+				if f.Line > 0 {
+					loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+				}
+				_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", string(f.Severity), loc, f.Message)
+				if f.Severity == docaudit.SeverityError {
+					hasError = true
+				}
+			}
+
+			if hasError {
+				return fmt.Errorf("found %d documentation issue(s)", len(findings))
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&repoRoot, "root", ".", "Repository root directory")
 	return cmd
 }
 
