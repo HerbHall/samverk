@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.18](https://github.com/HerbHall/samverk/compare/v0.1.17...v0.1.18) (2026-03-17)
+
+
+### Features
+
+* add doc-audit CLI for documentation drift detection ([#467](https://github.com/HerbHall/samverk/issues/467)) ([#596](https://github.com/HerbHall/samverk/issues/596)) ([d759fd4](https://github.com/HerbHall/samverk/commit/d759fd4aa50a5b76409cec7683fe6c0580eea2f1))
+* add Gitea Actions deploy workflow with CI gate ([#603](https://github.com/HerbHall/samverk/issues/603)) ([d310235](https://github.com/HerbHall/samverk/commit/d310235fa4e8dba0c7e5b29a9f876c978ef2382f))
+* add provider audit CLI with health checks and SQLite persistence ([#444](https://github.com/HerbHall/samverk/issues/444)) ([#597](https://github.com/HerbHall/samverk/issues/597)) ([66a9e3d](https://github.com/HerbHall/samverk/commit/66a9e3d1e83a250a0a1a131d4363955515f825a2))
+* enhanced Agents page with per-agent stats and trending ([#590](https://github.com/HerbHall/samverk/issues/590)) ([#595](https://github.com/HerbHall/samverk/issues/595)) ([3413e6c](https://github.com/HerbHall/samverk/commit/3413e6cc5f20507370cc5e518af873ade59d5a9b))
+
+
+### Bug Fixes
+
+* remove OAuth endpoints and BearerAuth from MCP handler ([#601](https://github.com/HerbHall/samverk/issues/601)) ([675ac75](https://github.com/HerbHall/samverk/commit/675ac7527dd2534fccfec44f9a572e2d5f0b8313)), closes [#600](https://github.com/HerbHall/samverk/issues/600)
+* remove OAuth, add MCP-only listener, fix Host header rejection ([#604](https://github.com/HerbHall/samverk/issues/604)) ([d896936](https://github.com/HerbHall/samverk/commit/d8969365e2db609fcaa9aab2cfa991b5c5a4d0b3)), closes [#600](https://github.com/HerbHall/samverk/issues/600)
+
 ## [0.1.17](https://github.com/HerbHall/samverk/compare/v0.1.16...v0.1.17) (2026-03-16)
 
 
