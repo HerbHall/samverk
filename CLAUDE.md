@@ -146,7 +146,7 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 
 - **Proxmox host:** `root@192.168.1.203` (SSH key auth configured)
 - **Samverk container:** CT 202 `root@192.168.1.162:8080` (SSH key auth)
-- **Staging container:** CT 203 `root@192.168.1.199:8080`
+- **Staging container:** CT 203 `root@192.168.1.199:8080` (STOPPED -- decommissioned 2026-03-17, spin up if needed)
 - **Gitea instance:** CT 200 `192.168.1.160:3000` (`gitea.herbhall.net`) -- 40GB disk
 - **Ollama VM 300:** `192.168.1.207:11434` (RTX 3090 Ti, qwen2.5-coder:14b)
 - **Ollama HDH-NZXT:** `192.168.1.202:11434` (RTX 5090, qwen3-coder:30b)
