@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.19](https://github.com/HerbHall/samverk/compare/v0.1.18...v0.1.19) (2026-03-17)
+
+
+### Features
+
+* add explore-before-code planning step to agent workflow ([#614](https://github.com/HerbHall/samverk/issues/614)) ([0b502a9](https://github.com/HerbHall/samverk/commit/0b502a95cdd7aa2481a079d4ea3052e4b118772d))
+* read Copilot review feedback before auto-merge ([#608](https://github.com/HerbHall/samverk/issues/608)) ([#610](https://github.com/HerbHall/samverk/issues/610)) ([dafeffc](https://github.com/HerbHall/samverk/commit/dafeffc966ee53eb68e4f8331a1592ecef088f82))
+
+
+### Bug Fixes
+
+* improve Claude CLI timeout detection and provider failover ([#606](https://github.com/HerbHall/samverk/issues/606)) ([#611](https://github.com/HerbHall/samverk/issues/611)) ([3534230](https://github.com/HerbHall/samverk/commit/3534230e6a9957b1f7600f7da1671cb4d9fa674e))
+* restrict Ollama to triage-only and add output validation guard ([#613](https://github.com/HerbHall/samverk/issues/613)) ([e4559fa](https://github.com/HerbHall/samverk/commit/e4559fa2f3bc66e86ec2d9d02835755678e128c8))
+
 ## [0.1.18](https://github.com/HerbHall/samverk/compare/v0.1.17...v0.1.18) (2026-03-17)
 
 
