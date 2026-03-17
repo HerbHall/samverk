@@ -29,7 +29,7 @@ Decisions are recorded as ADR files in this directory.
 | [023](ADR-023-per-project-repos.md) | Per-Project Repos with Coordination Layer | Accepted |
 | [027](ADR-027-failure-recovery.md) | Failure Recovery and State Reconciliation | Proposed |
 | [030](ADR-030-cross-model-qa.md) | Cross-Model QA Validation | Proposed |
-| [031](ADR-031-dual-forge.md) | Dual-Forge Architecture (GitHub + Gitea) | Accepted |
+| [031](ADR-031-dual-forge-operational-model.md) | Single-Forge-Per-Project Model | Revised |
 | [032](ADR-032-adaptive-worker-scaling.md) | Adaptive Worker Scaling | Accepted |
 | [033](ADR-033-pc-agent-worker-node.md) | PC Agent Worker Node with Isolated Workspaces | Accepted |
 
