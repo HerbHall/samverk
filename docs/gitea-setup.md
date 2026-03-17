@@ -10,7 +10,7 @@ Self-hosted Gitea instance for Samverk forge adapter development and testing.
 | Container ID | 200 (LXC, Debian 12, unprivileged) |
 | Container IP | 192.168.1.160 |
 | Gitea URL | `http://192.168.1.160:3000` |
-| Gitea Version | 1.23.7 |
+| Gitea Version | 1.25.5 |
 | Database | SQLite3 |
 | Auto-start | Yes (onboot=1) |
 
