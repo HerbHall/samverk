@@ -41,8 +41,6 @@ type Server struct {
 
 	mu         sync.Mutex
 	listenAddr string
-
-	oauthCodes oauthCodeStore // short-lived authorization codes for OAuth 2.1 bridge
 }
 
 // New creates a new Server with routes registered.
@@ -130,18 +128,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
-	// OAuth 2.1 endpoints -- unauthenticated, required by Claude mobile MCP Custom Connector.
-	s.mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.handleOAuthDiscovery)
-	s.mux.HandleFunc("GET /oauth/authorize", s.handleOAuthAuthorize)
-	s.mux.HandleFunc("POST /oauth/token", s.handleOAuthToken)
-	s.mux.HandleFunc("POST /oauth/revoke", s.handleOAuthRevoke)
-
 	if s.cfg.MCPHandler != nil {
-		handler := s.cfg.MCPHandler
-		if s.cfg.AuthToken != "" || s.cfg.KeyStore != nil {
-			handler = BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)(handler)
-		}
-		s.mux.Handle("POST /mcp", handler)
+		// MCP endpoint is unauthenticated -- security is handled by
+		// Cloudflare Tunnel (same model as Synapset MCP). OAuth 2.1
+		// endpoints were removed because Claude.ai probes for them and
+		// attempts the flow, which fails; without them Claude.ai falls
+		// back to unauthenticated mode and connects successfully.
+		s.mux.Handle("POST /mcp", s.cfg.MCPHandler)
 	} else {
 		s.mux.HandleFunc("POST /mcp", s.handleNotImplemented)
 	}
