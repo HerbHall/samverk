@@ -133,6 +133,51 @@ func (r *Registry) Get(ctx context.Context, agentType string) (Provider, string,
 	return nil, "", ErrNoHealthyProvider
 }
 
+// GetAfter returns the first healthy provider in the routing chain that comes
+// after the named provider. This enables timeout failover: when a provider
+// times out, the pool can retry with the next one in the chain without
+// re-checking providers already tried.
+// Returns ErrNoHealthyProvider if no subsequent healthy provider exists.
+func (r *Registry) GetAfter(ctx context.Context, agentType, afterProvider string) (p Provider, model string, err error) {
+	chain, ok := r.routing[agentType]
+	if !ok {
+		chain, ok = r.routing["default"]
+		if !ok {
+			return nil, "", ErrNoHealthyProvider
+		}
+	}
+
+	// Find afterProvider in the chain, then check subsequent entries.
+	found := false
+	for _, name := range chain {
+		if !found {
+			if name == afterProvider {
+				found = true
+			}
+			continue
+		}
+		prov, exists := r.providers[name]
+		if !exists {
+			continue
+		}
+		if prov.Healthy(ctx) {
+			r.logger.Info("failover provider selected",
+				zap.String("agent_type", agentType),
+				zap.String("after", afterProvider),
+				zap.String("provider", name),
+				zap.String("model", r.models[name]),
+			)
+			return prov, r.models[name], nil
+		}
+		r.logger.Warn("failover provider unhealthy, trying next",
+			zap.String("agent_type", agentType),
+			zap.String("provider", name),
+		)
+	}
+
+	return nil, "", ErrNoHealthyProvider
+}
+
 // Routing returns a copy of the routing table mapping chain names to provider names.
 func (r *Registry) Routing() map[string][]string {
 	out := make(map[string][]string, len(r.routing))
@@ -142,6 +187,18 @@ func (r *Registry) Routing() map[string][]string {
 		out[k] = chain
 	}
 	return out
+}
+
+// NameOf returns the registry name for a given Provider instance, or empty
+// string if not found. Used by the pool to identify which provider timed
+// out for failover via GetAfter.
+func (r *Registry) NameOf(p Provider) string {
+	for name, prov := range r.providers {
+		if prov == p {
+			return name
+		}
+	}
+	return ""
 }
 
 // ProviderByName returns the raw Provider instance for the given name,
