@@ -674,3 +674,97 @@ func TestSetProject_NoRegistry(t *testing.T) {
 		t.Error("expected isError=true when registry is nil")
 	}
 }
+
+func TestProjectRegistry_PhaseFor(t *testing.T) {
+	reg := internalmcp.NewProjectRegistry()
+	_ = reg.Register(&internalmcp.Project{Name: "alpha", Owner: "org", Repo: "alpha", Phase: "development"})
+	_ = reg.Register(&internalmcp.Project{Name: "beta", Owner: "org", Repo: "beta", Phase: "maintenance"})
+
+	tests := []struct {
+		name      string
+		owner     string
+		repo      string
+		wantPhase string
+		wantFound bool
+	}{
+		{"found development", "org", "alpha", "development", true},
+		{"found maintenance", "org", "beta", "maintenance", true},
+		{"not found", "org", "missing", "", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			phase, found := reg.PhaseFor(tc.owner, tc.repo)
+			if found != tc.wantFound {
+				t.Errorf("found = %v, want %v", found, tc.wantFound)
+			}
+			if phase != tc.wantPhase {
+				t.Errorf("phase = %q, want %q", phase, tc.wantPhase)
+			}
+		})
+	}
+}
+
+func TestProjectRegistry_SetPhase(t *testing.T) {
+	t.Run("valid transition in memory", func(t *testing.T) {
+		reg := internalmcp.NewProjectRegistry()
+		_ = reg.Register(&internalmcp.Project{Name: "alpha", Owner: "org", Repo: "alpha", Phase: "development"})
+
+		if err := reg.SetPhase("alpha", "maintenance"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		phase, found := reg.PhaseFor("org", "alpha")
+		if !found {
+			t.Fatal("project not found after SetPhase")
+		}
+		if phase != "maintenance" {
+			t.Errorf("phase = %q, want %q", phase, "maintenance")
+		}
+	})
+
+	t.Run("invalid phase rejected", func(t *testing.T) {
+		reg := internalmcp.NewProjectRegistry()
+		_ = reg.Register(&internalmcp.Project{Name: "alpha", Owner: "org", Repo: "alpha", Phase: "development"})
+
+		if err := reg.SetPhase("alpha", "bogus"); err == nil {
+			t.Fatal("expected error for invalid phase, got nil")
+		}
+	})
+
+	t.Run("unknown project rejected", func(t *testing.T) {
+		reg := internalmcp.NewProjectRegistry()
+
+		if err := reg.SetPhase("nonexistent", "maintenance"); err == nil {
+			t.Fatal("expected error for unknown project, got nil")
+		}
+	})
+
+	t.Run("persists to yaml file", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "server.yaml")
+
+		// Write a minimal server.yaml.
+		yaml := "projects:\n  - name: alpha\n    owner: org\n    repo: alpha\n    forge: github\n    phase: development\n"
+		if err := os.WriteFile(cfgPath, []byte(yaml), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+
+		reg := internalmcp.NewProjectRegistry()
+		reg.SetConfigPath(cfgPath)
+		_ = reg.Register(&internalmcp.Project{Name: "alpha", Owner: "org", Repo: "alpha", Phase: "development"})
+
+		if err := reg.SetPhase("alpha", "inactive"); err != nil {
+			t.Fatalf("SetPhase: %v", err)
+		}
+
+		// Verify the file was updated.
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if !strings.Contains(string(data), "phase: inactive") {
+			t.Errorf("config file does not contain 'phase: inactive':\n%s", data)
+		}
+	})
+}

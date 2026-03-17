@@ -267,11 +267,21 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		}()
 	}
 
-	// Start one event watcher per registered tracker.
+	// Start one event watcher per registered tracker, skipping inactive projects.
 	d.mu.Lock()
 	d.lastEventTime = time.Now()
 	d.mu.Unlock()
 	for i := range d.trackerEntries {
+		entry := d.trackerEntries[i]
+		if d.projects != nil {
+			if phase, found := d.projects.PhaseFor(entry.Owner, entry.Repo); found && phase == "inactive" {
+				d.logger.Info("skipping inactive project tracker",
+					zap.String("owner", entry.Owner),
+					zap.String("repo", entry.Repo),
+				)
+				continue
+			}
+		}
 		startWatcher(i)
 	}
 

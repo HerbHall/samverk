@@ -197,6 +197,21 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		return nil
 	}
 
+	// Phase gate: skip agent types not permitted for this project's lifecycle phase.
+	// The issue remains status:queued and will be re-evaluated when the phase changes.
+	if d.projects != nil {
+		if phase, found := d.projects.PhaseFor(owner, repo); found {
+			if !phaseAllowed(phase, agentType) {
+				d.logger.Info("agent type blocked by project phase, leaving queued",
+					zap.Int("issue", issue.Number),
+					zap.String("agent", string(agentType)),
+					zap.String("phase", phase),
+				)
+				return nil
+			}
+		}
+	}
+
 	// Check budget circuit breaker before any dispatching.
 	if d.circuitBreaker != nil && !d.circuitBreaker.AllowDispatch() {
 		d.logger.Warn("budget circuit open, not dispatching",

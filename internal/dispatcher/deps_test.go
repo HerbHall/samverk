@@ -16,11 +16,13 @@ import (
 // mockProjectResolver implements ProjectResolver for testing.
 type mockProjectResolver struct {
 	trackers map[string]forge.IssueTracker // key: "owner/repo"
+	phases   map[string]string             // key: "owner/repo" → phase
 }
 
 func newMockProjectResolver() *mockProjectResolver {
 	return &mockProjectResolver{
 		trackers: make(map[string]forge.IssueTracker),
+		phases:   make(map[string]string),
 	}
 }
 
@@ -28,9 +30,18 @@ func (r *mockProjectResolver) addProject(owner, repo string, tracker forge.Issue
 	r.trackers[owner+"/"+repo] = tracker
 }
 
+func (r *mockProjectResolver) addPhase(owner, repo, phase string) {
+	r.phases[owner+"/"+repo] = phase
+}
+
 func (r *mockProjectResolver) TrackerFor(owner, repo string) (forge.IssueTracker, bool) {
 	t, ok := r.trackers[owner+"/"+repo]
 	return t, ok
+}
+
+func (r *mockProjectResolver) PhaseFor(owner, repo string) (string, bool) {
+	phase, ok := r.phases[owner+"/"+repo]
+	return phase, ok
 }
 
 // issueBodyMixed builds a frontmatter body with mixed local and cross-project deps.

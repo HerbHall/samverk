@@ -17,6 +17,10 @@ type ProjectResolver interface {
 	// TrackerFor returns the IssueTracker for the given owner/repo pair.
 	// Returns nil, false if the project is not registered.
 	TrackerFor(owner, repo string) (forge.IssueTracker, bool)
+
+	// PhaseFor returns the lifecycle phase for the project matching the given
+	// owner/repo pair. Returns ("", false) if no matching project is found.
+	PhaseFor(owner, repo string) (string, bool)
 }
 
 // checkDependencies verifies all depends_on issues are done.
