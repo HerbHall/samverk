@@ -291,6 +291,85 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
+func TestIsBadOutput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		files []string
+		want  bool
+	}{
+		{
+			name:  "empty file list is not bad output",
+			files: nil,
+			want:  false,
+		},
+		{
+			name:  "only CLAUDE.md is bad output",
+			files: []string{"CLAUDE.md"},
+			want:  true,
+		},
+		{
+			name:  "only .claude/ files is bad output",
+			files: []string{".claude/settings.json", ".claude/CLAUDE.md"},
+			want:  true,
+		},
+		{
+			name:  "only .samverk/ files is bad output",
+			files: []string{".samverk/status.md"},
+			want:  true,
+		},
+		{
+			name:  "mixed CLAUDE.md and real code is not bad output",
+			files: []string{"CLAUDE.md", "internal/server/handler.go"},
+			want:  false,
+		},
+		{
+			name:  "real code files only is not bad output",
+			files: []string{"internal/agent/runner.go", "cmd/samverk/main.go"},
+			want:  false,
+		},
+		{
+			name:  "config files mix is bad output",
+			files: []string{"CLAUDE.md", ".claude/settings.json", ".github/workflows/ci.yml", ".gitignore"},
+			want:  true,
+		},
+		{
+			name:  "nested CLAUDE.md is bad output",
+			files: []string{"subdir/CLAUDE.md"},
+			want:  true,
+		},
+		{
+			name:  ".editorconfig only is bad output",
+			files: []string{".editorconfig"},
+			want:  true,
+		},
+		{
+			name:  "go file alongside config is not bad output",
+			files: []string{"CLAUDE.md", "main.go"},
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := IsBadOutput(tt.files)
+			if got != tt.want {
+				t.Errorf("IsBadOutput(%v) = %v, want %v", tt.files, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateWorkspaceOutput_NilForNoWorkDir(t *testing.T) {
+	t.Parallel()
+	result := ValidateWorkspaceOutput("", nil)
+	if result != nil {
+		t.Errorf("expected nil for empty workDir, got %+v", result)
+	}
+}
+
 // writeGoFiles creates a minimal Go module in dir with go.mod, main.go, and
 // optionally main_test.go (when testContent is non-empty).
 func writeGoFiles(t *testing.T, dir, goMod, mainContent, testContent string) {
