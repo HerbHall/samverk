@@ -313,7 +313,11 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 
 	resp, err := r.provider.Chat(ctx, req)
 	if err != nil {
-		r.failTask(ctx, task, fmt.Sprintf("provider error: %v", err))
+		failureClass := "provider_error"
+		if provider.IsRetryable(err) {
+			failureClass = "timeout"
+		}
+		r.failTaskWithClass(ctx, task, fmt.Sprintf("provider error: %v", err), failureClass)
 		return fmt.Errorf("provider chat: %w", err)
 	}
 
@@ -782,6 +786,12 @@ func (r *Runner) safeCtx(ctx context.Context) context.Context {
 // If the session has partial output, a CHECKPOINT comment is posted first so
 // that a retry can resume from where the previous attempt left off.
 func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
+	r.failTaskWithClass(ctx, task, errMsg, string(models.FailureClassUnknown))
+}
+
+// failTaskWithClass marks the session as failed, records a FailureEvent with
+// the given failure class, and posts an error comment on the issue.
+func (r *Runner) failTaskWithClass(ctx context.Context, task Task, errMsg, failureClass string) {
 	ctx = r.safeCtx(ctx)
 
 	// Attempt to save checkpoint from partial output.
@@ -791,6 +801,24 @@ func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
 		r.logger.Error("failed to update session on error",
 			zap.String("session_id", task.SessionID),
 			zap.String("error", err.Error()),
+		)
+	}
+
+	// Record structured failure event for analysis.
+	fe := &models.FailureEvent{
+		ID:           task.SessionID + "-fail",
+		IssueNumber:  task.Issue.Number,
+		SessionID:    task.SessionID,
+		FailureClass: models.FailureClass(failureClass),
+		ErrorMessage: errMsg,
+		AgentType:    string(task.AgentType),
+		Provider:     r.provider.Name(),
+		Timestamp:    time.Now(),
+	}
+	if saveErr := r.store.SaveFailureEvent(ctx, fe); saveErr != nil {
+		r.logger.Error("failed to save failure event",
+			zap.String("session_id", task.SessionID),
+			zap.String("error", saveErr.Error()),
 		)
 	}
 

@@ -28,10 +28,16 @@ const (
 	// oversized GitHub issue comments and avoid leaking unrelated terminal output.
 	maxErrOutputBytes = 2048
 
+	// startupTimeout is how long Chat waits for the first byte of output after
+	// spawning the process. If nothing arrives within this window, the process
+	// is assumed to have failed to start (e.g. OAuth hang, binary crash).
+	startupTimeout = 30 * time.Second
+
 	// staleOutputTimeout is how long Chat waits for new bytes before treating
 	// the process as hung. Must be shorter than the dispatcher heartbeat timeout.
-	// 60s balances fast hang detection with allowing slow first tool calls (30-40s).
-	staleOutputTimeout = 60 * time.Second
+	// 30s provides fast hang detection while still allowing brief pauses between
+	// tool calls (typically <15s).
+	staleOutputTimeout = 30 * time.Second
 
 	// streamBufSize is the read buffer for pipe-based streaming.
 	streamBufSize = 4096
@@ -188,6 +194,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	waitErr := cmd.Wait()
 
 	// Prefer stream errors (hung detection) over wait errors.
+	// ErrProviderTimeout is returned unwrapped so the pool can detect retryable errors.
 	if streamErr != nil {
 		snippet := output.String()
 		if len(snippet) > maxErrOutputBytes {
@@ -199,6 +206,10 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 			zap.Int("output_bytes", output.Len()),
 			zap.Error(streamErr),
 		)
+		// Preserve ErrProviderTimeout as the root so errors.As works for failover.
+		if provider.IsRetryable(streamErr) {
+			return nil, streamErr
+		}
 		return nil, fmt.Errorf("claude-cli: %w: output: %s", streamErr, strings.TrimSpace(snippet))
 	}
 	if waitErr != nil {
@@ -232,7 +243,12 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 // streamOutput reads from stdout and stderr concurrently, writing to output.
 // It fires onActivity on each read and cancels the context if no bytes arrive
-// within staleOutputTimeout (hung detection).
+// within the timeout window. Two phases:
+//   - Startup: waits startupTimeout for the first byte (fast-fail on launch issues)
+//   - Stale: after first byte, waits staleOutputTimeout between subsequent reads
+//
+// Returns *provider.ErrProviderTimeout on timeout so the pool can retry with
+// the next provider in the routing chain.
 func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, output *strings.Builder, stdout, stderr io.ReadCloser) error {
 	// Merge stdout and stderr via a pipe so we can read from a single source.
 	pr, pw := io.Pipe()
@@ -253,11 +269,14 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 	}()
 
 	buf := make([]byte, streamBufSize)
-	staleTimer := time.NewTimer(staleOutputTimeout)
-	defer staleTimer.Stop()
+
+	// Start with the startup timeout; switch to stale after first byte.
+	gotFirstByte := false
+	timer := time.NewTimer(startupTimeout)
+	defer timer.Stop()
 
 	for {
-		// Use a channel to make Read interruptible by the stale timer.
+		// Use a channel to make Read interruptible by the timer.
 		type readResult struct {
 			n   int
 			err error
@@ -271,20 +290,43 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-staleTimer.C:
+		case <-timer.C:
 			cancel() // kill the subprocess
-			return fmt.Errorf("hung: no output for %v", staleOutputTimeout)
+			timeoutType := provider.TimeoutStartup
+			dur := startupTimeout
+			if gotFirstByte {
+				timeoutType = provider.TimeoutStale
+				dur = staleOutputTimeout
+			}
+			c.logger.Error("claude-cli timeout",
+				zap.String("provider", c.Name()),
+				zap.String("model", c.model),
+				zap.String("timeout_type", string(timeoutType)),
+				zap.Duration("duration", dur),
+			)
+			return &provider.ErrProviderTimeout{
+				Provider:    c.Name(),
+				Model:       c.model,
+				TimeoutType: timeoutType,
+				Duration:    dur,
+			}
 		case res := <-ch:
 			if res.n > 0 {
 				output.Write(buf[:res.n])
-				// Reset stale timer — process is alive.
-				if !staleTimer.Stop() {
+				// Reset timer — process is alive.
+				if !timer.Stop() {
 					select {
-					case <-staleTimer.C:
+					case <-timer.C:
 					default:
 					}
 				}
-				staleTimer.Reset(staleOutputTimeout)
+				// After first byte, switch to stale output timeout.
+				if !gotFirstByte {
+					gotFirstByte = true
+					timer.Reset(staleOutputTimeout)
+				} else {
+					timer.Reset(staleOutputTimeout)
+				}
 				// Signal activity to the dispatcher heartbeat.
 				if c.onActivity != nil {
 					c.onActivity()
