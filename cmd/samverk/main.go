@@ -265,6 +265,7 @@ func serveCmd() *cobra.Command {
 				}
 
 				mcpHandler.SetProjects(registry)
+				mcpHandler.SetWorkCoordinator(internalmcp.NewForgeWorkCoordinator(registry, logger))
 				if st != nil {
 					poolM, dispM := api.NewStoreBackedMetrics(st)
 					mcpHandler.SetMetrics(poolM, dispM, metrics.NewSystemCollector())
