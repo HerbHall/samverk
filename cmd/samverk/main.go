@@ -271,6 +271,8 @@ func serveCmd() *cobra.Command {
 								zap.String("name", pc.Name), zap.Error(regErr))
 						}
 					}
+					// Record the config path so set_project_phase can persist phase changes.
+					registry.SetConfigPath(projectsConfig)
 				} else if !os.IsNotExist(loadErr) {
 					logger.Warn("could not load projects config",
 						zap.String("path", projectsConfig), zap.Error(loadErr))

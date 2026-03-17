@@ -35,9 +35,10 @@ type Project struct {
 
 // ProjectRegistry manages the set of available projects.
 type ProjectRegistry struct {
-	mu       sync.RWMutex
-	projects map[string]*Project
-	active   string // name of the currently active project
+	mu         sync.RWMutex
+	projects   map[string]*Project
+	active     string // name of the currently active project
+	configPath string // path to server.yaml for phase persistence (empty = no persistence)
 }
 
 // NewProjectRegistry creates a new empty project registry.
@@ -142,6 +143,98 @@ func (r *ProjectRegistry) TrackerFor(owner, repo string) (forge.IssueTracker, bo
 		}
 	}
 	return nil, false
+}
+
+// PhaseFor returns the lifecycle phase for the project matching the given
+// owner/repo pair. Returns ("", false) if no matching project is registered.
+// This method satisfies the dispatcher.ProjectResolver interface.
+func (r *ProjectRegistry) PhaseFor(owner, repo string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, p := range r.projects {
+		if p.Owner == owner && p.Repo == repo {
+			return p.Phase, true
+		}
+	}
+	return "", false
+}
+
+// SetConfigPath records the path to the server.yaml file so that SetPhase
+// can persist phase changes back to disk. Call this after loading configs.
+func (r *ProjectRegistry) SetConfigPath(path string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.configPath = path
+}
+
+// SetPhase updates the lifecycle phase of the named project in memory and, if
+// a config path is set, persists the change to the server.yaml file.
+// Returns an error if the project is not found or the phase is invalid.
+func (r *ProjectRegistry) SetPhase(name, phase string) error {
+	if !ValidPhases[phase] {
+		return fmt.Errorf("invalid phase %q: must be one of research, planning, design, development, deployed, maintenance, inactive", phase)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	p, exists := r.projects[name]
+	if !exists {
+		return fmt.Errorf("project %q not found", name)
+	}
+
+	oldPhase := p.Phase
+	p.Phase = phase
+
+	if r.configPath == "" || oldPhase == phase {
+		return nil
+	}
+
+	if err := r.persistPhase(name, phase); err != nil {
+		// Roll back in-memory update on persistence failure.
+		p.Phase = oldPhase
+		return fmt.Errorf("persist phase change for %q: %w", name, err)
+	}
+
+	return nil
+}
+
+// persistPhase reads the server.yaml file, updates the named project's phase,
+// and writes the file back. Must be called with r.mu held.
+func (r *ProjectRegistry) persistPhase(name, phase string) error {
+	data, err := os.ReadFile(r.configPath) //nolint:gosec // G304: path is from trusted CLI flag
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+
+	var cfg projectsFileConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	updated := false
+	for i := range cfg.Projects {
+		if cfg.Projects[i].Name == name {
+			cfg.Projects[i].Phase = phase
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		return fmt.Errorf("project %q not found in config file", name)
+	}
+
+	out, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(r.configPath, out, 0o600); err != nil { //nolint:gosec // G306: config file
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	return nil
 }
 
 // ActiveName returns the name of the currently active project.
