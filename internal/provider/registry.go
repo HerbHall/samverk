@@ -241,8 +241,8 @@ func ValidateRoutingConfig(cfg *RegistryConfig, logger *zap.Logger) []string {
 
 	// Build set of ollama provider names.
 	ollamaProviders := make(map[string]bool)
-	for name, pcfg := range cfg.Providers {
-		if pcfg.Type == "ollama" {
+	for name := range cfg.Providers {
+		if cfg.Providers[name].Type == "ollama" {
 			ollamaProviders[name] = true
 		}
 	}
