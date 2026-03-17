@@ -221,6 +221,58 @@ func (r *Registry) List(ctx context.Context) []ProviderInfo {
 	return infos
 }
 
+// codeGenChainNames lists routing chain names that should never contain
+// Ollama providers. Ollama models produce bad output on tool-use formatted
+// prompts -- they overwrite CLAUDE.md instead of implementing features.
+var codeGenChainNames = map[string]bool{
+	"default":  true,
+	"complex":  true,
+	"frontend": true,
+	"local":    true,
+}
+
+// ValidateRoutingConfig checks that Ollama providers are not present in
+// code-gen routing chains. Returns a list of warnings for each violation.
+// This is a soft validation -- it logs warnings but does not prevent startup.
+func ValidateRoutingConfig(cfg *RegistryConfig, logger *zap.Logger) []string {
+	if cfg == nil || logger == nil {
+		return nil
+	}
+
+	// Build set of ollama provider names.
+	ollamaProviders := make(map[string]bool)
+	for name, pcfg := range cfg.Providers {
+		if pcfg.Type == "ollama" {
+			ollamaProviders[name] = true
+		}
+	}
+
+	if len(ollamaProviders) == 0 {
+		return nil
+	}
+
+	var warnings []string
+	for chainName, chain := range cfg.Routing {
+		if !codeGenChainNames[chainName] {
+			continue
+		}
+		for _, providerName := range chain {
+			if ollamaProviders[providerName] {
+				msg := fmt.Sprintf(
+					"routing chain %q contains Ollama provider %q; Ollama models produce bad output on code-gen tasks (see KG#146)",
+					chainName, providerName,
+				)
+				warnings = append(warnings, msg)
+				logger.Warn("ollama in code-gen chain",
+					zap.String("chain", chainName),
+					zap.String("provider", providerName),
+				)
+			}
+		}
+	}
+	return warnings
+}
+
 // LoadRegistryConfig reads and parses a YAML config file.
 func LoadRegistryConfig(path string) (*RegistryConfig, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: path is from trusted config, not user input
@@ -269,6 +321,8 @@ func LoadRegistry(path string, factory ProviderFactory, logger *zap.Logger) (*Re
 		logger.Info("routing table loaded",
 			zap.Int("chain_count", len(cfg.Routing)),
 		)
+		// Warn about Ollama providers in code-gen chains (soft validation).
+		ValidateRoutingConfig(cfg, logger)
 	}
 
 	return reg, nil

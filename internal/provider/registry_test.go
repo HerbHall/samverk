@@ -5,7 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 // mockProvider is a test double implementing Provider.
@@ -459,6 +462,92 @@ func TestNameOf_NotFound(t *testing.T) {
 	got := reg.NameOf(p)
 	if got != "" {
 		t.Errorf("NameOf: got %q, want empty", got)
+	}
+}
+
+func TestValidateRoutingConfig_OllamaInCodeGenChain(t *testing.T) {
+	t.Parallel()
+
+	cfg := &RegistryConfig{
+		Providers: map[string]ProviderConfig{
+			"claude-sonnet": {Type: "claude-cli", DefaultModel: "claude-sonnet-4-6"},
+			"ollama-coder":  {Type: "ollama", DefaultModel: "qwen2.5-coder:14b"},
+		},
+		Routing: map[string][]string{
+			"default": {"ollama-coder", "claude-sonnet"},
+			"triage":  {"ollama-coder", "claude-sonnet"},
+		},
+	}
+
+	logger, _ := zap.NewDevelopment()
+	warnings := ValidateRoutingConfig(cfg, logger)
+
+	// Should warn about ollama in "default" but not in "triage".
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "default") {
+		t.Errorf("warning should mention 'default' chain, got: %s", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "ollama-coder") {
+		t.Errorf("warning should mention 'ollama-coder', got: %s", warnings[0])
+	}
+}
+
+func TestValidateRoutingConfig_NoOllamaProviders(t *testing.T) {
+	t.Parallel()
+
+	cfg := &RegistryConfig{
+		Providers: map[string]ProviderConfig{
+			"claude-sonnet": {Type: "claude-cli", DefaultModel: "claude-sonnet-4-6"},
+		},
+		Routing: map[string][]string{
+			"default": {"claude-sonnet"},
+		},
+	}
+
+	logger, _ := zap.NewDevelopment()
+	warnings := ValidateRoutingConfig(cfg, logger)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateRoutingConfig_OllamaInTriageOnly(t *testing.T) {
+	t.Parallel()
+
+	cfg := &RegistryConfig{
+		Providers: map[string]ProviderConfig{
+			"claude-sonnet": {Type: "claude-cli", DefaultModel: "claude-sonnet-4-6"},
+			"ollama-coder":  {Type: "ollama", DefaultModel: "qwen2.5-coder:7b"},
+		},
+		Routing: map[string][]string{
+			"default": {"claude-sonnet"},
+			"triage":  {"ollama-coder", "claude-sonnet"},
+			"qc":      {"ollama-coder", "claude-sonnet"},
+		},
+	}
+
+	logger, _ := zap.NewDevelopment()
+	warnings := ValidateRoutingConfig(cfg, logger)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for triage/qc-only ollama, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateRoutingConfig_NilInputs(t *testing.T) {
+	t.Parallel()
+
+	// Nil config.
+	warnings := ValidateRoutingConfig(nil, zap.NewNop())
+	if warnings != nil {
+		t.Errorf("expected nil for nil config, got %v", warnings)
+	}
+
+	// Nil logger.
+	warnings = ValidateRoutingConfig(&RegistryConfig{}, nil)
+	if warnings != nil {
+		t.Errorf("expected nil for nil logger, got %v", warnings)
 	}
 }
 

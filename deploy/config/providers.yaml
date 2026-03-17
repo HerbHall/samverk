@@ -26,8 +26,9 @@ providers:
 # Routing chains: tried in order, first healthy provider wins.
 # Non-default chains include claude-sonnet as a fallback.
 routing:
-  # Fast, cheap: label changes, status updates, simple research
-  triage:   [claude-haiku, claude-sonnet]
+  # Fast, cheap: label changes, status updates, simple research.
+  # Ollama is safe here -- triage tasks are text-only, no code-gen.
+  triage:   [ollama-coder, claude-haiku, claude-sonnet]
 
   # Default workhorse: most code-gen, research, docs, tests
   default:  [claude-sonnet]
@@ -35,8 +36,9 @@ routing:
   # Heavy lifting: architectural decisions, complex refactors
   complex:  [claude-opus, claude-sonnet]
 
-  # Free local inference: boilerplate code-gen, simple edits
-  local:    [ollama-coder, claude-sonnet]
+  # Free local inference: triage and text-only tasks only.
+  # Ollama models produce bad output on code-gen (overwrite CLAUDE.md, see KG#146).
+  local:    [claude-sonnet]
 
   # Frontend SPA work
   frontend: [claude-sonnet]
