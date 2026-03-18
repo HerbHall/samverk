@@ -180,7 +180,7 @@ func (w *Watcher) checkReviewComments(ctx context.Context, pr *forge.PullRequest
 	}
 
 	// Filter for unresolved actionable comments from trusted reviewers or Copilot.
-	var blocking []forge.ReviewComment
+	blocking := make([]forge.ReviewComment, 0, len(comments))
 	for i := range comments {
 		c := comments[i]
 		if c.Resolved {
