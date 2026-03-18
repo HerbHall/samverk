@@ -54,6 +54,9 @@ func (m *mockTracker) Unassign(_ context.Context, _ int, _ string) error { panic
 func (m *mockTracker) Watch(_ context.Context, _ func(forge.Event)) error {
 	panic("not implemented")
 }
+func (m *mockTracker) SearchIssues(_ context.Context, _ *forge.SearchOptions) ([]*forge.Issue, error) {
+	panic("not implemented")
+}
 
 func TestGenerate(t *testing.T) {
 	tests := []struct {

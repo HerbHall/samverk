@@ -214,6 +214,10 @@ func (m *mockTracker) Watch(ctx context.Context, handler func(forge.Event)) erro
 	return ctx.Err()
 }
 
+func (m *mockTracker) SearchIssues(_ context.Context, _ *forge.SearchOptions) ([]*forge.Issue, error) {
+	return nil, nil
+}
+
 // --- Mock autonomy policy ---
 
 type mockPolicy struct {
