@@ -65,7 +65,7 @@ func (c *Client) GetDiff(ctx context.Context, base, head string) (string, error)
 	req.Header.Set("Authorization", "token "+c.token)
 	req.Header.Set("Accept", "text/plain")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is from trusted baseURL config
 	if err != nil {
 		return "", fmt.Errorf("gitea: diff request: %w", err)
 	}
