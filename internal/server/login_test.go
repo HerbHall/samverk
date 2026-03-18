@@ -33,16 +33,16 @@ func noRedirectClient() *http.Client {
 }
 
 // postForm performs a context-aware POST form request.
-func postForm(t *testing.T, client *http.Client, url string, data url.Values) *http.Response {
+func postForm(t *testing.T, client *http.Client, target string, data url.Values) *http.Response {
 	t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, target, strings.NewReader(data.Encode()))
 	if err != nil {
 		t.Fatalf("new POST request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := client.Do(req)
 	if err != nil {
-		t.Fatalf("POST %s: %v", url, err)
+		t.Fatalf("POST %s: %v", target, err)
 	}
 	return resp
 }
