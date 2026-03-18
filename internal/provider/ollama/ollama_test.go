@@ -3,6 +3,7 @@ package ollama
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -382,4 +383,81 @@ func TestCompileTimeInterfaceCheck(t *testing.T) {
 	// If the var _ provider.Provider = (*Client)(nil) line compiles,
 	// Client satisfies the Provider interface.
 	var _ provider.Provider = (*Client)(nil)
+}
+
+func TestChatDeadlineExceeded_WrapsAsErrProviderTimeout(t *testing.T) {
+	// Use a server that delays longer than the context deadline.
+	// The handler writes nothing, so the client sees the context expire.
+	done := make(chan struct{})
+	defer close(done)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/chat", func(w http.ResponseWriter, _ *http.Request) {
+		// Wait until test cleanup signals us to stop, or a generous timeout.
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := NewWithTimeout(srv.URL, 10*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := c.Chat(ctx, provider.ChatRequest{
+		Model: "qwen2.5-coder:14b",
+		Messages: []provider.Message{
+			{Role: provider.RoleUser, Content: "Hello"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error on context deadline, got nil")
+	}
+
+	// Verify the error is an ErrProviderTimeout.
+	var timeout *provider.ErrProviderTimeout
+	if !errors.As(err, &timeout) {
+		t.Fatalf("expected ErrProviderTimeout, got %T: %v", err, err)
+	}
+	if timeout.Provider != "ollama" {
+		t.Errorf("Provider = %q, want %q", timeout.Provider, "ollama")
+	}
+	if timeout.Model != "qwen2.5-coder:14b" {
+		t.Errorf("Model = %q, want %q", timeout.Model, "qwen2.5-coder:14b")
+	}
+
+	// Verify it's retryable (the pool uses this to trigger failover).
+	if !provider.IsRetryable(err) {
+		t.Error("expected IsRetryable=true for deadline exceeded error")
+	}
+}
+
+func TestChatNonTimeout_NotWrappedAsTimeout(t *testing.T) {
+	// Verify that non-timeout errors (e.g., 500) are NOT wrapped as
+	// ErrProviderTimeout -- only infrastructure timeouts should failover.
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/chat", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "model overloaded", http.StatusServiceUnavailable)
+	})
+
+	c, _ := newTestClient(t, mux)
+
+	_, err := c.Chat(context.Background(), provider.ChatRequest{
+		Model: "llama3",
+		Messages: []provider.Message{
+			{Role: provider.RoleUser, Content: "Hi"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for 503, got nil")
+	}
+
+	// Should NOT be retryable -- this is a quality/server error, not a timeout.
+	if provider.IsRetryable(err) {
+		t.Error("expected IsRetryable=false for non-timeout error")
+	}
 }

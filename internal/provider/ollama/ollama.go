@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,12 +89,23 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (resp *prov
 
 	resp = &provider.ChatResponse{}
 	if err = c.doJSON(ctx, http.MethodPost, "/api/chat", req, resp); err != nil {
+		dur := time.Since(start)
 		c.logger.Error("ollama chat failed",
 			zap.String("model", req.Model),
 			zap.String("base_url", c.baseURL),
-			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Int64("duration_ms", dur.Milliseconds()),
 			zap.Error(err),
 		)
+		// Wrap context deadline/cancellation as ErrProviderTimeout so the
+		// pool's IsRetryable check triggers failover to the next provider.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return nil, &provider.ErrProviderTimeout{
+				Provider:    "ollama",
+				Model:       req.Model,
+				TimeoutType: provider.TimeoutStale,
+				Duration:    dur,
+			}
+		}
 		return nil, fmt.Errorf("ollama: chat: %w", err)
 	}
 
