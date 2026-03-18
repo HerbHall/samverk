@@ -258,14 +258,14 @@ func newTestDispatcher(tracker *mockTracker) *Dispatcher {
 	// Use short intervals for tests.
 	cfg.HeartbeatInterval = 100 * time.Millisecond
 	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
-	return New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
+	return New([]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: tracker}}, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
 }
 
 // --- Tests ---
 
 func TestNewDispatcher(t *testing.T) {
 	tracker := newMockTracker()
-	d := New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, nil, zap.NewNop())
+	d := New([]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: tracker}}, &mockPolicy{costThreshold: 5.0}, nil, nil, nil, zap.NewNop())
 	if d == nil {
 		t.Fatal("expected non-nil dispatcher")
 	}
@@ -656,7 +656,7 @@ func TestDetectCycle_NoCycle(t *testing.T) {
 	tracker.issues[2] = &forge.Issue{Number: 2, State: forge.StateOpen, Body: issueBody("code-gen", []int{3})}
 	tracker.issues[3] = &forge.Issue{Number: 3, State: forge.StateOpen, Body: issueBody("code-gen", nil)}
 
-	cycle, err := d.detectCycle(context.Background(), 1)
+	cycle, err := d.detectCycle(context.Background(), "test", "repo", 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -674,7 +674,7 @@ func TestDetectCycle_WithCycle(t *testing.T) {
 	tracker.issues[2] = &forge.Issue{Number: 2, State: forge.StateOpen, Body: issueBody("code-gen", []int{3})}
 	tracker.issues[3] = &forge.Issue{Number: 3, State: forge.StateOpen, Body: issueBody("code-gen", []int{1})}
 
-	cycle, err := d.detectCycle(context.Background(), 1)
+	cycle, err := d.detectCycle(context.Background(), "test", "repo", 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -733,7 +733,7 @@ func TestCheckTimeouts_NoTimeout(t *testing.T) {
 
 	// Claim an issue with a recent heartbeat.
 	d.mu.Lock()
-	d.claimed[1] = &claimedIssue{
+	d.claimed[issueKey("test", "repo", 1)] = &claimedIssue{
 		AgentID:       "code-gen",
 		ClaimedAt:     time.Now(),
 		LastHeartbeat: time.Now(),
@@ -753,7 +753,7 @@ func TestCheckTimeouts_NoTimeout(t *testing.T) {
 
 	// Issue should still be claimed.
 	d.mu.Lock()
-	_, stillClaimed := d.claimed[1]
+	_, stillClaimed := d.claimed[issueKey("test", "repo", 1)]
 	d.mu.Unlock()
 	if !stillClaimed {
 		t.Error("expected issue to remain claimed (no timeout)")
@@ -766,7 +766,7 @@ func TestCheckTimeouts_TimedOut(t *testing.T) {
 
 	// Claim an issue with an old heartbeat.
 	d.mu.Lock()
-	d.claimed[1] = &claimedIssue{
+	d.claimed[issueKey("test", "repo", 1)] = &claimedIssue{
 		AgentID:       "code-gen",
 		ClaimedAt:     time.Now().Add(-time.Hour),
 		LastHeartbeat: time.Now().Add(-time.Hour),
@@ -787,7 +787,7 @@ func TestCheckTimeouts_TimedOut(t *testing.T) {
 
 	// Issue should be released.
 	d.mu.Lock()
-	_, stillClaimed := d.claimed[1]
+	_, stillClaimed := d.claimed[issueKey("test", "repo", 1)]
 	d.mu.Unlock()
 	if stillClaimed {
 		t.Error("expected issue to be released after timeout")
@@ -805,7 +805,7 @@ func TestCheckTimeouts_ThreeFailures(t *testing.T) {
 
 	// Issue with 2 prior failures -- next timeout will be the 3rd.
 	d.mu.Lock()
-	d.claimed[1] = &claimedIssue{
+	d.claimed[issueKey("test", "repo", 1)] = &claimedIssue{
 		AgentID:       "code-gen",
 		ClaimedAt:     time.Now().Add(-time.Hour),
 		LastHeartbeat: time.Now().Add(-time.Hour),
@@ -856,8 +856,8 @@ func TestCheckTimeouts_MultiCycleRetryEscalation(t *testing.T) {
 		d.mu.Lock()
 		// Restore the claimed entry as if the issue was re-queued and re-dispatched,
 		// carrying forward the failure count from issueFailures (what route() does).
-		priorFailures := d.issueFailures[1]
-		d.claimed[1] = &claimedIssue{
+		priorFailures := d.issueFailures[issueKey("test", "repo", 1)]
+		d.claimed[issueKey("test", "repo", 1)] = &claimedIssue{
 			AgentID:       "code-gen",
 			ClaimedAt:     time.Now().Add(-time.Hour),
 			LastHeartbeat: time.Now().Add(-time.Hour),
@@ -871,7 +871,7 @@ func TestCheckTimeouts_MultiCycleRetryEscalation(t *testing.T) {
 
 		// Verify the persisted failure count matches the cycle number.
 		d.mu.Lock()
-		persisted := d.issueFailures[1]
+		persisted := d.issueFailures[issueKey("test", "repo", 1)]
 		d.mu.Unlock()
 		if persisted != cycle {
 			t.Errorf("cycle %d: issueFailures[1] = %d, want %d", cycle, persisted, cycle)
@@ -1104,7 +1104,7 @@ func TestRoute_HumanAgentNotDispatched(t *testing.T) {
 		Labels: []string{"agent:human"},
 	}
 
-	err := d.route(context.Background(), issue, models.AgentTypeHuman, nil)
+	err := d.route(context.Background(), "test", "repo", issue, models.AgentTypeHuman, nil)
 	if err != nil {
 		t.Fatalf("route returned error: %v", err)
 	}
@@ -1129,7 +1129,7 @@ func TestRoute_HumanAgentNotDispatched(t *testing.T) {
 
 	// claimed map must not contain the issue.
 	d.mu.Lock()
-	_, inClaimed := d.claimed[20]
+	_, inClaimed := d.claimed[issueKey("test", "repo", 20)]
 	d.mu.Unlock()
 	if inClaimed {
 		t.Error("issue #20 should not be in claimed map — human issues are not routed")
@@ -1147,11 +1147,12 @@ func TestHandleTaskComplete_Success(t *testing.T) {
 	}
 
 	d.mu.Lock()
-	d.claimed[5] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
-	d.issueFailures[5] = 1
+	d.claimed[issueKey("test", "repo", 5)] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.issueFailures[issueKey("test", "repo", 5)] = 1
 	d.mu.Unlock()
 
 	d.handleTaskComplete(agent.TaskResult{
+		Owner: "test", Repo: "repo",
 		IssueNumber: 5,
 		SessionID:   "sess-5",
 		AgentType:   models.AgentTypeCodeGen,
@@ -1160,8 +1161,8 @@ func TestHandleTaskComplete_Success(t *testing.T) {
 
 	// claimed map must be cleared.
 	d.mu.Lock()
-	_, inClaimed := d.claimed[5]
-	_, inFailures := d.issueFailures[5]
+	_, inClaimed := d.claimed[issueKey("test", "repo", 5)]
+	_, inFailures := d.issueFailures[issueKey("test", "repo", 5)]
 	d.mu.Unlock()
 	if inClaimed {
 		t.Error("expected issue #5 removed from claimed map")
@@ -1193,11 +1194,12 @@ func TestHandleTaskComplete_Failure(t *testing.T) {
 	}
 
 	d.mu.Lock()
-	d.claimed[6] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
-	d.issueFailures[6] = 1
+	d.claimed[issueKey("test", "repo", 6)] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.issueFailures[issueKey("test", "repo", 6)] = 1
 	d.mu.Unlock()
 
 	d.handleTaskComplete(agent.TaskResult{
+		Owner: "test", Repo: "repo",
 		IssueNumber: 6,
 		SessionID:   "sess-6",
 		AgentType:   models.AgentTypeCodeGen,
@@ -1207,8 +1209,8 @@ func TestHandleTaskComplete_Failure(t *testing.T) {
 
 	// claimed map must be cleared but failure count preserved.
 	d.mu.Lock()
-	_, inClaimed := d.claimed[6]
-	failures := d.issueFailures[6]
+	_, inClaimed := d.claimed[issueKey("test", "repo", 6)]
+	failures := d.issueFailures[issueKey("test", "repo", 6)]
 	d.mu.Unlock()
 	if inClaimed {
 		t.Error("expected issue #6 removed from claimed map")
@@ -1237,11 +1239,12 @@ func TestNoDoubleDispatch_AfterCompletion(t *testing.T) {
 	}
 
 	d.mu.Lock()
-	d.claimed[7] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.claimed[issueKey("test", "repo", 7)] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
 	d.mu.Unlock()
 
 	// Simulate successful completion removing issue from claimed map.
 	d.handleTaskComplete(agent.TaskResult{
+		Owner: "test", Repo: "repo",
 		IssueNumber: 7,
 		SessionID:   "sess-7",
 		AgentType:   models.AgentTypeCodeGen,
@@ -1250,7 +1253,7 @@ func TestNoDoubleDispatch_AfterCompletion(t *testing.T) {
 
 	// Give issue a stale heartbeat to trigger timeout sweep.
 	d.mu.Lock()
-	_, stillClaimed := d.claimed[7]
+	_, stillClaimed := d.claimed[issueKey("test", "repo", 7)]
 	d.mu.Unlock()
 
 	if stillClaimed {
@@ -1269,6 +1272,256 @@ func TestNoDoubleDispatch_AfterCompletion(t *testing.T) {
 	}
 }
 
+func TestHandleTaskComplete_SignalsWakeup(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.issues[8] = &forge.Issue{
+		Number: 8,
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed"},
+	}
+
+	d.mu.Lock()
+	d.claimed[issueKey("test", "repo", 8)] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	d.handleTaskComplete(agent.TaskResult{
+		Owner: "test", Repo: "repo",
+		IssueNumber: 8,
+		SessionID:   "sess-8",
+		AgentType:   models.AgentTypeCodeGen,
+		Success:     true,
+	})
+
+	// The wakeup channel should have a signal.
+	select {
+	case <-d.wakeup:
+		// Expected: wakeup was signaled.
+	default:
+		t.Error("expected wakeup channel to be signaled after task completion")
+	}
+}
+
+func TestHandleTaskComplete_WakeupDoesNotBlock(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Pre-fill the wakeup channel to simulate an already-pending signal.
+	d.wakeup <- struct{}{}
+
+	tracker.issues[9] = &forge.Issue{
+		Number: 9,
+		State:  forge.StateOpen,
+		Labels: []string{"status:claimed"},
+	}
+
+	d.mu.Lock()
+	d.claimed[issueKey("test", "repo", 9)] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	// This must not block even though the channel is already full.
+	done := make(chan struct{})
+	go func() {
+		d.handleTaskComplete(agent.TaskResult{
+			IssueNumber: 9,
+			SessionID:   "sess-9",
+			AgentType:   models.AgentTypeCodeGen,
+			Success:     true,
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Expected: completed without blocking.
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleTaskComplete blocked on full wakeup channel")
+	}
+}
+
+// --- Multi-repo tests ---
+
+func TestMultiRepo_TwoTrackers_EventsRoutedCorrectly(t *testing.T) {
+	trackerA := newMockTracker()
+	trackerB := newMockTracker()
+
+	cfg := DefaultConfig()
+	cfg.HeartbeatInterval = 100 * time.Millisecond
+	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
+	d := New([]TrackerEntry{
+		{Owner: "org", Repo: "alpha", Tracker: trackerA},
+		{Owner: "org", Repo: "beta", Tracker: trackerB},
+	}, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
+
+	// Add issues to each tracker.
+	trackerA.issues[1] = &forge.Issue{
+		Number: 1, Title: "feat: alpha feature",
+		Body: issueBody("code-gen", nil), State: forge.StateOpen, Labels: []string{"status:queued"},
+	}
+	trackerB.issues[1] = &forge.Issue{
+		Number: 1, Title: "feat: beta feature",
+		Body: issueBody("code-gen", nil), State: forge.StateOpen, Labels: []string{"status:queued"},
+	}
+
+	// Route event from tracker A.
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type: forge.EventIssueOpened, Owner: "org", Repo: "alpha",
+		IssueNumber: 1, Issue: trackerA.issues[1],
+	})
+	if err != nil {
+		t.Fatalf("handleOpened alpha: %v", err)
+	}
+
+	// Route event from tracker B.
+	err = d.handleOpened(context.Background(), forge.Event{
+		Type: forge.EventIssueOpened, Owner: "org", Repo: "beta",
+		IssueNumber: 1, Issue: trackerB.issues[1],
+	})
+	if err != nil {
+		t.Fatalf("handleOpened beta: %v", err)
+	}
+
+	// Both issues #1 should be claimed -- no collision.
+	if !hasLabel(trackerA.issues[1].Labels, "status:claimed") {
+		t.Error("alpha issue #1 should be claimed")
+	}
+	if !hasLabel(trackerB.issues[1].Labels, "status:claimed") {
+		t.Error("beta issue #1 should be claimed")
+	}
+
+	// Both should be in the claimed map with different keys.
+	d.mu.Lock()
+	_, aOk := d.claimed[issueKey("org", "alpha", 1)]
+	_, bOk := d.claimed[issueKey("org", "beta", 1)]
+	d.mu.Unlock()
+	if !aOk {
+		t.Error("alpha issue #1 not in claimed map")
+	}
+	if !bOk {
+		t.Error("beta issue #1 not in claimed map")
+	}
+}
+
+func TestMultiRepo_SameIssueNumber_NoCollision(t *testing.T) {
+	trackerA := newMockTracker()
+	trackerB := newMockTracker()
+
+	cfg := DefaultConfig()
+	d := New([]TrackerEntry{
+		{Owner: "org", Repo: "alpha", Tracker: trackerA},
+		{Owner: "org", Repo: "beta", Tracker: trackerB},
+	}, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
+
+	keyA := issueKey("org", "alpha", 42)
+	keyB := issueKey("org", "beta", 42)
+
+	if keyA == keyB {
+		t.Fatal("keys should differ for same issue number in different repos")
+	}
+
+	// Set up claimed entries.
+	d.mu.Lock()
+	d.claimed[keyA] = &claimedIssue{AgentID: "code-gen", Owner: "org", Repo: "alpha", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.claimed[keyB] = &claimedIssue{AgentID: "docs", Owner: "org", Repo: "beta", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	// Delete alpha's entry -- beta should remain.
+	d.mu.Lock()
+	delete(d.claimed, keyA)
+	_, bExists := d.claimed[keyB]
+	d.mu.Unlock()
+
+	if !bExists {
+		t.Error("deleting alpha key should not affect beta key")
+	}
+}
+
+func TestMultiRepo_HandleTaskComplete_ResolvesCorrectTracker(t *testing.T) {
+	trackerA := newMockTracker()
+	trackerB := newMockTracker()
+
+	cfg := DefaultConfig()
+	d := New([]TrackerEntry{
+		{Owner: "org", Repo: "alpha", Tracker: trackerA},
+		{Owner: "org", Repo: "beta", Tracker: trackerB},
+	}, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
+
+	// Set up issue in tracker B.
+	trackerB.issues[5] = &forge.Issue{
+		Number: 5, State: forge.StateOpen,
+		Labels: []string{"status:claimed", "status:in-progress"},
+	}
+
+	// Claim it under beta.
+	key := issueKey("org", "beta", 5)
+	d.mu.Lock()
+	d.claimed[key] = &claimedIssue{AgentID: "code-gen", Owner: "org", Repo: "beta", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	d.handleTaskComplete(agent.TaskResult{
+		Owner: "org", Repo: "beta",
+		IssueNumber: 5, SessionID: "sess-beta-5",
+		AgentType: models.AgentTypeCodeGen, Success: true,
+	})
+
+	// Verify beta's tracker got the label changes, not alpha's.
+	if !hasLabel(trackerB.issues[5].Labels, "status:needs-qc") {
+		t.Error("expected status:needs-qc on beta tracker issue #5")
+	}
+
+	// Alpha tracker should have no issues modified.
+	trackerA.mu.Lock()
+	aCalls := len(trackerA.calls)
+	trackerA.mu.Unlock()
+	if aCalls > 0 {
+		t.Errorf("alpha tracker should not have been called, got %d calls", aCalls)
+	}
+}
+
+func TestMultiRepo_TrackerFor_CaseInsensitive(t *testing.T) {
+	tracker := newMockTracker()
+
+	d := New([]TrackerEntry{
+		{Owner: "MyOrg", Repo: "MyRepo", Tracker: tracker},
+	}, &mockPolicy{costThreshold: 5.0}, nil, nil, nil, zap.NewNop())
+
+	if got := d.trackerFor("myorg", "myrepo"); got != tracker {
+		t.Error("trackerFor should be case-insensitive")
+	}
+	if got := d.trackerFor("MYORG", "MYREPO"); got != tracker {
+		t.Error("trackerFor should be case-insensitive for uppercase")
+	}
+}
+
+func TestMultiRepo_SingleTracker_BackwardCompat(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// With a single tracker, empty owner/repo should resolve to it.
+	if got := d.trackerFor("", ""); got != tracker {
+		t.Error("single tracker should be returned for empty owner/repo")
+	}
+}
+
+func TestIssueKey_Format(t *testing.T) {
+	tests := []struct {
+		owner, repo string
+		number      int
+		want        string
+	}{
+		{"HerbHall", "Samverk", 42, "herbhall/samverk#42"},
+		{"org", "repo", 1, "org/repo#1"},
+		{"UPPER", "CASE", 99, "upper/case#99"},
+	}
+	for _, tt := range tests {
+		got := issueKey(tt.owner, tt.repo, tt.number)
+		if got != tt.want {
+			t.Errorf("issueKey(%q, %q, %d) = %q, want %q", tt.owner, tt.repo, tt.number, got, tt.want)
+		}
+	}
+}
+
 func hasLabel(labels []string, target string) bool {
 	for _, l := range labels {
 		if l == target {
@@ -1276,4 +1529,152 @@ func hasLabel(labels []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// --- Watcher resilience tests (#577) ---
+
+// failingTracker wraps mockTracker but makes Watch return an error a
+// configurable number of times before blocking on ctx.Done().
+type failingTracker struct {
+	*mockTracker
+	mu           sync.Mutex
+	failCount    int // how many times Watch should fail before succeeding
+	watchCalls   int
+	failedCh     chan struct{} // closed after all failures are emitted
+	succeededCtx context.Context
+}
+
+func newFailingTracker(failCount int) *failingTracker {
+	return &failingTracker{
+		mockTracker: newMockTracker(),
+		failCount:   failCount,
+		failedCh:    make(chan struct{}, failCount),
+	}
+}
+
+func (f *failingTracker) Watch(ctx context.Context, handler func(forge.Event)) error {
+	f.mu.Lock()
+	call := f.watchCalls
+	f.watchCalls++
+	shouldFail := call < f.failCount
+	f.mu.Unlock()
+
+	if shouldFail {
+		f.failedCh <- struct{}{}
+		return fmt.Errorf("simulated watcher failure #%d", call+1)
+	}
+	f.succeededCtx = ctx
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (f *failingTracker) getWatchCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.watchCalls
+}
+
+func TestRun_WatcherRestartsAfterError(t *testing.T) {
+	ft := newFailingTracker(2) // fail twice, then succeed
+
+	cfg := DefaultConfig()
+	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
+
+	d := New(
+		[]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: ft}},
+		&mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop(),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- d.Run(ctx) }()
+
+	// Wait for the successful watch to start (call #3).
+	deadline := time.After(4 * time.Second)
+	for ft.getWatchCalls() < 3 {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for watcher restart, got %d calls", ft.getWatchCalls())
+		case err := <-errCh:
+			t.Fatalf("Run exited unexpectedly: %v", err)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	cancel()
+	err := <-errCh
+	if err != nil && err != context.Canceled {
+		t.Errorf("unexpected Run error: %v", err)
+	}
+}
+
+func TestRun_ExitsAfterTooManyWatcherFailures(t *testing.T) {
+	// Fail more than maxConsecutiveWatcherFailures times rapidly.
+	ft := newFailingTracker(maxConsecutiveWatcherFailures + 1)
+
+	cfg := DefaultConfig()
+	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
+
+	d := New(
+		[]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: ft}},
+		&mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop(),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := d.Run(ctx)
+	if err == nil {
+		t.Fatal("expected Run to return error after too many failures")
+	}
+	if !strings.Contains(err.Error(), "failed") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestRun_BackoffProgression(t *testing.T) {
+	// Verify that backoff doubles: the second failure should wait longer
+	// than the first. We test indirectly by measuring total time.
+	ft := newFailingTracker(3) // 3 failures = backoffs of 1s, 2s, then succeed
+
+	cfg := DefaultConfig()
+	cfg.HeartbeatCheckInterval = 50 * time.Millisecond
+
+	d := New(
+		[]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: ft}},
+		&mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop(),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	errCh := make(chan error, 1)
+	go func() { errCh <- d.Run(ctx) }()
+
+	// Wait for the 4th Watch call (the successful one).
+	deadline := time.After(12 * time.Second)
+	for ft.getWatchCalls() < 4 {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for 4th watch call, got %d", ft.getWatchCalls())
+		case err := <-errCh:
+			t.Fatalf("Run exited unexpectedly: %v", err)
+		default:
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+
+	elapsed := time.Since(start)
+	// 3 failures with backoffs 1s + 2s + 4s = 7s minimum.
+	// Allow some slack but verify it's not instant.
+	if elapsed < 3*time.Second {
+		t.Errorf("expected at least 3s of backoff, got %v", elapsed)
+	}
+
+	cancel()
+	<-errCh
 }

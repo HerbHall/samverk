@@ -5,7 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 // mockProvider is a test double implementing Provider.
@@ -23,7 +26,7 @@ func (m *mockProvider) Name() string                   { return m.name }
 
 func TestNewRegistry_RegisterAndGet(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	p := &mockProvider{name: "test-claude", healthy: true}
 	reg.Register("claude", "claude", p, "claude-sonnet-4-20250514")
@@ -45,7 +48,7 @@ func TestNewRegistry_RegisterAndGet(t *testing.T) {
 
 func TestGet_FallbackToHealthy(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	unhealthy := &mockProvider{name: "claude", healthy: false}
 	healthy := &mockProvider{name: "openai", healthy: true}
@@ -70,7 +73,7 @@ func TestGet_FallbackToHealthy(t *testing.T) {
 
 func TestGet_NoHealthyProvider(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	reg.Register("claude", "claude", &mockProvider{name: "claude", healthy: false}, "model-a")
 	reg.Register("openai", "openai", &mockProvider{name: "openai", healthy: false}, "model-b")
@@ -86,7 +89,7 @@ func TestGet_NoHealthyProvider(t *testing.T) {
 
 func TestGet_FallbackToDefaultRouting(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	p := &mockProvider{name: "ollama", healthy: true}
 	reg.Register("ollama", "ollama", p, "qwen2.5-coder:14b")
@@ -108,7 +111,7 @@ func TestGet_FallbackToDefaultRouting(t *testing.T) {
 
 func TestGet_SpecificAgentTypeRouting(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	claude := &mockProvider{name: "claude", healthy: true}
 	ollama := &mockProvider{name: "ollama", healthy: true}
@@ -134,7 +137,7 @@ func TestGet_SpecificAgentTypeRouting(t *testing.T) {
 
 func TestGet_NoRoutingConfigured(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	reg.Register("claude", "claude", &mockProvider{name: "claude", healthy: true}, "model-a")
 	// No routing set at all.
@@ -147,7 +150,7 @@ func TestGet_NoRoutingConfigured(t *testing.T) {
 
 func TestGet_SkipsMissingProviderName(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	p := &mockProvider{name: "openai", healthy: true}
 	reg.Register("openai", "openai", p, "gpt-4o")
@@ -166,7 +169,7 @@ func TestGet_SkipsMissingProviderName(t *testing.T) {
 
 func TestList_ReturnsAllProviders(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 
 	reg.Register("claude", "claude", &mockProvider{name: "claude", healthy: true}, "claude-sonnet-4-20250514")
 	reg.Register("openai", "openai", &mockProvider{name: "openai", healthy: false}, "gpt-4o")
@@ -334,7 +337,7 @@ routing:
 		return &mockProvider{name: name, healthy: true}, nil
 	}
 
-	reg, err := LoadRegistry(path, factory)
+	reg, err := LoadRegistry(path, factory, nil)
 	if err != nil {
 		t.Fatalf("LoadRegistry: %v", err)
 	}
@@ -352,6 +355,199 @@ routing:
 	}
 	if model != "test-model" {
 		t.Errorf("Get(default): model = %q, want %q", model, "test-model")
+	}
+}
+
+func TestGetAfter_ReturnsNextHealthy(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	p1 := &mockProvider{name: "ollama-nzxt", healthy: true}
+	p2 := &mockProvider{name: "claude-cli", healthy: true}
+	p3 := &mockProvider{name: "claude-api", healthy: true}
+
+	reg.Register("ollama-nzxt", "ollama", p1, "qwen3-coder:30b")
+	reg.Register("claude-cli", "claude-cli", p2, "claude-sonnet-4-6")
+	reg.Register("claude-api", "claude", p3, "claude-sonnet-4-6")
+	reg.SetRouting(map[string][]string{
+		"default": {"ollama-nzxt", "claude-cli", "claude-api"},
+	})
+
+	got, model, err := reg.GetAfter(ctx, "default", "ollama-nzxt")
+	if err != nil {
+		t.Fatalf("GetAfter: unexpected error: %v", err)
+	}
+	if got != p2 {
+		t.Errorf("GetAfter: expected claude-cli, got %s", got.Name())
+	}
+	if model != "claude-sonnet-4-6" {
+		t.Errorf("GetAfter: model = %q, want %q", model, "claude-sonnet-4-6")
+	}
+}
+
+func TestGetAfter_SkipsUnhealthyNext(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	p1 := &mockProvider{name: "first", healthy: true}
+	p2 := &mockProvider{name: "second", healthy: false}
+	p3 := &mockProvider{name: "third", healthy: true}
+
+	reg.Register("first", "ollama", p1, "model-1")
+	reg.Register("second", "claude-cli", p2, "model-2")
+	reg.Register("third", "claude", p3, "model-3")
+	reg.SetRouting(map[string][]string{
+		"default": {"first", "second", "third"},
+	})
+
+	got, model, err := reg.GetAfter(ctx, "default", "first")
+	if err != nil {
+		t.Fatalf("GetAfter: unexpected error: %v", err)
+	}
+	if got != p3 {
+		t.Errorf("GetAfter: expected third (skip unhealthy second), got %s", got.Name())
+	}
+	if model != "model-3" {
+		t.Errorf("GetAfter: model = %q, want %q", model, "model-3")
+	}
+}
+
+func TestGetAfter_NoNextProvider(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	p1 := &mockProvider{name: "only", healthy: true}
+	reg.Register("only", "claude-cli", p1, "model-1")
+	reg.SetRouting(map[string][]string{
+		"default": {"only"},
+	})
+
+	_, _, err := reg.GetAfter(ctx, "default", "only")
+	if !errors.Is(err, ErrNoHealthyProvider) {
+		t.Errorf("GetAfter: expected ErrNoHealthyProvider when last in chain, got %v", err)
+	}
+}
+
+func TestGetAfter_ProviderNotInChain(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	p1 := &mockProvider{name: "a", healthy: true}
+	reg.Register("a", "ollama", p1, "model-a")
+	reg.SetRouting(map[string][]string{
+		"default": {"a"},
+	})
+
+	_, _, err := reg.GetAfter(ctx, "default", "nonexistent")
+	if !errors.Is(err, ErrNoHealthyProvider) {
+		t.Errorf("GetAfter: expected ErrNoHealthyProvider for unknown provider, got %v", err)
+	}
+}
+
+func TestNameOf_Found(t *testing.T) {
+	reg := NewRegistry(nil)
+	p := &mockProvider{name: "claude-cli", healthy: true}
+	reg.Register("my-claude", "claude-cli", p, "model")
+
+	got := reg.NameOf(p)
+	if got != "my-claude" {
+		t.Errorf("NameOf: got %q, want %q", got, "my-claude")
+	}
+}
+
+func TestNameOf_NotFound(t *testing.T) {
+	reg := NewRegistry(nil)
+	p := &mockProvider{name: "unknown", healthy: true}
+
+	got := reg.NameOf(p)
+	if got != "" {
+		t.Errorf("NameOf: got %q, want empty", got)
+	}
+}
+
+func TestValidateRoutingConfig_OllamaInCodeGenChain(t *testing.T) {
+	t.Parallel()
+
+	cfg := &RegistryConfig{
+		Providers: map[string]ProviderConfig{
+			"claude-sonnet": {Type: "claude-cli", DefaultModel: "claude-sonnet-4-6"},
+			"ollama-coder":  {Type: "ollama", DefaultModel: "qwen2.5-coder:14b"},
+		},
+		Routing: map[string][]string{
+			"default": {"ollama-coder", "claude-sonnet"},
+			"triage":  {"ollama-coder", "claude-sonnet"},
+		},
+	}
+
+	logger, _ := zap.NewDevelopment()
+	warnings := ValidateRoutingConfig(cfg, logger)
+
+	// Should warn about ollama in "default" but not in "triage".
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "default") {
+		t.Errorf("warning should mention 'default' chain, got: %s", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "ollama-coder") {
+		t.Errorf("warning should mention 'ollama-coder', got: %s", warnings[0])
+	}
+}
+
+func TestValidateRoutingConfig_NoOllamaProviders(t *testing.T) {
+	t.Parallel()
+
+	cfg := &RegistryConfig{
+		Providers: map[string]ProviderConfig{
+			"claude-sonnet": {Type: "claude-cli", DefaultModel: "claude-sonnet-4-6"},
+		},
+		Routing: map[string][]string{
+			"default": {"claude-sonnet"},
+		},
+	}
+
+	logger, _ := zap.NewDevelopment()
+	warnings := ValidateRoutingConfig(cfg, logger)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateRoutingConfig_OllamaInTriageOnly(t *testing.T) {
+	t.Parallel()
+
+	cfg := &RegistryConfig{
+		Providers: map[string]ProviderConfig{
+			"claude-sonnet": {Type: "claude-cli", DefaultModel: "claude-sonnet-4-6"},
+			"ollama-coder":  {Type: "ollama", DefaultModel: "qwen2.5-coder:7b"},
+		},
+		Routing: map[string][]string{
+			"default": {"claude-sonnet"},
+			"triage":  {"ollama-coder", "claude-sonnet"},
+			"qc":      {"ollama-coder", "claude-sonnet"},
+		},
+	}
+
+	logger, _ := zap.NewDevelopment()
+	warnings := ValidateRoutingConfig(cfg, logger)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for triage/qc-only ollama, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateRoutingConfig_NilInputs(t *testing.T) {
+	t.Parallel()
+
+	// Nil config.
+	warnings := ValidateRoutingConfig(nil, zap.NewNop())
+	if warnings != nil {
+		t.Errorf("expected nil for nil config, got %v", warnings)
+	}
+
+	// Nil logger.
+	warnings = ValidateRoutingConfig(&RegistryConfig{}, nil)
+	if warnings != nil {
+		t.Errorf("expected nil for nil logger, got %v", warnings)
 	}
 }
 
@@ -374,7 +570,7 @@ routing:
 		return nil, errors.New("unsupported provider type")
 	}
 
-	_, err := LoadRegistry(path, factory)
+	_, err := LoadRegistry(path, factory, nil)
 	if err == nil {
 		t.Fatal("LoadRegistry: expected error from factory")
 	}

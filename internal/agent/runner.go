@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/provider"
@@ -41,6 +45,8 @@ type Runner struct {
 	cleanupCtx       context.Context // used for session updates and failure comments; survives task timeout
 	progressInterval time.Duration   // interval between PROGRESS posts; 0 disables
 	synapset         *synapset.Client // optional; nil disables memory enrichment
+	policy           autonomy.AutonomyPolicy // optional; nil disables tier enforcement
+	repoDir          string // local repo path; when set, enables workspace isolation
 }
 
 // NewRunner creates a runner bound to a specific provider and model.
@@ -81,6 +87,18 @@ func (r *Runner) SetPRManager(pm forge.PullRequestManager) {
 // When nil, memory enrichment is disabled.
 func (r *Runner) SetSynapset(sc *synapset.Client) {
 	r.synapset = sc
+}
+
+// SetPolicy configures the autonomy policy for tier enforcement.
+// When nil, all actions are allowed (backward compatible).
+func (r *Runner) SetPolicy(p autonomy.AutonomyPolicy) {
+	r.policy = p
+}
+
+// SetRepoDir configures the local repository path for workspace isolation.
+// When set, code-gen and test agents execute in isolated git worktrees.
+func (r *Runner) SetRepoDir(dir string) {
+	r.repoDir = dir
 }
 
 // Run processes a single task through the AI provider pipeline.
@@ -135,9 +153,86 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		)
 	}
 
+	// Step 3b: Create isolated workspace for code-gen/test agents.
+	var workDir string
+	if r.repoDir != "" {
+		switch task.AgentType {
+		case models.AgentTypeCodeGen, models.AgentTypeTest:
+			ws, wsCleanup, wsErr := CreateWorkspace(r.repoDir, task.SessionID, task.Issue.Number, r.logger)
+			if wsErr != nil {
+				r.logger.Warn("workspace creation failed; continuing without isolation",
+					zap.Int("issue", task.Issue.Number),
+					zap.Error(wsErr),
+				)
+			} else {
+				workDir = ws
+				defer wsCleanup()
+
+				// Write MCP config and CLAUDE.md into the worktree.
+				if mcpErr := WriteMCPConfig(workDir); mcpErr != nil {
+					r.logger.Warn("failed to write MCP config to workspace",
+						zap.Int("issue", task.Issue.Number),
+						zap.Error(mcpErr),
+					)
+				}
+				projectType := DetectProjectType(task.Issue.Labels)
+				keyFiles := ExploreFileList(workDir, task.Issue.Body)
+				claudeMD := GenerateAgentCLAUDEMD(projectType, task.Issue.Body, keyFiles...)
+				if writeErr := os.WriteFile(filepath.Join(workDir, "CLAUDE.md"), []byte(claudeMD), 0o600); writeErr != nil {
+					r.logger.Warn("failed to write CLAUDE.md to workspace",
+						zap.Int("issue", task.Issue.Number),
+						zap.Error(writeErr),
+					)
+				}
+			}
+		case models.AgentTypeDocs, models.AgentTypeResearch, models.AgentTypeQC,
+			models.AgentTypeHuman, models.AgentTypeOrchestrator, models.AgentTypeDispatcher,
+			models.AgentTypeInfra, models.AgentTypePC:
+			// Non-code agents don't need workspace isolation.
+		}
+	}
+
+	// Step 3c: Fetch Synapset patterns for API agent enrichment.
+	var patterns []string
+	if r.synapset != nil && task.Issue.Title != "" {
+		var fetchErr error
+		patterns, fetchErr = FetchRelevantPatterns(ctx, r.synapset, task.Issue.Title, maxMemoryResults)
+		if fetchErr != nil {
+			r.logger.Warn("failed to fetch relevant patterns",
+				zap.Int("issue", task.Issue.Number),
+				zap.Error(fetchErr),
+			)
+		}
+	}
+
+	// Step 3d: Explore repo context (CLAUDE.md, sibling files) before prompt building.
+	exploreDir := workDir
+	if exploreDir == "" {
+		exploreDir = r.repoDir
+	}
+	exploreCtx := ExploreContext(exploreDir, task.Issue.Body)
+	if len(exploreCtx) > 0 {
+		r.logger.Info("explore phase complete",
+			zap.Int("issue", task.Issue.Number),
+			zap.Int("files_discovered", len(exploreCtx)),
+		)
+	}
+
 	// Step 4: Build chat request.
-	fileContext := r.extractFileContext(task.Issue.Body)
-	systemPrompt := BuildSystemPrompt(task, fileContext)
+	fileContext := r.extractFileContext(task.Issue.Body, workDir)
+	// Merge explored context into fileContext (explore provides base context,
+	// extractFileContext may override with workspace-specific versions).
+	if len(exploreCtx) > 0 {
+		if fileContext == nil {
+			fileContext = make(map[string]string, len(exploreCtx))
+		}
+		for path, content := range exploreCtx {
+			if _, exists := fileContext[path]; !exists {
+				fileContext[path] = content
+			}
+		}
+	}
+	systemPrompt := BuildSystemPrompt(task, fileContext, patterns...)
 	messages := []provider.Message{
 		{Role: provider.RoleSystem, Content: systemPrompt},
 	}
@@ -152,8 +247,9 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 
 	messages = append(messages, provider.Message{Role: provider.RoleUser, Content: task.Issue.Body})
 	req := provider.ChatRequest{
-		Model:    r.model,
-		Messages: messages,
+		Model:      r.model,
+		Messages:   messages,
+		WorkingDir: workDir,
 	}
 
 	// Step 5: Call provider (with heartbeat and streaming activity detection).
@@ -217,7 +313,11 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 
 	resp, err := r.provider.Chat(ctx, req)
 	if err != nil {
-		r.failTask(ctx, task, fmt.Sprintf("provider error: %v", err))
+		failureClass := "provider_error"
+		if provider.IsRetryable(err) {
+			failureClass = "timeout"
+		}
+		r.failTaskWithClass(ctx, task, fmt.Sprintf("provider error: %v", err), failureClass)
 		return fmt.Errorf("provider chat: %w", err)
 	}
 
@@ -243,8 +343,24 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		}
 	}
 
+	// Step 6c: Validate output before posting (code-gen/test agents).
+	valResult := ValidateBeforePost(ctx, task.AgentType, workDir, resp.Message.Content, r.logger)
+	if valResult != nil && !valResult.Pass {
+		if !valResult.Retryable {
+			r.failTask(ctx, task, fmt.Sprintf("validation failed (not retryable): %s", valResult.Errors[0].Message))
+			return fmt.Errorf("validation: %s", valResult.Errors[0].Message)
+		}
+		// Code error — retry once with validation errors as context.
+		retryResp, retryErr := r.retryWithValidationErrors(ctx, task, req, workDir, valResult)
+		if retryErr != nil {
+			r.failTask(ctx, task, fmt.Sprintf("validation retry failed: %v", retryErr))
+			return fmt.Errorf("validation retry: %w", retryErr)
+		}
+		resp = retryResp // use the retry response for postProcess
+	}
+
 	// Step 7: Post-process response based on agent type.
-	if err = r.postProcess(ctx, task, resp.Message.Content); err != nil {
+	if err = r.postProcess(ctx, task, resp.Message.Content, workDir); err != nil {
 		r.failTask(ctx, task, fmt.Sprintf("post-process error: %v", err))
 		return fmt.Errorf("post-process: %w", err)
 	}
@@ -272,6 +388,59 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	return nil
 }
 
+// retryWithValidationErrors re-prompts the provider with validation error
+// context, giving it one chance to self-correct. Costs are attributed to the
+// same session. Returns the retry response or error.
+func (r *Runner) retryWithValidationErrors(
+	ctx context.Context,
+	task Task,
+	originalReq provider.ChatRequest,
+	workDir string,
+	valResult *ValidationResult,
+) (*provider.ChatResponse, error) {
+	// Build error context from validation errors.
+	var errMsg strings.Builder
+	errMsg.WriteString("Your previous output failed validation. Fix these errors:\n\n")
+	for _, ve := range valResult.Errors {
+		fmt.Fprintf(&errMsg, "## %s error\n%s\n", ve.Phase, ve.Message)
+		if ve.Output != "" {
+			fmt.Fprintf(&errMsg, "```\n%s\n```\n", ve.Output)
+		}
+	}
+
+	// Append error context as a new user message.
+	// Copy the original Messages slice to avoid mutating it.
+	retryReq := originalReq
+	retryReq.Messages = append(append([]provider.Message{}, originalReq.Messages...), provider.Message{
+		Role:    provider.RoleUser,
+		Content: errMsg.String(),
+	})
+
+	r.logger.Info("retrying with validation errors",
+		zap.Int("issue", task.Issue.Number),
+		zap.Int("error_count", len(valResult.Errors)),
+	)
+
+	// Re-call provider.
+	retryResp, err := r.provider.Chat(ctx, retryReq)
+	if err != nil {
+		return nil, fmt.Errorf("retry provider call: %w", err)
+	}
+
+	// Record cost for retry (same session).
+	if costErr := r.costs.RecordUsage(ctx, task.SessionID, r.provider.Name(), r.model, retryResp); costErr != nil {
+		r.logger.Error("retry cost recording failed", zap.Error(costErr))
+	}
+
+	// Re-validate the retry output.
+	retryVal := ValidateBeforePost(ctx, task.AgentType, workDir, retryResp.Message.Content, r.logger)
+	if retryVal != nil && !retryVal.Pass {
+		return nil, fmt.Errorf("validation failed after retry: %s", retryVal.Errors[0].Message)
+	}
+
+	return retryResp, nil
+}
+
 // postProgress posts a PROGRESS comment if the session has new partial output
 // since the last progress post. Uses hash-based dedup to avoid duplicate posts.
 func (r *Runner) postProgress(ctx context.Context, task Task, lastHash *string) {
@@ -292,9 +461,27 @@ func (r *Runner) postProgress(ctx context.Context, task Task, lastHash *string) 
 }
 
 // postProcess routes the provider response to the appropriate output handler.
-// Code-gen and test agents open PRs when EDIT blocks are present and forge
-// write access is configured; all others post comments.
-func (r *Runner) postProcess(ctx context.Context, task Task, response string) error {
+// When a workspace has changes (CLI provider flow), it commits, pushes, and
+// creates a PR directly from the worktree. Otherwise, code-gen and test agents
+// open PRs when EDIT blocks are present and forge write access is configured;
+// all others post comments.
+func (r *Runner) postProcess(ctx context.Context, task Task, response, workDir string) error {
+	// CLI-based flow: if workspace has changes, commit and create PR.
+	if workDir != "" {
+		changed, err := r.commitWorkspaceChanges(ctx, task, workDir)
+		if err != nil {
+			return err
+		}
+		if changed {
+			// Check doc gate: warn if code changed without doc updates.
+			r.checkDocGate(ctx, task, workDir)
+			// Post the agent's response as an informational comment.
+			_ = r.postComment(ctx, task, response)
+			return nil
+		}
+		// No workspace changes — fall through to standard post-processing.
+	}
+
 	switch task.AgentType {
 	case models.AgentTypeCodeGen, models.AgentTypeTest:
 		if r.repoWriter != nil && r.prManager != nil {
@@ -315,8 +502,78 @@ func (r *Runner) postProcess(ctx context.Context, task Task, response string) er
 	}
 }
 
+// checkDocGate posts a warning comment if the session modified code/infra
+// files without updating documentation. Best-effort: errors are logged but
+// do not block the task.
+func (r *Runner) checkDocGate(ctx context.Context, task Task, workDir string) {
+	files, err := ChangedFiles(workDir)
+	if err != nil {
+		r.logger.Debug("doc gate: could not list changed files", zap.Error(err))
+		return
+	}
+	needsDoc, codeFiles := CheckDocGate(files)
+	if !needsDoc {
+		return
+	}
+	warning := fmt.Sprintf(
+		"DOC_GATE [dispatcher] [%s]\nThis session modified %d infrastructure/code file(s) without updating documentation:\n%s\nConsider updating docs/ or .samverk/status.md.",
+		time.Now().UTC().Format(time.RFC3339),
+		len(codeFiles),
+		strings.Join(codeFiles, "\n"),
+	)
+	if _, commentErr := r.tracker.AddComment(ctx, task.Issue.Number, warning); commentErr != nil {
+		r.logger.Warn("doc gate: failed to post warning", zap.Error(commentErr))
+	}
+}
+
+// checkTier evaluates the autonomy policy for the given action. Returns nil
+// if the action is allowed, ErrTierBlocked if blocked. When no policy is set,
+// all actions are allowed (backward compatible).
+func (r *Runner) checkTier(task Task, action autonomy.ActionType) error {
+	if r.policy == nil {
+		return nil
+	}
+
+	decision := autonomy.Evaluate(r.policy, action)
+
+	switch decision.Verdict {
+	case autonomy.VerdictAllow:
+		r.logger.Debug("tier: allow",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("action", string(action)),
+			zap.String("tier", decision.Tier.String()),
+		)
+	case autonomy.VerdictAllowWithLog:
+		r.logger.Info("tier: allow with audit log",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("session", task.SessionID),
+			zap.String("action", string(action)),
+			zap.String("tier", decision.Tier.String()),
+			zap.String("agent", string(task.AgentType)),
+		)
+	case autonomy.VerdictBlock:
+		r.logger.Warn("tier: BLOCKED",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("session", task.SessionID),
+			zap.String("action", string(action)),
+			zap.String("tier", decision.Tier.String()),
+			zap.String("agent", string(task.AgentType)),
+		)
+		return fmt.Errorf("%w: %s requires %s", autonomy.ErrTierBlocked, action, decision.Tier)
+	}
+
+	return nil
+}
+
 // postComment posts the response as an issue comment.
 func (r *Runner) postComment(ctx context.Context, task Task, response string) error {
+	if err := r.checkTier(task, autonomy.ActionCommentIssue); err != nil {
+		return err
+	}
+	if strings.TrimSpace(response) == "" {
+		r.logger.Warn("skipping empty comment", zap.Int("issue", task.Issue.Number))
+		return nil
+	}
 	if _, err := r.tracker.AddComment(ctx, task.Issue.Number, response); err != nil {
 		return fmt.Errorf("add comment: %w", err)
 	}
@@ -324,15 +581,22 @@ func (r *Runner) postComment(ctx context.Context, task Task, response string) er
 }
 
 // openPR creates a branch, writes files, and opens a pull request.
+// Each step is gated by the autonomy policy tier check.
 func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) error {
 	branch := BranchSlug(task.Issue.Number, task.Issue.Title)
 
-	// Create branch from main.
+	// Tier check: create_branch (Tier 1 default).
+	if err := r.checkTier(task, autonomy.ActionCreateBranch); err != nil {
+		return err
+	}
 	if err := r.repoWriter.CreateBranch(ctx, branch); err != nil {
 		return fmt.Errorf("create branch %q: %w", branch, err)
 	}
 
-	// Write each file edit to the branch.
+	// Tier check: edit_file (Tier 2 default) — checked once for the batch.
+	if err := r.checkTier(task, autonomy.ActionEditFile); err != nil {
+		return err
+	}
 	for _, edit := range parsed.Edits {
 		msg := fmt.Sprintf("agent: update %s for issue #%d", edit.Path, task.Issue.Number)
 		if err := r.repoWriter.CreateOrUpdateFile(ctx, branch, edit.Path, edit.Content, msg); err != nil {
@@ -340,13 +604,14 @@ func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) e
 		}
 	}
 
-	// Determine PR title.
+	// Tier check: create_pr (Tier 2 default).
+	if err := r.checkTier(task, autonomy.ActionCreatePR); err != nil {
+		return err
+	}
 	prTitle := parsed.PRTitle
 	if prTitle == "" {
 		prTitle = fmt.Sprintf("agent: resolve issue #%d", task.Issue.Number)
 	}
-
-	// Open PR.
 	pr, err := r.prManager.CreatePullRequest(ctx, &forge.CreatePRRequest{
 		Title: prTitle,
 		Body:  fmt.Sprintf("Closes #%d\n\nAgent-generated implementation.", task.Issue.Number),
@@ -357,7 +622,7 @@ func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) e
 		return fmt.Errorf("create PR: %w", err)
 	}
 
-	// Post comment on issue with PR link.
+	// Post comment on issue with PR link (tier check inside postComment).
 	comment := fmt.Sprintf("PR opened: #%d", pr.Number)
 	if _, err = r.tracker.AddComment(ctx, task.Issue.Number, comment); err != nil {
 		r.logger.Error("failed to post PR link comment",
@@ -370,30 +635,96 @@ func (r *Runner) openPR(ctx context.Context, task Task, parsed *ParseResponse) e
 	return nil
 }
 
+// commitWorkspaceChanges checks for changes in the workspace, commits them,
+// pushes the branch, and creates a PR. Returns true if changes were committed.
+func (r *Runner) commitWorkspaceChanges(ctx context.Context, task Task, workDir string) (bool, error) {
+	// Tier checks for branch and file operations.
+	if err := r.checkTier(task, autonomy.ActionCreateBranch); err != nil {
+		return false, err
+	}
+	if err := r.checkTier(task, autonomy.ActionEditFile); err != nil {
+		return false, err
+	}
+
+	msg := fmt.Sprintf("agent: resolve issue #%d", task.Issue.Number)
+	changed, err := CommitAndPush(workDir, msg)
+	if err != nil {
+		return false, fmt.Errorf("workspace commit: %w", err)
+	}
+	if !changed {
+		return false, nil
+	}
+
+	r.logger.Info("workspace changes committed and pushed",
+		zap.Int("issue", task.Issue.Number),
+		zap.String("session", task.SessionID),
+	)
+
+	// Tier check for creating PR.
+	if prErr := r.checkTier(task, autonomy.ActionCreatePR); prErr != nil {
+		return true, prErr
+	}
+
+	if r.prManager != nil {
+		branch := fmt.Sprintf("agent/%d", task.Issue.Number)
+		pr, prErr := r.prManager.CreatePullRequest(ctx, &forge.CreatePRRequest{
+			Title: fmt.Sprintf("agent: resolve issue #%d", task.Issue.Number),
+			Body:  fmt.Sprintf("Closes #%d\n\nAgent-generated implementation.", task.Issue.Number),
+			Head:  branch,
+			Base:  "main",
+		})
+		if prErr != nil {
+			return true, fmt.Errorf("create PR: %w", prErr)
+		}
+		comment := fmt.Sprintf("PR opened: #%d", pr.Number)
+		if _, commentErr := r.tracker.AddComment(ctx, task.Issue.Number, comment); commentErr != nil {
+			r.logger.Error("failed to post PR link",
+				zap.Int("issue", task.Issue.Number),
+				zap.Error(commentErr),
+			)
+		}
+	}
+
+	return true, nil
+}
+
 // filePathRe matches file paths in issue bodies that look like project source files.
 var filePathRe = regexp.MustCompile(`(?:^|\s)((?:internal|cmd|pkg|docs)/[\w/.\-]+\.\w+)`)
 
 // extractFileContext scans the issue body for file paths matching project
-// source directories and returns a placeholder map. In a future iteration
-// this will fetch actual file contents from the repo; for now it records
-// which paths were referenced so BuildSystemPrompt can include them.
-func (r *Runner) extractFileContext(body string) map[string]string {
+// source directories and returns a map of path to content. When a workspace
+// or repo directory is available, actual file contents are read (up to the
+// maxFileContextBytes cap). Otherwise, paths are recorded with empty content.
+func (r *Runner) extractFileContext(body, workDir string) map[string]string {
 	matches := filePathRe.FindAllStringSubmatch(body, -1)
 	if len(matches) == 0 {
 		return nil
 	}
 
+	// Deduplicate paths.
 	seen := make(map[string]bool, len(matches))
-	result := make(map[string]string, len(matches))
+	var paths []string
 	for _, m := range matches {
 		path := strings.TrimSpace(m[1])
-		if seen[path] {
-			continue
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
 		}
-		seen[path] = true
-		// TODO(#194): fetch actual file contents from the repo via forge or local checkout.
-		// For now, leave content empty — the prompt builder handles empty values gracefully.
-		result[path] = ""
+	}
+
+	// If we have a directory, read actual file contents.
+	dir := workDir
+	if dir == "" {
+		dir = r.repoDir
+	}
+	if dir != "" {
+		return ReadWorkspaceFiles(dir, paths, maxFileContextBytes)
+	}
+
+	// No directory available — return paths with empty content.
+	result := make(map[string]string, len(paths))
+	for _, p := range paths {
+		result[p] = ""
 	}
 	return result
 }
@@ -455,6 +786,12 @@ func (r *Runner) safeCtx(ctx context.Context) context.Context {
 // If the session has partial output, a CHECKPOINT comment is posted first so
 // that a retry can resume from where the previous attempt left off.
 func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
+	r.failTaskWithClass(ctx, task, errMsg, string(models.FailureClassUnknown))
+}
+
+// failTaskWithClass marks the session as failed, records a FailureEvent with
+// the given failure class, and posts an error comment on the issue.
+func (r *Runner) failTaskWithClass(ctx context.Context, task Task, errMsg, failureClass string) {
 	ctx = r.safeCtx(ctx)
 
 	// Attempt to save checkpoint from partial output.
@@ -464,6 +801,24 @@ func (r *Runner) failTask(ctx context.Context, task Task, errMsg string) {
 		r.logger.Error("failed to update session on error",
 			zap.String("session_id", task.SessionID),
 			zap.String("error", err.Error()),
+		)
+	}
+
+	// Record structured failure event for analysis.
+	fe := &models.FailureEvent{
+		ID:           task.SessionID + "-fail",
+		IssueNumber:  task.Issue.Number,
+		SessionID:    task.SessionID,
+		FailureClass: models.FailureClass(failureClass),
+		ErrorMessage: errMsg,
+		AgentType:    string(task.AgentType),
+		Provider:     r.provider.Name(),
+		Timestamp:    time.Now(),
+	}
+	if saveErr := r.store.SaveFailureEvent(ctx, fe); saveErr != nil {
+		r.logger.Error("failed to save failure event",
+			zap.String("session_id", task.SessionID),
+			zap.String("error", saveErr.Error()),
 		)
 	}
 

@@ -128,14 +128,29 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
+	// Return 404 for /.well-known/ paths so the SPA catch-all doesn't
+	// serve HTML with a 200 status. Claude.ai probes this endpoint and
+	// interprets a 200 as "OAuth is available", breaking MCP connectivity.
+	s.mux.HandleFunc("GET /.well-known/", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusNotFound, errorResponse{Error: "not found"})
+	})
+
 	if s.cfg.MCPHandler != nil {
-		handler := s.cfg.MCPHandler
-		if s.cfg.AuthToken != "" || s.cfg.KeyStore != nil {
-			handler = BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)(handler)
-		}
-		s.mux.Handle("POST /mcp", handler)
+		// MCP endpoint is unauthenticated -- security is handled by
+		// Cloudflare Tunnel (same model as Synapset MCP).
+		// Register without method prefix so StreamableHTTPHandler receives
+		// POST (messages), GET (SSE streams), and DELETE (session teardown).
+		//
+		// Cloudflare AI protection blocks paths it recognizes as AI
+		// endpoints (/mcp, /sse) with 403 "invalid Host header".
+		// Use /connect for external access through Cloudflare Tunnel.
+		// Custom Connector URL: https://samverk.herbhall.net/connect
+		// Keep /mcp for LAN/Tailscale and existing configs.
+		s.mux.Handle("/connect", s.cfg.MCPHandler)
+		s.mux.Handle("/mcp", s.cfg.MCPHandler)
 	} else {
-		s.mux.HandleFunc("POST /mcp", s.handleNotImplemented)
+		s.mux.HandleFunc("/connect", s.handleNotImplemented)
+		s.mux.HandleFunc("/mcp", s.handleNotImplemented)
 	}
 
 	if s.cfg.APIHandler != nil {

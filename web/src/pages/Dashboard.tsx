@@ -7,7 +7,7 @@ function StatusIndicator({ connected, label }: { connected: boolean; label: stri
       <span
         className={`inline-block h-2.5 w-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}
       />
-      <span className="text-sm text-gray-700">{label}</span>
+      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
       <span className={`text-xs ${connected ? 'text-green-600' : 'text-red-600'}`}>
         {connected ? 'Connected' : 'Disconnected'}
       </span>
@@ -17,10 +17,10 @@ function StatusIndicator({ connected, label }: { connected: boolean; label: stri
 
 function StatCard({ title, value, subtitle }: { title: string; value: string; subtitle?: string }) {
   return (
-    <div className="rounded-lg border bg-white p-5">
-      <p className="text-sm font-medium text-gray-500">{title}</p>
-      <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
-      {subtitle != null && <p className="mt-1 text-xs text-gray-400">{subtitle}</p>}
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
+      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
+      <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">{value}</p>
+      {subtitle != null && <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{subtitle}</p>}
     </div>
   )
 }
@@ -64,7 +64,7 @@ export function Dashboard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <p className="text-gray-500">Loading dashboard...</p>
+        <p className="text-gray-500 dark:text-gray-400">Loading dashboard...</p>
       </div>
     )
   }
@@ -73,9 +73,9 @@ export function Dashboard() {
     const errorMsg =
       status.error?.message || sessions.error?.message || costs.error?.message || 'Unknown error'
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-        <p className="font-medium text-red-800">Failed to load dashboard</p>
-        <p className="mt-1 text-sm text-red-600">{errorMsg}</p>
+      <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
+        <p className="font-medium text-red-800 dark:text-red-300">Failed to load dashboard</p>
+        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errorMsg}</p>
       </div>
     )
   }
@@ -86,20 +86,20 @@ export function Dashboard() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-        <span className="text-xs text-gray-400">Auto-refreshes every 30s</span>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h2>
+        <span className="text-xs text-gray-400 dark:text-gray-500">Auto-refreshes every 30s</span>
       </div>
 
       <section className="mb-8">
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           System Status
         </h3>
-        <div className="rounded-lg border bg-white p-4">
+        <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
           <div className="flex items-center gap-3 mb-4">
             <span
               className={`inline-block h-3 w-3 rounded-full ${status.data?.healthy ? 'bg-green-500' : 'bg-yellow-500'}`}
             />
-            <span className="font-medium text-gray-900">
+            <span className="font-medium text-gray-900 dark:text-gray-100">
               {status.data?.healthy ? 'System Healthy' : 'System Degraded'}
             </span>
           </div>
@@ -113,16 +113,16 @@ export function Dashboard() {
               label="Database"
             />
           </div>
-          <div className="mt-3 border-t pt-3">
-            <p className="text-sm text-gray-500">
-              MCP Tools: <span className="font-medium text-gray-700">{status.data?.tool_count ?? 0}</span>
+          <div className="mt-3 border-t dark:border-gray-700 pt-3">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              MCP Tools: <span className="font-medium text-gray-700 dark:text-gray-300">{status.data?.tool_count ?? 0}</span>
             </p>
           </div>
         </div>
       </section>
 
       <section className="mb-8">
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           Activity
         </h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -148,13 +148,13 @@ export function Dashboard() {
 
       {activeSessions.length > 0 && (
         <section>
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Running Sessions
           </h3>
-          <div className="overflow-hidden rounded-lg border bg-white">
+          <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   <th className="px-4 py-2">Issue</th>
                   <th className="px-4 py-2">Agent</th>
                   <th className="px-4 py-2">Provider</th>
@@ -164,12 +164,12 @@ export function Dashboard() {
               </thead>
               <tbody>
                 {activeSessions.map((s) => (
-                  <tr key={s.id} className="border-b last:border-b-0">
-                    <td className="px-4 py-2 font-medium">#{s.issue_number}</td>
-                    <td className="px-4 py-2">{s.agent_type}</td>
-                    <td className="px-4 py-2">{s.provider}</td>
-                    <td className="px-4 py-2 font-mono text-xs">{s.model}</td>
-                    <td className="px-4 py-2 text-gray-500">
+                  <tr key={s.id} className="border-b dark:border-gray-700 last:border-b-0">
+                    <td className="px-4 py-2 font-medium"><a href={`https://github.com/HerbHall/samverk/issues/${s.issue_number}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">#{s.issue_number}</a></td>
+                    <td className="px-4 py-2 dark:text-gray-300">{s.agent_type}</td>
+                    <td className="px-4 py-2 dark:text-gray-300">{s.provider}</td>
+                    <td className="px-4 py-2 font-mono text-xs dark:text-gray-300">{s.model}</td>
+                    <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
                       {new Date(s.started_at).toLocaleString()}
                     </td>
                   </tr>

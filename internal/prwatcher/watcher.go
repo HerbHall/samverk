@@ -162,7 +162,9 @@ func (w *Watcher) labelTier3(ctx context.Context, pr *forge.PullRequest) {
 	}
 }
 
-// checkReviewComments checks for unresolved review comments from trusted reviewers.
+// checkReviewComments checks for unresolved review comments from trusted reviewers
+// and Copilot-authored comments. Actionable comments (suggestions, bug reports,
+// security warnings) block merge; approval-like comments ("looks good") do not.
 // It returns true if blocking comments exist (remediation issue created or already exists).
 func (w *Watcher) checkReviewComments(ctx context.Context, pr *forge.PullRequest) (bool, error) {
 	// Skip if PR already has status:needs-human label.
@@ -177,15 +179,20 @@ func (w *Watcher) checkReviewComments(ctx context.Context, pr *forge.PullRequest
 		return false, fmt.Errorf("list review comments for PR #%d: %w", pr.Number, err)
 	}
 
-	// Filter for unresolved comments from trusted reviewers.
-	var blocking []forge.ReviewComment
-	for _, c := range comments {
+	// Filter for unresolved actionable comments from trusted reviewers or Copilot.
+	blocking := make([]forge.ReviewComment, 0, len(comments))
+	for i := range comments {
+		c := comments[i]
 		if c.Resolved {
 			continue
 		}
-		if w.isTrustedReviewer(c.Author) {
-			blocking = append(blocking, c)
+		if !w.isTrustedReviewer(c.Author) && !isCopilotAuthor(c.Author) {
+			continue
 		}
+		if !isActionableComment(c.Body) {
+			continue
+		}
+		blocking = append(blocking, c)
 	}
 
 	if len(blocking) == 0 {
@@ -206,19 +213,28 @@ func (w *Watcher) checkReviewComments(ctx context.Context, pr *forge.PullRequest
 	}
 
 	// Create a batched remediation issue.
-	title := fmt.Sprintf("fix(#%d): address review comments on %q", pr.Number, pr.Title)
+	title := fmt.Sprintf("fix(#%d): address Copilot review feedback on %q", pr.Number, pr.Title)
 	body := buildRemediationBody(pr, blocking)
 
-	_, err = w.issueTracker.CreateIssue(ctx, &forge.CreateIssueRequest{
+	created, err := w.issueTracker.CreateIssue(ctx, &forge.CreateIssueRequest{
 		Title:  title,
 		Body:   body,
-		Labels: []string{"status:queued", "agent:code-gen", prLabel},
+		Labels: []string{"agent:code-gen", "priority:high", prLabel},
 	})
 	if err != nil {
 		return true, fmt.Errorf("create remediation issue for PR #%d: %w", pr.Number, err)
 	}
 
-	w.log().Info("pr-watcher: created remediation issue", zap.Int("pr", pr.Number), zap.Int("comments", len(blocking)))
+	// Comment on the PR to link the remediation issue.
+	prComment := fmt.Sprintf("Copilot feedback detected. Created issue #%d to address before merge.", created.Number)
+	if _, commentErr := w.issueTracker.AddComment(ctx, pr.Number, prComment); commentErr != nil {
+		w.log().Error("pr-watcher: add PR comment", zap.Int("pr", pr.Number), zap.Error(commentErr))
+	}
+
+	w.log().Info("pr-watcher: created remediation issue",
+		zap.Int("pr", pr.Number),
+		zap.Int("issue", created.Number),
+		zap.Int("comments", len(blocking)))
 	return true, nil
 }
 
@@ -240,6 +256,44 @@ func (w *Watcher) isTrustedReviewer(author string) bool {
 		}
 	}
 	return false
+}
+
+// isCopilotAuthor returns true if the comment author is GitHub Copilot.
+// Copilot reviews appear as "copilot" or as "github-actions[bot]" with
+// copilot context, or variations containing "copilot" in the login.
+func isCopilotAuthor(author string) bool {
+	lower := strings.ToLower(author)
+	return strings.Contains(lower, "copilot")
+}
+
+// approvalPhrases are comment bodies that indicate approval, not actionable feedback.
+var approvalPhrases = []string{
+	"looks good",
+	"lgtm",
+	"no issues found",
+	"no concerns",
+	"approved",
+	"ship it",
+	"good to go",
+	"well done",
+	"nice work",
+	"no suggestions",
+}
+
+// isActionableComment returns true if the comment body contains actionable
+// feedback (suggestions, bug reports, security warnings). Approval-like
+// comments ("looks good", "lgtm") are not actionable.
+func isActionableComment(body string) bool {
+	if strings.TrimSpace(body) == "" {
+		return false
+	}
+	lower := strings.ToLower(body)
+	for _, phrase := range approvalPhrases {
+		if strings.Contains(lower, phrase) {
+			return false
+		}
+	}
+	return true
 }
 
 // buildRemediationBody constructs the issue body for a remediation issue.

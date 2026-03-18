@@ -49,8 +49,9 @@ type historyResponse struct {
 }
 
 // historyMaxEntries is the maximum number of entries kept in the ring buffer.
-// At a 30-second poll interval this covers ~30 minutes of history.
-const historyMaxEntries = 60
+// At a 5-second dashboard poll interval with 1-in-6 sampling (every 30s),
+// 2880 entries covers 24 hours of history.
+const historyMaxEntries = 2880
 
 // taskProfileDTO is the JSON-serializable form of models.TaskProfile.
 // Duration fields are expressed in milliseconds.

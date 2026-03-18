@@ -4,6 +4,8 @@ const BASE = '/api/v1'
 declare global {
   interface Window {
     __SAMVERK_TOKEN__?: string
+    __SAMVERK_VERSION__?: string
+    __SAMVERK_COMMIT__?: string
   }
 }
 
@@ -155,6 +157,206 @@ export interface MetricsResponse {
   capacity: CapacityInfo | null
 }
 
+export interface HistoryEntry {
+  timestamp: string
+  pool: PoolMetrics | null
+  dispatcher: DispatcherMetrics | null
+  system: SystemMetrics | null
+  pressure: PressureMetrics
+}
+
+export interface HistoryResponse {
+  duration: string
+  entries: HistoryEntry[]
+}
+
+export interface FailureEvent {
+  issue_number: number
+  issue_title: string
+  agent_type: string
+  provider: string
+  error_category: string
+  error_message: string
+  timestamp: string
+}
+
+export interface FailureSummary {
+  total_failures: number
+  by_category: Record<string, number>
+  by_provider: Record<string, number>
+  recent: FailureEvent[]
+}
+
+export interface HostAlert {
+  resource: string
+  level: string
+  message: string
+  value: number
+  threshold: number
+}
+
+export interface HostMetricsDTO {
+  collected_at: string
+  disk_total_bytes: number
+  disk_used_bytes: number
+  disk_percent: number
+  ram_total_bytes: number
+  ram_used_bytes: number
+  ram_avail_bytes: number
+  ram_percent: number
+  swap_total_bytes: number
+  swap_used_bytes: number
+  swap_percent: number
+  load_avg_1: number
+  load_avg_5: number
+  load_avg_15: number
+  num_cpu: number
+  alerts?: HostAlert[]
+}
+
+export interface HostMetricsResponse {
+  current: HostMetricsDTO
+  history: HostMetricsDTO[]
+}
+
+export interface LogEntry {
+  id: number
+  ts: string
+  level: string
+  msg: string
+  component?: string
+  session_id?: string
+  issue_number?: number
+  fields?: string
+}
+
+export interface LogSummary {
+  scope: { type: string; id: string }
+  text: string
+  total_entries: number
+  error_count: number
+  warn_count: number
+  components: string[]
+  ai_generated: boolean
+  generated_at: string
+}
+
+// Agent (enhanced provider) types
+export interface AgentStats {
+  total_sessions: number
+  completed: number
+  failed: number
+  active: number
+  success_rate: number
+  avg_duration_secs: number
+}
+
+export interface AgentSession {
+  id: string
+  issue_number: number
+  status: string
+  started_at: string
+  duration_secs?: number
+}
+
+export interface ThroughputPoint {
+  hour: string
+  count: number
+}
+
+export interface AgentInfo {
+  name: string
+  type: string
+  model: string
+  healthy: boolean
+  account_url?: string
+  routing_chains: string[]
+  stats: AgentStats
+  recent_sessions: AgentSession[]
+  throughput: ThroughputPoint[]
+}
+
+export interface AgentsResponse {
+  agents: AgentInfo[]
+}
+
+// Synapset types (matching actual upstream API responses)
+export interface SynapsetStatus {
+  version: string
+  uptime_seconds: number
+  memory_count: number
+  pool_count: number
+  db_size_bytes: number
+  provider: string
+}
+
+export interface SynapsetToolSummaryEntry {
+  ToolName: string
+  CallCount: number
+  AvgDurationMs: number
+  MaxDurationMs: number
+  ErrorCount: number
+  AvgSimilarity: number
+}
+
+export interface SynapsetToolHistoryEntry {
+  ID: number
+  ToolName: string
+  PoolName: string
+  DurationMs: number
+  Status: string
+  ErrorMsg: string
+  ResultCount: number
+  SimilarityAvg: number
+  CreatedAt: string
+}
+
+export interface SynapsetSearchStats {
+  total_searches: number
+  avg_similarity: number
+  avg_result_count: number
+  similarity_distribution: Record<string, number>
+}
+
+export interface SynapsetMemoryTrendEntry {
+  date: string
+  pool_name: string
+  count: number
+  cumulative: number
+}
+
+export interface SynapsetPoolStatsEntry {
+  name: string
+  description: string
+  model_name: string
+  dimensions: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SynapsetMetricsHistoryEntry {
+  ID: number
+  Goroutines: number
+  HeapAllocMB: number
+  HeapSysMB: number
+  GCCycles: number
+  DBSizeBytes: number
+  MemoryCount: number
+  PoolCount: number
+  UptimeSeconds: number
+  CreatedAt: string
+}
+
+export interface SynapsetLogEntry {
+  ID: number
+  Timestamp: string
+  Level: string
+  Message: string
+  Component: string
+  Fields: string
+  CreatedAt: string
+}
+
 export const api = {
   listIssues: (params?: { state?: string; page?: number }) =>
     fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
@@ -173,4 +375,70 @@ export const api = {
 
   getMetrics: () =>
     fetchJSON<MetricsResponse>('/metrics'),
+
+  getMetricsHistory: (duration?: string) =>
+    fetchJSON<HistoryResponse>(`/metrics/history${duration ? '?duration=' + duration : ''}`),
+
+  getFailures: (hours?: number) =>
+    fetchJSON<FailureSummary>(`/failures${hours ? '?hours=' + hours : ''}`),
+
+  getAgents: () =>
+    fetchJSON<AgentsResponse>('/agents'),
+
+  getHostMetrics: () =>
+    fetchJSON<HostMetricsResponse>('/metrics/host'),
+
+  getLogs: (params?: {
+    level?: string
+    component?: string
+    session_id?: string
+    issue?: number
+    since?: string
+    until?: string
+    limit?: number
+    offset?: number
+    q?: string
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== '') searchParams.set(k, String(v))
+      })
+    }
+    const qs = searchParams.toString()
+    return fetchJSON<LogEntry[]>(`/logs${qs ? '?' + qs : ''}`)
+  },
+
+  getLogSummary: (params: { scope: string; id?: string; since?: string; until?: string }) => {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '') searchParams.set(k, String(v))
+    })
+    return fetchJSON<LogSummary>(`/logs/summary?${searchParams.toString()}`)
+  },
+
+  // Synapset proxy endpoints
+  synapsetStatus: () =>
+    fetchJSON<SynapsetStatus>('/synapset/status'),
+
+  synapsetToolSummary: (period: string) =>
+    fetchJSON<SynapsetToolSummaryEntry[]>(`/synapset/tools/summary?period=${period}`),
+
+  synapsetToolHistory: (period: string) =>
+    fetchJSON<SynapsetToolHistoryEntry[]>(`/synapset/tools/history?period=${period}`),
+
+  synapsetSearchStats: (period: string) =>
+    fetchJSON<SynapsetSearchStats>(`/synapset/search/stats?period=${period}`),
+
+  synapsetMemoryTrend: (period: string) =>
+    fetchJSON<SynapsetMemoryTrendEntry[]>(`/synapset/memories/trend?period=${period}`),
+
+  synapsetPoolStats: () =>
+    fetchJSON<SynapsetPoolStatsEntry[]>('/synapset/pools/stats'),
+
+  synapsetMetricsHistory: (period: string) =>
+    fetchJSON<SynapsetMetricsHistoryEntry[]>(`/synapset/metrics/history?period=${period}`),
+
+  synapsetLogs: (limit?: number) =>
+    fetchJSON<SynapsetLogEntry[]>(`/synapset/logs${limit ? '?limit=' + limit : ''}`),
 }

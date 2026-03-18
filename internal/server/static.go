@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/herbhall/samverk/internal/version"
 )
 
 //go:embed all:static
@@ -24,17 +26,23 @@ func spaHandler(authToken string) http.Handler {
 		panic("embedded static filesystem: " + err.Error())
 	}
 
-	// Pre-read index.html for token injection (only when token is configured).
-	var injectedIndex []byte
-	if authToken != "" {
-		raw, readErr := fs.ReadFile(sub, "index.html")
-		if readErr != nil {
-			panic("read embedded index.html: " + readErr.Error())
-		}
-		safe := html.EscapeString(authToken)
-		tag := []byte(`<script>window.__SAMVERK_TOKEN__="` + safe + `";</script>`)
-		injectedIndex = bytes.Replace(raw, []byte("</head>"), append(tag, []byte("</head>")...), 1)
+	// Pre-read index.html to inject runtime config (token + version).
+	raw, readErr := fs.ReadFile(sub, "index.html")
+	if readErr != nil {
+		panic("read embedded index.html: " + readErr.Error())
 	}
+
+	// Build injection script with version info (always) and auth token (when configured).
+	var scriptParts []string
+	scriptParts = append(scriptParts,
+		`window.__SAMVERK_VERSION__="`+html.EscapeString(version.Version)+`"`,
+		`window.__SAMVERK_COMMIT__="`+html.EscapeString(version.GitCommit)+`"`,
+	)
+	if authToken != "" {
+		scriptParts = append(scriptParts, `window.__SAMVERK_TOKEN__="`+html.EscapeString(authToken)+`"`)
+	}
+	tag := []byte(`<script>` + strings.Join(scriptParts, ";") + `;</script>`)
+	injectedIndex := bytes.Replace(raw, []byte("</head>"), append(tag, []byte("</head>")...), 1)
 
 	fileServer := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,21 +58,13 @@ func spaHandler(authToken string) http.Handler {
 			servingIndex = true
 		}
 
-		// If we have an injected index, serve it directly instead of
-		// going through FileServer so the token tag is included.
-		if servingIndex && injectedIndex != nil {
+		// Serve injected index directly so runtime config is included.
+		if servingIndex {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = w.Write(injectedIndex)
 			return
 		}
 
-		if !servingIndex {
-			fileServer.ServeHTTP(w, r)
-			return
-		}
-
-		// No token configured -- let FileServer handle index.html as-is.
-		r.URL.Path = "/"
 		fileServer.ServeHTTP(w, r)
 	})
 }

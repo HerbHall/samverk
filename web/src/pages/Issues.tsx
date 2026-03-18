@@ -6,7 +6,7 @@ type StateFilter = 'open' | 'closed' | 'all'
 
 function LabelBadge({ label }: { label: string }) {
   return (
-    <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+    <span className="inline-block rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">
       {label}
     </span>
   )
@@ -56,20 +56,20 @@ export function Issues() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Issues</h2>
-        <span className="text-xs text-gray-400">Auto-refreshes every 30s</span>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Issues</h2>
+        <span className="text-xs text-gray-400 dark:text-gray-500">Auto-refreshes every 30s</span>
       </div>
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex rounded-lg border bg-white">
+        <div className="flex rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
           {(['open', 'closed', 'all'] as const).map((state) => (
             <button
               key={state}
               onClick={() => setStateFilter(state)}
               className={`px-4 py-2 text-sm capitalize ${
                 stateFilter === state
-                  ? 'bg-blue-50 font-medium text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  ? 'bg-blue-50 dark:bg-blue-900/30 font-medium text-blue-700 dark:text-blue-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
               } ${state === 'open' ? 'rounded-l-lg' : ''} ${state === 'all' ? 'rounded-r-lg' : ''}`}
             >
               {state}
@@ -81,10 +81,10 @@ export function Issues() {
           placeholder="Search by title or number..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="rounded-lg border bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-64"
+          className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-64"
         />
         {issues.data != null && (
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
             {filteredIssues.length} of {issues.data.length} issues
           </span>
         )}
@@ -92,30 +92,30 @@ export function Issues() {
 
       {issues.isLoading && (
         <div className="flex items-center justify-center py-20">
-          <p className="text-gray-500">Loading issues...</p>
+          <p className="text-gray-500 dark:text-gray-400">Loading issues...</p>
         </div>
       )}
 
       {issues.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-          <p className="font-medium text-red-800">Failed to load issues</p>
-          <p className="mt-1 text-sm text-red-600">{issues.error?.message}</p>
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
+          <p className="font-medium text-red-800 dark:text-red-300">Failed to load issues</p>
+          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{issues.error?.message}</p>
         </div>
       )}
 
       {issues.isSuccess && filteredIssues.length === 0 && (
-        <div className="rounded-lg border bg-white p-8 text-center">
-          <p className="text-gray-500">
+        <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
+          <p className="text-gray-500 dark:text-gray-400">
             {searchQuery.trim() !== '' ? 'No issues match your search.' : 'No issues found.'}
           </p>
         </div>
       )}
 
       {issues.isSuccess && filteredIssues.length > 0 && (
-        <div className="overflow-hidden rounded-lg border bg-white">
+        <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+              <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 <th className="px-4 py-2 w-16">#</th>
                 <th className="px-4 py-2">Title</th>
                 <th className="px-4 py-2 w-20">State</th>
@@ -154,25 +154,25 @@ function IssueRow({
     <>
       <tr
         onClick={onToggle}
-        className="cursor-pointer border-b last:border-b-0 hover:bg-gray-50"
+        className="cursor-pointer border-b dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700"
       >
-        <td className="px-4 py-2.5 font-medium text-gray-900">{issue.number}</td>
+        <td className="px-4 py-2.5 font-medium"><a href={`https://github.com/HerbHall/samverk/issues/${issue.number}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400" onClick={(e) => e.stopPropagation()}>#{issue.number}</a></td>
         <td className="px-4 py-2.5">
           <div className="flex items-center gap-2">
             <span
-              className={`text-xs ${expanded ? 'rotate-90' : ''} inline-block transition-transform`}
+              className={`text-xs ${expanded ? 'rotate-90' : ''} inline-block transition-transform dark:text-gray-400`}
             >
               &#9654;
             </span>
-            <span className="text-gray-900">{issue.title}</span>
+            <span className="text-gray-900 dark:text-gray-100">{issue.title}</span>
           </div>
         </td>
         <td className="px-4 py-2.5">
           <span
             className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
               issue.state === 'open'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-purple-100 text-purple-700'
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
             }`}
           >
             {issue.state}
@@ -185,21 +185,21 @@ function IssueRow({
             ))}
           </div>
         </td>
-        <td className="px-4 py-2.5 text-gray-600">
+        <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400">
           {issue.assignees.length > 0 ? issue.assignees.join(', ') : '-'}
         </td>
-        <td className="px-4 py-2.5 text-gray-500">{formatDate(issue.updated_at)}</td>
+        <td className="px-4 py-2.5 text-gray-500 dark:text-gray-400">{formatDate(issue.updated_at)}</td>
       </tr>
       {expanded && (
-        <tr className="bg-gray-50">
+        <tr className="bg-gray-50 dark:bg-gray-900">
           <td colSpan={6} className="px-4 py-4">
             <div className="ml-6 max-w-3xl">
               {issue.body.trim() !== '' ? (
-                <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">
+                <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-sans leading-relaxed">
                   {issue.body}
                 </pre>
               ) : (
-                <p className="text-sm italic text-gray-400">No description provided.</p>
+                <p className="text-sm italic text-gray-400 dark:text-gray-500">No description provided.</p>
               )}
             </div>
           </td>

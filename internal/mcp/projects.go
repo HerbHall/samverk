@@ -10,21 +10,35 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ValidPhases defines the allowed lifecycle phases for a project.
+var ValidPhases = map[string]bool{
+	"research":    true,
+	"planning":    true,
+	"design":      true,
+	"development": true,
+	"deployed":    true,
+	"maintenance": true,
+	"inactive":    true,
+}
+
 // Project represents a registered project with its forge connection.
 type Project struct {
-	Name      string                    `json:"name" yaml:"name"`
-	Owner     string                    `json:"owner" yaml:"owner"`
-	Repo      string                    `json:"repo" yaml:"repo"`
-	Tracker   forge.IssueTracker        `json:"-" yaml:"-"`
-	Reader    forge.RepoReader          `json:"-" yaml:"-"`
-	PRManager forge.PullRequestManager  `json:"-" yaml:"-"`
+	Name      string                   `json:"name" yaml:"name"`
+	Owner     string                   `json:"owner" yaml:"owner"`
+	Repo      string                   `json:"repo" yaml:"repo"`
+	Phase     string                   `json:"phase" yaml:"phase"`
+	Tags      []string                 `json:"tags,omitempty" yaml:"tags"`
+	Tracker   forge.IssueTracker       `json:"-" yaml:"-"`
+	Reader    forge.RepoReader         `json:"-" yaml:"-"`
+	PRManager forge.PullRequestManager `json:"-" yaml:"-"`
 }
 
 // ProjectRegistry manages the set of available projects.
 type ProjectRegistry struct {
-	mu       sync.RWMutex
-	projects map[string]*Project
-	active   string // name of the currently active project
+	mu         sync.RWMutex
+	projects   map[string]*Project
+	active     string // name of the currently active project
+	configPath string // path to server.yaml for phase persistence (empty = no persistence)
 }
 
 // NewProjectRegistry creates a new empty project registry.
@@ -131,6 +145,98 @@ func (r *ProjectRegistry) TrackerFor(owner, repo string) (forge.IssueTracker, bo
 	return nil, false
 }
 
+// PhaseFor returns the lifecycle phase for the project matching the given
+// owner/repo pair. Returns ("", false) if no matching project is registered.
+// This method satisfies the dispatcher.ProjectResolver interface.
+func (r *ProjectRegistry) PhaseFor(owner, repo string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, p := range r.projects {
+		if p.Owner == owner && p.Repo == repo {
+			return p.Phase, true
+		}
+	}
+	return "", false
+}
+
+// SetConfigPath records the path to the server.yaml file so that SetPhase
+// can persist phase changes back to disk. Call this after loading configs.
+func (r *ProjectRegistry) SetConfigPath(path string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.configPath = path
+}
+
+// SetPhase updates the lifecycle phase of the named project in memory and, if
+// a config path is set, persists the change to the server.yaml file.
+// Returns an error if the project is not found or the phase is invalid.
+func (r *ProjectRegistry) SetPhase(name, phase string) error {
+	if !ValidPhases[phase] {
+		return fmt.Errorf("invalid phase %q: must be one of research, planning, design, development, deployed, maintenance, inactive", phase)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	p, exists := r.projects[name]
+	if !exists {
+		return fmt.Errorf("project %q not found", name)
+	}
+
+	oldPhase := p.Phase
+	p.Phase = phase
+
+	if r.configPath == "" || oldPhase == phase {
+		return nil
+	}
+
+	if err := r.persistPhase(name, phase); err != nil {
+		// Roll back in-memory update on persistence failure.
+		p.Phase = oldPhase
+		return fmt.Errorf("persist phase change for %q: %w", name, err)
+	}
+
+	return nil
+}
+
+// persistPhase reads the server.yaml file, updates the named project's phase,
+// and writes the file back. Must be called with r.mu held.
+func (r *ProjectRegistry) persistPhase(name, phase string) error {
+	data, err := os.ReadFile(r.configPath) //nolint:gosec // G304: path is from trusted CLI flag
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+
+	var cfg projectsFileConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	updated := false
+	for i := range cfg.Projects {
+		if cfg.Projects[i].Name == name {
+			cfg.Projects[i].Phase = phase
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		return fmt.Errorf("project %q not found in config file", name)
+	}
+
+	out, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(r.configPath, out, 0o600); err != nil { //nolint:gosec // G306: config file
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	return nil
+}
+
 // ActiveName returns the name of the currently active project.
 func (r *ProjectRegistry) ActiveName() string {
 	r.mu.RLock()
@@ -143,12 +249,14 @@ func (r *ProjectRegistry) ActiveName() string {
 // Forge may be "github" (default) or "gitea". Gitea projects require GiteaURL
 // and optionally GiteaToken (falls back to GITEA_TOKEN environment variable).
 type ProjectConfig struct {
-	Name       string `yaml:"name"`
-	Owner      string `yaml:"owner"`
-	Repo       string `yaml:"repo"`
-	Forge      string `yaml:"forge"`       // "github" (default) or "gitea"
-	GiteaURL   string `yaml:"gitea_url"`   // required when forge = "gitea"
-	GiteaToken string `yaml:"gitea_token"` // optional; falls back to GITEA_TOKEN env var
+	Name       string   `yaml:"name"`
+	Owner      string   `yaml:"owner"`
+	Repo       string   `yaml:"repo"`
+	Forge      string   `yaml:"forge"`       // "github" (default) or "gitea"
+	GiteaURL   string   `yaml:"gitea_url"`   // required when forge = "gitea"
+	GiteaToken string   `yaml:"gitea_token"` // optional; falls back to GITEA_TOKEN env var
+	Phase      string   `yaml:"phase"`       // lifecycle phase; defaults to "development"
+	Tags       []string `yaml:"tags"`        // optional classification tags
 }
 
 // projectsFileConfig is the top-level YAML structure for the projects config file.
@@ -169,7 +277,8 @@ func LoadProjectConfig(path string) ([]ProjectConfig, error) {
 	}
 
 	// Validate each project entry.
-	for i, p := range cfg.Projects {
+	for i := range cfg.Projects {
+		p := &cfg.Projects[i]
 		if p.Name == "" {
 			return nil, fmt.Errorf("project at index %d: name is required", i)
 		}
@@ -184,6 +293,13 @@ func LoadProjectConfig(path string) ([]ProjectConfig, error) {
 		}
 		if p.Forge == "gitea" && p.GiteaURL == "" {
 			return nil, fmt.Errorf("project %q: gitea_url is required when forge = \"gitea\"", p.Name)
+		}
+
+		// Default phase to "development" if not specified.
+		if p.Phase == "" {
+			p.Phase = "development"
+		} else if !ValidPhases[p.Phase] {
+			return nil, fmt.Errorf("project %q: invalid phase %q", p.Name, p.Phase)
 		}
 	}
 

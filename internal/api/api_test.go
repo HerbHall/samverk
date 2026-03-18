@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/api"
+	"github.com/herbhall/samverk/internal/audit"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/store"
@@ -183,8 +184,22 @@ func (m *mockStore) GetFailureSummary(_ context.Context, _ time.Time) (*models.F
 func (m *mockStore) GetIssueFailureCount(_ context.Context, _ int) (int, error)      { return 0, nil }
 func (m *mockStore) IncrementIssueFailureCount(_ context.Context, _ int) (int, error) { return 1, nil }
 func (m *mockStore) ClearIssueFailureCount(_ context.Context, _ int) error            { return nil }
+func (m *mockStore) SaveCorrectionEvent(_ context.Context, _ *models.CorrectionEvent) error {
+	return nil
+}
+func (m *mockStore) ListCorrectionEvents(_ context.Context, _ int) ([]*models.CorrectionEvent, error) {
+	return nil, nil
+}
+func (m *mockStore) SaveAuditResults(_ context.Context, _ []audit.AuditResult) error {
+	return nil
+}
+func (m *mockStore) GetLastAudit(_ context.Context) ([]audit.AuditResult, error) {
+	return nil, nil
+}
 
-func (m *mockStore) Close() error { return nil }
+func (m *mockStore) GetLastCheckIn(_ context.Context) (time.Time, error) { return time.Time{}, nil }
+func (m *mockStore) SetLastCheckIn(_ context.Context, _ time.Time) error { return nil }
+func (m *mockStore) Close() error                                        { return nil }
 
 // Compile-time check: mockStore implements store.Store.
 var _ store.Store = (*mockStore)(nil)

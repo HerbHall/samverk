@@ -8,7 +8,11 @@ import (
 
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/hostmetrics"
+	"github.com/herbhall/samverk/internal/loganalyst"
+	"github.com/herbhall/samverk/internal/logstore"
 	"github.com/herbhall/samverk/internal/metrics"
+	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
 )
 
@@ -35,12 +39,17 @@ type API struct {
 	pool           poolMetricsSource       // may be nil if pool not yet started
 	dispatcher     dispatcherMetricsSource // may be nil if dispatcher not started
 	system         systemMetricsSource     // may be nil; created via SetMetrics
+	hostMetrics    *hostmetrics.Collector   // may be nil if collector not started
 	capacity       *capacityDTO            // may be nil if no providers configured
+	logAnalyst     *loganalyst.Analyst      // may be nil if logstore not configured
+	healthMonitor  *provider.HealthMonitor  // may be nil if health monitor not started
 	workers        *workerRegistry         // in-memory registry of PC agent workers
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
 	scalingMax     int
-	history        []historyEntry // ring buffer of recent snapshots; guarded by historyMu
+	synapsetProxy  *SynapsetProxy    // may be nil; proxies Synapset API requests
+	logStore       *logstore.LogStore // may be nil; for log query API
+	history        []historyEntry    // ring buffer of recent snapshots; guarded by historyMu
 	logger         *zap.Logger
 }
 
@@ -76,6 +85,11 @@ func (a *API) SetCapacity(providers []ProviderDTO, routing map[string][]string) 
 	}
 }
 
+// SetLogStore attaches the log store for the log query API endpoint.
+func (a *API) SetLogStore(ls *logstore.LogStore) {
+	a.logStore = ls
+}
+
 // SetScalingConfig records the active scaling policy limits so the metrics endpoint
 // can expose them alongside events read from the store. Call before serving.
 // If not called, scaling_events and scaling_config in /api/v1/metrics will be null.
@@ -83,6 +97,12 @@ func (a *API) SetScalingConfig(enabled bool, minW, maxW int) {
 	a.scalingEnabled = enabled
 	a.scalingMin = minW
 	a.scalingMax = maxW
+}
+
+// SetLogAnalyst attaches the log analyst for AI-powered log summaries.
+// Call from the serve command after creating the logstore and Ollama client.
+func (a *API) SetLogAnalyst(la *loganalyst.Analyst) {
+	a.logAnalyst = la
 }
 
 // RegisterRoutes registers all API endpoints on the given mux.
@@ -103,7 +123,15 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/workers", a.handleListWorkers)
 	mux.HandleFunc("POST /api/v1/workers/register", a.handleRegisterWorker)
 	mux.HandleFunc("POST /api/v1/workers/heartbeat", a.handleWorkerHeartbeat)
+	mux.HandleFunc("GET /api/v1/metrics/host", a.handleHostMetrics)
 	mux.HandleFunc("GET /api/v1/failures", a.handleFailureSummary)
+	mux.HandleFunc("GET /api/v1/providers/health", a.handleProviderHealth)
+	mux.HandleFunc("GET /api/v1/agents", a.handleAgents)
+	mux.HandleFunc("GET /api/v1/logs", a.handleListLogs)
+	mux.HandleFunc("GET /api/v1/logs/summary", a.handleLogSummary)
+
+	// Synapset proxy routes (no-op if proxy not configured).
+	a.RegisterSynapsetRoutes(mux)
 }
 
 // errorResponse is the JSON body returned for error responses.

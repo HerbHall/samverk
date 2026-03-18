@@ -1,5 +1,5 @@
 .PHONY: build test test-race test-coverage test-integration test-all lint lint-md lint-all ci hooks run clean web dev-web \
-       cross-build cross-build-full deploy deploy-binary deploy-config redeploy redeploy-full ssh
+       cross-build cross-build-full deploy deploy-force deploy-staging redeploy ssh ssh-staging
 
 # Binary
 BIN=samverk
@@ -61,50 +61,50 @@ hooks:
 run: build
 	SAMVERK_ENV=development ./bin/$(BIN) serve
 
-# Cross-compile for Linux (deploy target) — no web dependency for Windows compat
-DEPLOY_HOST ?= 192.168.1.161
+# Cross-compile for Linux (deploy target)
+DEPLOY_HOST ?= 192.168.1.162
 DEPLOY_USER ?= root
 
 cross-build:
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BIN)-linux-amd64 ./cmd/samverk/
 	@echo "Built bin/$(BIN)-linux-amd64"
 
-# Cross-compile with fresh SPA build (requires bash/node)
+# Cross-compile with fresh SPA build -- the standard build target for deploy.
+# Always rebuilds web first to prevent stale embedded SPA (see issue #458).
 cross-build-full: web cross-build
 
-# Deploy binary to the remote host (stops services first to avoid binary lock)
-deploy-binary: cross-build
-	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) 'systemctl stop samverk-dispatch samverk-serve 2>/dev/null || true'
-	scp bin/$(BIN)-linux-amd64 $(DEPLOY_USER)@$(DEPLOY_HOST):/usr/local/bin/$(BIN)
-	@echo "Binary deployed to $(DEPLOY_HOST)"
+# Deploy: rebuild SPA + binary, wait for idle dispatcher, then swap.
+# This is the ONLY deploy target that should be used.
+deploy: cross-build-full
+	bash scripts/safe-deploy.sh $(DEPLOY_HOST)
 
-# Deploy config templates (only copies if files don't already exist on target)
-deploy-config:
-	scp deploy/samverk-serve.service deploy/samverk-dispatch.service $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/
-	scp deploy/install.sh $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/install.sh
-	@echo "Service files and installer copied to $(DEPLOY_HOST)"
-
-# Full deploy: build, copy binary + configs, run installer, restart services
-deploy: deploy-binary deploy-config
-	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) 'sed -i "s/\r$$//" /tmp/install.sh && bash /tmp/install.sh && \
-		systemctl start samverk-serve samverk-dispatch'
-	@echo "Deployment complete. Services restarted."
-
-# One-step redeploy with health verification (no SPA rebuild)
+# One-step redeploy to production with safety gate.
 redeploy:
 	$(MAKE) deploy DEPLOY_HOST=192.168.1.162
-	@echo "Verifying health..."
-	@sleep 3
-	@ssh root@192.168.1.162 'curl -sf http://localhost:8080/healthz' && echo " OK" || (echo " FAIL"; exit 1)
 
-# Full redeploy including SPA rebuild (requires bash/node)
-redeploy-full:
-	$(MAKE) web
-	$(MAKE) redeploy
+# Unsafe deploy (skips idle wait). Use only for emergency hotfixes.
+deploy-force: cross-build-full
+	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) 'systemctl stop samverk-dispatch samverk-serve 2>/dev/null || true'
+	scp bin/$(BIN)-linux-amd64 $(DEPLOY_USER)@$(DEPLOY_HOST):/usr/local/bin/$(BIN)
+	scp deploy/samverk-serve.service deploy/samverk-dispatch.service $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/
+	scp deploy/install.sh $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/install.sh
+	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) 'sed -i "s/\r$$//" /tmp/install.sh && bash /tmp/install.sh && \
+		systemctl start samverk-serve samverk-dispatch'
+	@echo "Force deployment complete. Services restarted."
+
+# Deploy to staging (CT 203)
+STAGING_HOST ?= 192.168.1.199
+
+deploy-staging: cross-build-full
+	bash scripts/safe-deploy.sh $(STAGING_HOST)
 
 # Quick SSH access to production server
 ssh:
 	ssh root@192.168.1.162
+
+# Quick SSH access to staging server
+ssh-staging:
+	ssh root@$(STAGING_HOST)
 
 clean:
 	rm -rf bin/ coverage.out

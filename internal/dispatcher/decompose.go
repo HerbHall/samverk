@@ -54,6 +54,7 @@ func shouldDecompose(timeout time.Duration, cfg *Config, fm *models.IssueFrontma
 // It blocks the parent and returns true if decomposition occurred.
 func (d *Dispatcher) decomposeAndCreateChildren(
 	ctx context.Context,
+	owner, repo string,
 	issue *forge.Issue,
 	fm *models.IssueFrontmatter,
 	agentType models.AgentType,
@@ -89,7 +90,7 @@ func (d *Dispatcher) decomposeAndCreateChildren(
 		return false, nil
 	}
 
-	childNumbers, createErr := d.createChildIssues(ctx, issue, agentType, subtasks)
+	childNumbers, createErr := d.createChildIssues(ctx, owner, repo, issue, agentType, subtasks)
 	if createErr != nil {
 		return false, fmt.Errorf("create child issues for #%d: %w", issue.Number, createErr)
 	}
@@ -99,7 +100,7 @@ func (d *Dispatcher) decomposeAndCreateChildren(
 	for _, n := range childNumbers {
 		blockerStrs = append(blockerStrs, fmt.Sprintf("%d", n))
 	}
-	if blockErr := d.blockIssue(ctx, issue.Number, blockerStrs); blockErr != nil {
+	if blockErr := d.blockIssue(ctx, owner, repo, issue.Number, blockerStrs); blockErr != nil {
 		return false, fmt.Errorf("block parent #%d: %w", issue.Number, blockErr)
 	}
 
@@ -115,10 +116,15 @@ func (d *Dispatcher) decomposeAndCreateChildren(
 // back to the parent via frontmatter. Returns the created issue numbers.
 func (d *Dispatcher) createChildIssues(
 	ctx context.Context,
+	owner, repo string,
 	parent *forge.Issue,
 	fallbackAgent models.AgentType,
 	subtasks []SubTask,
 ) ([]int, error) {
+	tracker := d.trackerFor(owner, repo)
+	if tracker == nil {
+		return nil, fmt.Errorf("no tracker for %s/%s", owner, repo)
+	}
 	numbers := make([]int, 0, len(subtasks))
 
 	for i, st := range subtasks {
@@ -135,7 +141,7 @@ func (d *Dispatcher) createChildIssues(
 			"decomposed",
 		}
 
-		created, err := d.tracker.CreateIssue(ctx, &forge.CreateIssueRequest{
+		created, err := tracker.CreateIssue(ctx, &forge.CreateIssueRequest{
 			Title:  st.Title,
 			Body:   body,
 			Labels: labels,

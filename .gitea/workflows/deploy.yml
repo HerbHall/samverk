@@ -1,0 +1,117 @@
+name: Deploy
+
+# Deploys Samverk to CT 202 after CI passes on main.
+#
+# Gate: This workflow only runs after gitea-ci.yml completes successfully.
+# It will NOT deploy if lint, build, test, or markdownlint failed.
+#
+# Prerequisites:
+#   - Gitea runner with LAN access to CT 202 (192.168.1.162)
+#   - Gitea Actions secrets:
+#       DEPLOY_SSH_KEY  - SSH private key for root@<deploy host>
+#       DEPLOY_HOST     - Target IP (e.g. 192.168.1.162)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to CT 202
+    runs-on: ubuntu-latest
+    # Only deploy when CI passed AND this was a push to main (not a PR).
+    if: >-
+      gitea.event.workflow_run.conclusion == 'success' &&
+      gitea.event.workflow_run.event == 'push'
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ gitea.runner.os }}-go-deploy-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ gitea.runner.os }}-go-deploy-
+
+      - name: Build SPA
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Copy SPA dist to embed directory
+        run: cp -r web/dist/* internal/server/static/
+
+      - name: Cross-compile for Linux
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          PKG="github.com/herbhall/samverk/internal/version"
+          go build -ldflags "-s -w \
+            -X ${PKG}.Version=${VERSION} \
+            -X ${PKG}.GitCommit=${COMMIT} \
+            -X ${PKG}.BuildDate=${DATE}" \
+            -o bin/samverk-linux-amd64 ./cmd/samverk/
+
+      - name: Verify binary
+        run: file bin/samverk-linux-amd64 | grep -q "ELF 64-bit"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Safe deploy (idle-wait + health check)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          # Use safe-deploy.sh which handles:
+          # 1. Check dispatcher state (active workers, queue depth)
+          # 2. Stop dispatcher to drain in-flight tasks
+          # 3. Wait for workers to idle (up to 10 min timeout)
+          # 4. Stop services, deploy binary + configs
+          # 5. Start services
+          # 6. Health check verification
+          export PATH="$PATH:$(pwd)/bin"
+          bash scripts/safe-deploy.sh "$DEPLOY_HOST"
+
+      - name: Verify version
+        run: |
+          sleep 3
+          DEPLOYED=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            root@${{ secrets.DEPLOY_HOST }} 'samverk version 2>/dev/null || echo unknown')
+          EXPECTED=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          echo "Deployed: ${DEPLOYED}"
+          echo "Expected: ${EXPECTED}"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

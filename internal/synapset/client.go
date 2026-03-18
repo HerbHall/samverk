@@ -284,6 +284,7 @@ func (c *Client) doRequestWithSession(ctx context.Context, rpcReq jsonRPCRequest
 		return nil, "", fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
 	if session != "" {
 		httpReq.Header.Set("Mcp-Session-Id", session)
 	}
@@ -382,7 +383,7 @@ func (c *Client) SearchMemory(ctx context.Context, pool, query string, limit int
 		limit = 5
 	}
 	args := map[string]interface{}{
-		"pool_name": pool,
+		"pool": pool,
 		"query":     query,
 		"limit":     limit,
 	}
@@ -412,7 +413,7 @@ func (c *Client) SearchAll(ctx context.Context, query string, limit int) (memori
 // StoreMemory saves a memory entry to the specified pool.
 func (c *Client) StoreMemory(ctx context.Context, pool, content, category string, tags []string, source string) error {
 	args := map[string]interface{}{
-		"pool_name": pool,
+		"pool": pool,
 		"content":   content,
 		"category":  category,
 	}

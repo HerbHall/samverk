@@ -1,6 +1,6 @@
 ---
-phase: execution
-updated: 2026-03-14T12:00:00Z
+phase: agent-autonomy
+updated: 2026-03-17T23:50:00Z
 updated_by: claude-code
 ---
 
@@ -8,67 +8,83 @@ updated_by: claude-code
 
 ## Phase
 
-Phase 5 complete. Q2 2026 execution: 3 streams (B/W/P), 62 issues. Security batch done. Dispatcher improvements (timeout calibration, pre-flight decomposition, cross-model QC, PROGRESS protocol) deployed. Now implementing #323: automated failure analysis loop.
+Agent Autonomy -- getting Samverk to run itself. Infrastructure complete.
+All critical and high autonomy gaps now have fixes in PRs or merged.
 
 ## What Is Running
 
-- Samverk server: CT 202 (192.168.1.162:8080) -- healthy, API auth enabled
-- MCP endpoint: POST /mcp (Streamable HTTP, bearer auth)
-- Dispatcher: running continuously (systemd, 30s poll, 3 workers, autoscaling 1-5)
-- PR watcher: runs concurrently with dispatcher (auto-merge eligible PRs)
-- Gitea: CT 200 (192.168.1.160:3000 / gitea.herbhall.net) -- primary runtime forge
+- Samverk server: CT 202 (192.168.1.162:8080) -- healthy
+- MCP-only listener: CT 202 port 8081 (no SPA, no auth)
+- Claude.ai Custom Connector: `https://samverk.herbhall.net/mcp` -- CONNECTED
+- Dispatcher: RUNNING (1-5 workers, 6 providers, free-first routing)
+- Health monitor: 60s probes, WoL for sleeping hosts
+- Watcher: auto-restart with backoff (no more silent hangs)
+- Dashboard: unified with Synapset native + DevKit iframe
+- Gitea CI: CT 200 (80GB disk, daily cleanup cron at 3am)
+- Cloudflare Tunnel: e86ba6e3 (samverk + synapset + mcp subdomains)
 
-## Recent Completions
+### GPU Fleet
 
-### Wave 1 Batch (2026-03-14)
+| Host | GPU | Model | Routing |
+|------|-----|-------|---------|
+| HDH-NZXT | RTX 5090 32GB | qwen3-coder:30b | triage, docs, research |
+| VM 300 | RTX 3090 Ti 24GB | qwen2.5-coder:14b | triage, docs, research |
+| CM-ASUS | RTX 2080 Ti 11GB | qwen2.5-coder:7b | triage |
 
-- PR #427: `samverk status` CLI command (#186 CLOSED)
-- PR #428: Documentation refresh + operations guide (#248 CLOSED)
-- PR #429: Timeout calibration feedback loop with historical p90 (#246 CLOSED)
-- PR #430: Pre-flight issue decomposition for oversized tasks (#245 CLOSED)
-- #359 CLOSED: FormatDuration helper promoted to pkg/models (PR #424)
-- #411 CLOSED: Caddy basicauth on ollama.herbhall.net
+Note: Ollama restricted to triage-only (PR #613). Code-gen routes to Claude CLI/API.
 
-### Security Batch (2026-03-13 to 2026-03-14)
+## Open Issues
 
-- PR #420: BearerAuth middleware on all API and MCP routes (#407, #408 CLOSED)
-- PR #421: Dashboard auth token injection (#409 CLOSED)
-- PR #422: Scoped worker identity (#410 CLOSED)
-- PR #423: Cross-process metrics bridge (#399 CLOSED)
-- PR #425: Restored systemd hardening
+0 open issues. All resolved or closed.
 
-### R-stream Hardening (2026-03-13)
+## Gaps to Full Autonomy
 
-- PR #416: Cross-model QC routing (#412 CLOSED)
-- PR #417: Per-issue token aggregation (#414 CLOSED)
-- PR #418: PROGRESS comment protocol (#413 CLOSED)
+### Resolved This Session
 
-## Open Issues by Category
+1. **Ollama output quality** -- FIXED: Restricted to triage-only + output validation guard (PR #613)
+2. **Claude CLI hangs** -- FIXED: 30s timeout + startup detection + auto-failover (PR #611)
+3. **No planning step** -- FIXED: Explore phase reads CLAUDE.md + sibling files (PR #614)
+4. **DevKit data on local machine** -- RESOLVED: Synapset covers knowledge, server self-sufficient (#609 closed)
+5. **Copilot review feedback** -- FIXED: PR watcher reads Copilot comments before merge (PR #610)
 
-### In Progress
+### Medium (remaining)
 
-- #323: epic: automated failure analysis loop (active work this session)
+1. Synapset parse error (Synapset#62 filed)
+2. DevKit dashboard native React (replace iframe)
+3. Multi-repo dispatch (code ready, config needed)
 
-### Blocked
+## Recommended Next Session
 
-- #282: End-to-end validation: full agent loop on Gitea (agent:infra)
-- #314: Verify: PC agent runs autonomously for 2 hours (agent:pc)
-- #317: Verify: Multi-session PC agent processes a full batch (agent:pc)
+1. Run dispatcher on real issues to validate autonomy end-to-end
+2. Address medium gaps (Synapset#62 parse error, DevKit dashboard native React)
+3. Consider filing new issues as needed
 
-### Needs Human / Human Pending
+## Session Summary (2026-03-17, session 3)
 
-- #250: epic: GitHub to Gitea migration strategy (agent:human)
-- #251: epic: documentation integrity system (agent:human)
-- #252: research: Samverk GitHub to Gitea migration requirements (agent:human)
-- #283: End-to-end validation: conversational check-in via MCP (human-pending)
-- #291: Verify: Metrics visible on dashboard and in MCP digest (human-pending)
-- #303: Verify: Full adaptive scaling lifecycle over 24-hour soak (human-pending)
-- #315: Implement multi-session CC support (needs design decision)
-- #392: infra: fix RTX 5090 GPU passthrough to Docker Desktop
+Housekeeping and bug fix session.
 
-## Start Here (Cold Start Protocol)
+### PRs Merged
+
+- #644 -- Decouple MCP handler init from GitHub env vars (Gitea #38)
+- #645 -- Phase-aware routing + set_project_phase MCP tool (Gitea #35, #36)
+- #647 -- Revise ADR-031 to single-forge-per-project model (Gitea #39)
+- #648 -- Fix get_digest "away" duration (echoed `since` param instead of real elapsed time)
+
+### Synapset v0.3.1 Released
+
+Synapset semantic-release pipeline fully working. Key fixes:
+
+- Remove `@semantic-release/git` + changelog plugins (incompatible with branch protection)
+- Add `repositoryUrl` for correct release note links
+- Second `url.insteadOf` to bypass Cloudflare auth header stripping on tag push
+- Gitea disk crisis resolved: CT 200 resized 40GB → 80GB, daily actcache pruning installed
+
+### Prior Session (2026-03-17, session 2)
+
+Sprint: 4 worktree agents, 4 PRs, 7 issues resolved. Key fixes: Ollama triage restriction, CLI timeout, explore-before-code, Copilot review watcher.
+
+## Start Here
 
 1. Read this file
-2. Call `samverk get_digest --since 168h` if MCP is configured
-3. Check open issues if relevant to the task
-4. Proceed -- do not ask the user to explain project state
+2. Check open issues if relevant
+3. Proceed -- do not ask the user to explain project state

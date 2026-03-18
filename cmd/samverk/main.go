@@ -11,18 +11,23 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/api"
+	"github.com/herbhall/samverk/internal/docaudit"
+	"github.com/herbhall/samverk/internal/hostmetrics"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/dispatcher"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/logstore"
 	giteaadapter "github.com/herbhall/samverk/internal/forge/gitea"
 	"github.com/herbhall/samverk/internal/forge/github"
+	"github.com/herbhall/samverk/internal/loganalyst"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/prwatcher"
@@ -69,6 +74,9 @@ func run() int {
 	root.AddCommand(digestCmd())
 	root.AddCommand(keyCmd())
 	root.AddCommand(statusCmd())
+	root.AddCommand(wakeCmd())
+	root.AddCommand(docAuditCmd())
+	root.AddCommand(auditCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -124,9 +132,36 @@ func serveCmd() *cobra.Command {
 				}
 			}
 
-			// Wire GitHub forge if credentials are available.
+			// Create log store for structured log persistence (separate DB).
+			var ls *logstore.LogStore
+			if dbPath != "" {
+				logsDBPath := strings.TrimSuffix(dbPath, ".db") + "-logs.db"
+				var lsErr error
+				ls, lsErr = logstore.New(logsDBPath)
+				if lsErr != nil {
+					logger.Warn("could not open log store", zap.String("path", logsDBPath), zap.Error(lsErr))
+				} else {
+					defer func() { _ = ls.Close() }()
+					// Upgrade logger to tee to SQLite.
+					teeLogger, teeErr := logging.NewWithTee(ls)
+					if teeErr != nil {
+						logger.Warn("could not create tee logger", zap.Error(teeErr))
+					} else {
+						logger = teeLogger
+					}
+					// Start log pruner (30 day retention).
+					go logstore.StartPruner(ctx, ls, 30*24*time.Hour, logger)
+					logger.Info("log store enabled", zap.String("path", logsDBPath))
+				}
+			}
+
+			// Wire forge clients and MCP handler.
+			// The MCP handler and project registry are always created; GitHub env
+			// vars are only required to register a GitHub default project.
 			var tracker forge.IssueTracker
+			var repoReader forge.RepoReader
 			var mcpHandler *internalmcp.Handler
+
 			token := os.Getenv("GITHUB_TOKEN")
 			if owner == "" {
 				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
@@ -134,109 +169,142 @@ func serveCmd() *cobra.Command {
 			if repo == "" {
 				repo = os.Getenv("SAMVERK_GITHUB_REPO")
 			}
+
+			// Load autonomy policy for tier enforcement.
+			policyCfg, policyErr := autonomy.LoadOrDefault(".")
+			if policyErr != nil {
+				logger.Warn("could not load autonomy config, using defaults", zap.Error(policyErr))
+				policyCfg = autonomy.DefaultConfig()
+			}
+			policy := autonomy.NewPolicy(policyCfg)
+
+			// Build project registry unconditionally.
+			registry := internalmcp.NewProjectRegistry()
+
+			// Register default GitHub project only when all env vars are present.
+			var ghDefaultClient *github.Client
+			var httpClient *http.Client
 			if token != "" && owner != "" && repo != "" {
 				ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-				httpClient := oauth2.NewClient(ctx, ts)
-				ghClient := github.New(owner, repo, httpClient)
-				tracker = ghClient
-
-				// Load autonomy policy for tier enforcement.
-				policyCfg, policyErr := autonomy.LoadOrDefault(".")
-				if policyErr != nil {
-					logger.Warn("could not load autonomy config, using defaults", zap.Error(policyErr))
-					policyCfg = autonomy.DefaultConfig()
-				}
-				policy := autonomy.NewPolicy(policyCfg)
-
-				// The GitHub Client implements both IssueTracker and RepoReader.
-				var repoReader forge.RepoReader = ghClient
-				mcpHandler = internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
-				mcpHandler.SetPRManager(ghClient)
-
-				// Wire multi-project support.
-				registry := internalmcp.NewProjectRegistry()
-
-				// Register the default project from --owner/--repo flags.
+				httpClient = oauth2.NewClient(ctx, ts)
+				ghDefaultClient = github.New(owner, repo, httpClient)
+				tracker = ghDefaultClient
+				repoReader = ghDefaultClient
 				defaultProject := &internalmcp.Project{
-					Name:    repo,
-					Owner:   owner,
-					Repo:    repo,
+					Name:      repo,
+					Owner:     owner,
+					Repo:      repo,
+					Phase:     "development",
 					Tracker:   tracker,
 					Reader:    repoReader,
-					PRManager: ghClient,
+					PRManager: ghDefaultClient,
 				}
 				if regErr := registry.Register(defaultProject); regErr != nil {
 					logger.Warn("could not register default project", zap.Error(regErr))
 				}
+				logger.Info("GitHub default project registered",
+					zap.String("owner", owner), zap.String("repo", repo))
+			} else {
+				logger.Info("no GitHub default project (GITHUB_TOKEN/SAMVERK_GITHUB_OWNER/SAMVERK_GITHUB_REPO not set)")
+			}
 
-				// Load additional projects from config file if it exists.
-				if projectsConfig != "" {
-					if configs, loadErr := internalmcp.LoadProjectConfig(projectsConfig); loadErr == nil {
-						for _, pc := range configs {
-							// Skip if already registered as the default.
-							if pc.Name == repo && pc.Owner == owner && pc.Repo == repo {
+			// Load projects from config file unconditionally.
+			if projectsConfig != "" {
+				if configs, loadErr := internalmcp.LoadProjectConfig(projectsConfig); loadErr == nil {
+					for i := range configs {
+						pc := &configs[i]
+						// Skip if already registered as the default.
+						if pc.Name == repo && pc.Owner == owner && pc.Repo == repo {
+							continue
+						}
+
+						var p *internalmcp.Project
+						if pc.Forge == "gitea" {
+							// Resolve token: config field takes precedence, then env var.
+							giteaToken := pc.GiteaToken
+							if giteaToken == "" {
+								giteaToken = os.Getenv("GITEA_TOKEN")
+							}
+							gtClient, gtErr := giteaadapter.New(pc.GiteaURL, giteaToken, pc.Owner, pc.Repo)
+							if gtErr != nil {
+								logger.Warn("could not create Gitea client for project",
+									zap.String("name", pc.Name), zap.Error(gtErr))
 								continue
 							}
-
-							var p *internalmcp.Project
-							if pc.Forge == "gitea" {
-								// Resolve token: config field takes precedence, then env var.
-								giteaToken := pc.GiteaToken
-								if giteaToken == "" {
-									giteaToken = os.Getenv("GITEA_TOKEN")
-								}
-								gtClient, gtErr := giteaadapter.New(pc.GiteaURL, giteaToken, pc.Owner, pc.Repo)
-								if gtErr != nil {
-									logger.Warn("could not create Gitea client for project",
-										zap.String("name", pc.Name), zap.Error(gtErr))
-									continue
-								}
-								p = &internalmcp.Project{
-									Name:      pc.Name,
-									Owner:     pc.Owner,
-									Repo:      pc.Repo,
-									Tracker:   gtClient,
-									Reader:    gtClient,
-									PRManager: gtClient,
-								}
-								logger.Info("registered Gitea project from config",
-									zap.String("name", pc.Name), zap.String("owner", pc.Owner), zap.String("repo", pc.Repo), zap.String("url", pc.GiteaURL))
-							} else {
-								// Default: GitHub project.
-								ghExtra := github.New(pc.Owner, pc.Repo, httpClient)
-								p = &internalmcp.Project{
-									Name:      pc.Name,
-									Owner:     pc.Owner,
-									Repo:      pc.Repo,
-									Tracker:   ghExtra,
-									Reader:    ghExtra,
-									PRManager: ghExtra,
-								}
-								logger.Info("registered GitHub project from config",
-									zap.String("name", pc.Name), zap.String("owner", pc.Owner), zap.String("repo", pc.Repo))
+							p = &internalmcp.Project{
+								Name:      pc.Name,
+								Owner:     pc.Owner,
+								Repo:      pc.Repo,
+								Phase:     pc.Phase,
+								Tags:      pc.Tags,
+								Tracker:   gtClient,
+								Reader:    gtClient,
+								PRManager: gtClient,
 							}
-
-							if regErr := registry.Register(p); regErr != nil {
-								logger.Warn("could not register project from config",
-									zap.String("name", pc.Name), zap.Error(regErr))
+							logger.Info("registered Gitea project from config",
+								zap.String("name", pc.Name), zap.String("owner", pc.Owner),
+								zap.String("repo", pc.Repo), zap.String("url", pc.GiteaURL))
+						} else {
+							// GitHub project from config requires httpClient.
+							if httpClient == nil {
+								logger.Warn("skipping GitHub project from config: GITHUB_TOKEN not set",
+									zap.String("name", pc.Name))
+								continue
 							}
+							ghExtra := github.New(pc.Owner, pc.Repo, httpClient)
+							p = &internalmcp.Project{
+								Name:      pc.Name,
+								Owner:     pc.Owner,
+								Repo:      pc.Repo,
+								Phase:     pc.Phase,
+								Tags:      pc.Tags,
+								Tracker:   ghExtra,
+								Reader:    ghExtra,
+								PRManager: ghExtra,
+							}
+							logger.Info("registered GitHub project from config",
+								zap.String("name", pc.Name), zap.String("owner", pc.Owner), zap.String("repo", pc.Repo))
 						}
-					} else if !os.IsNotExist(loadErr) {
-						logger.Warn("could not load projects config",
-							zap.String("path", projectsConfig), zap.Error(loadErr))
-					}
-				}
 
-				mcpHandler.SetProjects(registry)
-				if st != nil {
-					poolM, dispM := api.NewStoreBackedMetrics(st)
-					mcpHandler.SetMetrics(poolM, dispM, metrics.NewSystemCollector())
-				} else {
-					mcpHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+						if regErr := registry.Register(p); regErr != nil {
+							logger.Warn("could not register project from config",
+								zap.String("name", pc.Name), zap.Error(regErr))
+						}
+					}
+					// Record the config path so set_project_phase can persist phase changes.
+					registry.SetConfigPath(projectsConfig)
+				} else if !os.IsNotExist(loadErr) {
+					logger.Warn("could not load projects config",
+						zap.String("path", projectsConfig), zap.Error(loadErr))
 				}
-				if st != nil {
-					mcpHandler.SetScalingEventReader(st)
+			}
+
+			// If no GitHub default, fall back to first registry project as the active
+			// tracker. This makes the server functional with Gitea-only config.
+			if tracker == nil {
+				if projects := registry.List(); len(projects) > 0 {
+					tracker = projects[0].Tracker
+					repoReader = projects[0].Reader
+					logger.Info("using first project as default tracker",
+						zap.String("name", projects[0].Name))
 				}
+			}
+
+			// Always create the MCP handler with the resolved tracker.
+			mcpHandler = internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
+			if ghDefaultClient != nil {
+				mcpHandler.SetPRManager(ghDefaultClient)
+			}
+			mcpHandler.SetProjects(registry)
+			mcpHandler.SetWorkCoordinator(internalmcp.NewForgeWorkCoordinator(registry, logger))
+			if st != nil {
+				poolM, dispM := api.NewStoreBackedMetrics(st)
+				mcpHandler.SetMetrics(poolM, dispM, metrics.NewSystemCollector())
+			} else {
+				mcpHandler.SetMetrics(nil, nil, metrics.NewSystemCollector())
+			}
+			if st != nil {
+				mcpHandler.SetScalingEventReader(st)
 			}
 
 			// Wire REST API handler for dashboard.
@@ -254,11 +322,13 @@ func serveCmd() *cobra.Command {
 				regCfg, pcErr := provider.LoadRegistryConfig(providersConfigServe)
 				if pcErr == nil {
 					pdtos := make([]api.ProviderDTO, 0, len(regCfg.Providers))
-					for name, pcfg := range regCfg.Providers {
+					for name := range regCfg.Providers {
+						pcfg := regCfg.Providers[name]
 						pdtos = append(pdtos, api.ProviderDTO{
 							Name:       name,
 							Type:       pcfg.Type,
 							Model:      pcfg.DefaultModel,
+							Healthy:    true, // Present in config = assumed healthy; real probe is a separate concern.
 							AccountURL: pcfg.AccountURL,
 						})
 					}
@@ -268,22 +338,81 @@ func serveCmd() *cobra.Command {
 					logger.Warn("could not load providers config for dashboard", zap.Error(pcErr))
 				}
 			}
+			if ls != nil {
+				apiHandler.SetLogStore(ls)
+			}
+			apiHandler.SetSynapsetProxy("https://synapset.herbhall.net")
 			cfg.APIHandler = apiHandler
 			cfg.PressureProvider = apiHandler
 			logger.Info("REST API enabled")
 
+			// Start host metrics collector.
+			hm := hostmetrics.NewCollector("/")
+			apiHandler.SetHostMetrics(hm)
+			go func() {
+				if hmErr := hm.Run(ctx); hmErr != nil && hmErr != context.Canceled {
+					logger.Warn("host metrics collector stopped", zap.Error(hmErr))
+				}
+			}()
+			logger.Info("host metrics collector started")
+
+			// Wire log analyst if logstore is available.
+			if ls != nil {
+				ollamaURL := os.Getenv("SAMVERK_OLLAMA_URL")
+				if ollamaURL == "" {
+					ollamaURL = "http://192.168.1.207:11434"
+				}
+				ollamaModel := os.Getenv("SAMVERK_ANALYST_MODEL")
+				if ollamaModel == "" {
+					ollamaModel = "qwen2.5-coder:7b"
+				}
+				var ollamaClient loganalyst.OllamaClient = loganalyst.NewOllamaAnalystClient(ollamaURL, ollamaModel, 120*time.Second)
+				analyst := loganalyst.New(ls, ollamaClient, logger)
+				apiHandler.SetLogAnalyst(analyst)
+				logger.Info("log analyst enabled",
+					zap.String("ollama_url", ollamaURL),
+					zap.String("model", ollamaModel),
+				)
+			}
+
 			// Wire worker lister from API into MCP digest so the get_digest tool
 			// shows registered PC agent workers in the RUNTIME METRICS section.
-			if mcpHandler != nil {
-				mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
-				cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
-				logger.Info("MCP handler enabled", zap.String("owner", owner), zap.String("repo", repo))
-			} else {
-				logger.Info("MCP handler disabled (set GITHUB_TOKEN, owner, and repo to enable)")
-			}
+			mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
+			cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
+			logger.Info("MCP handler enabled",
+				zap.String("owner", owner), zap.String("repo", repo))
 
 			s := server.New(cfg, logger)
 			logger.Info("starting samverk server", zap.String("addr", addr))
+
+			// Start a standalone MCP-only listener on port 8081 for
+			// external access via mcp.herbhall.net. No SPA, no API --
+			// just the MCP handler. This avoids Cloudflare WAF's
+			// "Validate Headers" rule which blocks /mcp on servers
+			// that serve HTML (the SPA catch-all triggers it).
+			if cfg.MCPHandler != nil {
+				mcpMux := http.NewServeMux()
+				mcpMux.Handle("/", cfg.MCPHandler)
+				mcpMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"status":"ok"}`))
+				})
+				mcpSrv := &http.Server{
+					Addr:              ":8081",
+					Handler:           mcpMux,
+					ReadHeaderTimeout: 10 * time.Second,
+				}
+				go func() {
+					logger.Info("MCP-only listener starting", zap.String("addr", ":8081"))
+					if err := mcpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+						logger.Error("MCP-only listener failed", zap.Error(err))
+					}
+				}()
+				go func() {
+					<-ctx.Done()
+					_ = mcpSrv.Shutdown(context.Background())
+				}()
+			}
 
 			if err := s.Start(ctx); err != nil {
 				return fmt.Errorf("server error: %w", err)
@@ -304,7 +433,7 @@ func serveCmd() *cobra.Command {
 }
 
 func dispatchCmd() *cobra.Command {
-	var owner, repo, dbPath, providersConfig, scalingConfig string
+	var owner, repo, dbPath, providersConfig, scalingConfig, repoDir string
 	var forgeName, giteaURL string
 	var pollSeconds, workers, scalingMin, scalingMax int
 	var budget float64
@@ -383,18 +512,48 @@ func dispatchCmd() *cobra.Command {
 				}
 			}
 
+			// Create log store for structured log persistence (separate DB).
+			if dbPath != "" {
+				logsDBPath := strings.TrimSuffix(dbPath, ".db") + "-logs.db"
+				dispLS, lsErr := logstore.New(logsDBPath)
+				if lsErr != nil {
+					logger.Warn("could not open log store", zap.String("path", logsDBPath), zap.Error(lsErr))
+				} else {
+					defer func() { _ = dispLS.Close() }()
+					teeLogger, teeErr := logging.NewWithTee(dispLS)
+					if teeErr != nil {
+						logger.Warn("could not create tee logger", zap.Error(teeErr))
+					} else {
+						logger = teeLogger
+					}
+					go logstore.StartPruner(ctx, dispLS, 30*24*time.Hour, logger)
+					logger.Info("log store enabled", zap.String("path", logsDBPath))
+				}
+			}
+
 			// Load provider registry and construct agent pool if config exists.
 			var pool *agent.Pool
+			var providerRegistry *provider.Registry
 			if providersConfig != "" {
-				registry, regErr := provider.LoadRegistry(providersConfig, providerFactory)
+				reg, regErr := provider.LoadRegistry(providersConfig, makeProviderFactory(logger), logger)
 				if regErr != nil {
 					logger.Warn("could not load provider registry, agents disabled", zap.String("path", providersConfig), zap.Error(regErr))
 				} else {
+					providerRegistry = reg
 					costs := cost.NewTracker(st, budget, 24)
-					pool = agent.NewPool(registry, tracker, st, costs, workers, logger)
+					pool = agent.NewPool(reg, tracker, st, costs, workers, logger)
 					defer pool.Shutdown()
-					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(registry.List(ctx))))
+					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(reg.List(ctx))))
 				}
+			}
+
+			// Wire repo directory for worktree-based workspace isolation.
+			if pool != nil && repoDir == "" {
+				repoDir = os.Getenv("SAMVERK_REPO_DIR")
+			}
+			if pool != nil && repoDir != "" {
+				pool.SetRepoDir(repoDir)
+				logger.Info("workspace isolation enabled", zap.String("repo_dir", repoDir))
 			}
 
 			// Wire Synapset memory client if configured (optional, best-effort).
@@ -410,7 +569,39 @@ func dispatchCmd() *cobra.Command {
 				}
 			}
 
-			disp := dispatcher.New(tracker, policy, st, pool, nil, logger)
+			// Build tracker entries for multi-repo dispatch.
+			trackerEntries := []dispatcher.TrackerEntry{
+				{Owner: owner, Repo: repo, Tracker: tracker},
+			}
+			disp := dispatcher.New(trackerEntries, policy, st, pool, nil, logger)
+
+			// Start health monitor for pre-flight provider health gating.
+			if providerRegistry != nil {
+				hm := provider.NewHealthMonitor(providerRegistry, provider.DefaultHealthCheckInterval, logger)
+
+				// Wire WoL targets from provider config.
+				if providersConfig != "" {
+					regCfg, wolErr := provider.LoadRegistryConfig(providersConfig)
+					if wolErr == nil {
+						wolTargets := make(map[string]provider.WoLConfig)
+						for pName := range regCfg.Providers {
+							pcfg := regCfg.Providers[pName]
+							if pcfg.WoLMAC != "" {
+								wolTargets[pName] = provider.WoLConfig{MAC: pcfg.WoLMAC}
+							}
+						}
+						if len(wolTargets) > 0 {
+							hm.SetWoLTargets(wolTargets)
+							logger.Info("Wake-on-LAN targets configured", zap.Int("count", len(wolTargets)))
+						}
+					}
+				}
+
+				hm.Start(ctx)
+				disp.SetHealthMonitor(hm)
+				logger.Info("provider health monitor started")
+			}
+
 			logger.Info("starting dispatcher", zap.String("owner", owner), zap.String("repo", repo))
 
 			g, gctx := errgroup.WithContext(ctx)
@@ -456,6 +647,9 @@ func dispatchCmd() *cobra.Command {
 
 			// Periodically persist pool + dispatcher metrics to SQLite
 			// so the serve process can read them via StoreBackedMetrics.
+			// NOTE: TasksCompleted and TasksFailed are in-memory counters that
+			// reset when the dispatch process restarts. They reflect per-process-
+			// lifetime totals, not cumulative all-time counts.
 			if st != nil {
 				g.Go(func() error {
 					tick := time.NewTicker(30 * time.Second)
@@ -528,6 +722,7 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&scalingConfig, "scaling-config", "", "Path to scaling policy YAML config (optional)")
 	cmd.Flags().IntVar(&scalingMin, "scaling-min", 0, "Override min workers from scaling config (0 = use config value)")
 	cmd.Flags().IntVar(&scalingMax, "scaling-max", 0, "Override max workers from scaling config (0 = use config value)")
+	cmd.Flags().StringVar(&repoDir, "repo-dir", "", "Local git clone path for agent worktree isolation (env: SAMVERK_REPO_DIR)")
 
 	return cmd
 }
@@ -916,6 +1111,88 @@ func statusCmd() *cobra.Command {
 	return cmd
 }
 
+func wakeCmd() *cobra.Command {
+	var providersConfigWake string
+
+	cmd := &cobra.Command{
+		Use:   "wake <provider-name>",
+		Short: "Send a Wake-on-LAN packet to a provider's host",
+		Long:  "Reads the wol_mac field from the provider's YAML config and sends a magic packet.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			providerName := args[0]
+
+			cfg, err := provider.LoadRegistryConfig(providersConfigWake)
+			if err != nil {
+				return fmt.Errorf("load providers config: %w", err)
+			}
+
+			pcfg, ok := cfg.Providers[providerName]
+			if !ok {
+				return fmt.Errorf("provider %q not found in config", providerName)
+			}
+			if pcfg.WoLMAC == "" {
+				return fmt.Errorf("provider %q has no wol_mac configured", providerName)
+			}
+
+			fmt.Printf("Sending Wake-on-LAN packet to %s (MAC: %s)...\n", providerName, pcfg.WoLMAC)
+			if err := provider.WakeOnLAN(pcfg.WoLMAC); err != nil {
+				return fmt.Errorf("wake-on-LAN failed: %w", err)
+			}
+			fmt.Println("Magic packet sent successfully.")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&providersConfigWake, "providers-config", ".samverk/providers.yaml", "Path to provider registry YAML config")
+	return cmd
+}
+
+func docAuditCmd() *cobra.Command {
+	var repoRoot string
+
+	cmd := &cobra.Command{
+		Use:   "doc-audit",
+		Short: "Detect documentation drift (stale docs, broken links, missing files)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a := docaudit.New(repoRoot)
+			findings, err := a.Run()
+			if err != nil {
+				return fmt.Errorf("doc audit: %w", err)
+			}
+
+			if len(findings) == 0 {
+				_, _ = fmt.Fprintln(os.Stdout, "No documentation issues found.")
+				return nil
+			}
+
+			// Print findings as a table.
+			_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", "SEVERITY", "FILE", "MESSAGE")
+			_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", "--------", "----------------------------------------", "-------")
+			hasError := false
+			for i := range findings {
+				f := &findings[i]
+				loc := f.File
+				if f.Line > 0 {
+					loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+				}
+				_, _ = fmt.Fprintf(os.Stdout, "%-8s | %-40s | %s\n", string(f.Severity), loc, f.Message)
+				if f.Severity == docaudit.SeverityError {
+					hasError = true
+				}
+			}
+
+			if hasError {
+				return fmt.Errorf("found %d documentation issue(s)", len(findings))
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&repoRoot, "root", ".", "Repository root directory")
+	return cmd
+}
+
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
@@ -949,47 +1226,70 @@ func (a *apiWorkerAdapter) ListWorkers() []internalmcp.WorkerInfo {
 	return out
 }
 
-// providerFactory constructs a provider.Provider from YAML config.
-// It wires the concrete provider sub-packages (claude, openai, ollama)
-// so the registry package doesn't import them directly.
-func providerFactory(name string, cfg provider.ProviderConfig) (provider.Provider, error) {
-	switch cfg.Type {
-	case "claude":
-		apiKey := os.Getenv(cfg.APIKeyEnv)
-		if apiKey == "" {
-			return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+// makeProviderFactory returns a ProviderFactory closure that constructs
+// provider.Provider instances from YAML config, wiring in the logger.
+func makeProviderFactory(l *zap.Logger) provider.ProviderFactory {
+	return func(name string, cfg provider.ProviderConfig) (provider.Provider, error) {
+		plog := l.Named("provider." + name)
+		switch cfg.Type {
+		case "claude":
+			apiKey := os.Getenv(cfg.APIKeyEnv)
+			if apiKey == "" {
+				return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+			}
+			model := cfg.DefaultModel
+			if model == "" {
+				model = "claude-sonnet-4-20250514"
+			}
+			return claude.New(apiKey, model, claude.WithLogger(plog)), nil
+		case "openai":
+			apiKey := os.Getenv(cfg.APIKeyEnv)
+			if apiKey == "" {
+				return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
+			}
+			model := cfg.DefaultModel
+			if model == "" {
+				model = "gpt-4o"
+			}
+			return openai.New(apiKey, model, openai.WithLogger(plog)), nil
+		case "ollama":
+			baseURL := cfg.BaseURL
+			if baseURL == "" {
+				baseURL = "http://localhost:11434"
+			}
+			if cfg.TimeoutSeconds > 0 {
+				return ollama.NewWithTimeout(baseURL, time.Duration(cfg.TimeoutSeconds)*time.Second, ollama.WithLogger(plog)), nil
+			}
+			return ollama.New(baseURL, ollama.WithLogger(plog)), nil
+		case "claude-cli":
+			if cfg.MaxTurns < 0 {
+				return nil, fmt.Errorf("provider %q: max_turns must be non-negative, got %d", name, cfg.MaxTurns)
+			}
+			model := cfg.DefaultModel
+			opts := claudecli.Options{
+				AllowedTools: normalizeCSV(cfg.AllowedTools),
+				MaxTurns:     cfg.MaxTurns,
+				Logger:       plog,
+			}
+			if cfg.TimeoutSeconds > 0 {
+				return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second, opts), nil
+			}
+			return claudecli.New(model, opts), nil
+		default:
+			return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 		}
-		model := cfg.DefaultModel
-		if model == "" {
-			model = "claude-sonnet-4-20250514"
-		}
-		return claude.New(apiKey, model), nil
-	case "openai":
-		apiKey := os.Getenv(cfg.APIKeyEnv)
-		if apiKey == "" {
-			return nil, fmt.Errorf("provider %q: env var %s is not set", name, cfg.APIKeyEnv)
-		}
-		model := cfg.DefaultModel
-		if model == "" {
-			model = "gpt-4o"
-		}
-		return openai.New(apiKey, model), nil
-	case "ollama":
-		baseURL := cfg.BaseURL
-		if baseURL == "" {
-			baseURL = "http://localhost:11434"
-		}
-		if cfg.TimeoutSeconds > 0 {
-			return ollama.NewWithTimeout(baseURL, time.Duration(cfg.TimeoutSeconds)*time.Second), nil
-		}
-		return ollama.New(baseURL), nil
-	case "claude-cli":
-		model := cfg.DefaultModel
-		if cfg.TimeoutSeconds > 0 {
-			return claudecli.NewWithTimeout(model, time.Duration(cfg.TimeoutSeconds)*time.Second), nil
-		}
-		return claudecli.New(model), nil
-	default:
-		return nil, fmt.Errorf("provider %q: unknown type %q", name, cfg.Type)
 	}
+}
+
+// normalizeCSV trims whitespace around comma-separated values to prevent
+// incidental YAML whitespace from causing invalid tool names.
+func normalizeCSV(s string) string {
+	if s == "" {
+		return ""
+	}
+	parts := strings.Split(s, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return strings.Join(parts, ",")
 }

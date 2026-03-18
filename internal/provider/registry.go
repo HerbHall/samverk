@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,6 +21,9 @@ type ProviderConfig struct {
 	DefaultModel   string `yaml:"default_model"`   // default model for this provider
 	TimeoutSeconds int    `yaml:"timeout_seconds"` // per-provider timeout; 0 means use provider default
 	AccountURL     string `yaml:"account_url"`     // billing/credits page URL
+	AllowedTools   string `yaml:"allowed_tools"`   // claude-cli: comma-separated tool list (e.g. "Bash,Read,Edit,Write,Glob,Grep")
+	MaxTurns       int    `yaml:"max_turns"`       // claude-cli: max agentic turns per session; 0 means no limit
+	WoLMAC         string `yaml:"wol_mac"`         // optional Wake-on-LAN MAC address (e.g. "AA:BB:CC:DD:EE:FF")
 }
 
 // RegistryConfig is the top-level YAML structure for provider configuration.
@@ -47,15 +51,20 @@ type Registry struct {
 	models    map[string]string    // name -> default model
 	types     map[string]string    // name -> provider type
 	routing   map[string][]string  // agent_type -> provider names
+	logger    *zap.Logger
 }
 
 // NewRegistry creates an empty provider registry.
-func NewRegistry() *Registry {
+func NewRegistry(logger *zap.Logger) *Registry {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Registry{
 		providers: make(map[string]Provider),
 		models:    make(map[string]string),
 		types:     make(map[string]string),
 		routing:   make(map[string][]string),
+		logger:    logger,
 	}
 }
 
@@ -64,6 +73,11 @@ func (r *Registry) Register(name, providerType string, p Provider, model string)
 	r.providers[name] = p
 	r.models[name] = model
 	r.types[name] = providerType
+	r.logger.Info("provider registered",
+		zap.String("name", name),
+		zap.String("type", providerType),
+		zap.String("model", model),
+	)
 }
 
 // SetRouting sets the routing table that maps agent types to provider chains.
@@ -79,18 +93,86 @@ func (r *Registry) Get(ctx context.Context, agentType string) (Provider, string,
 	if !ok {
 		chain, ok = r.routing["default"]
 		if !ok {
+			r.logger.Error("no routing chain found",
+				zap.String("agent_type", agentType),
+			)
 			return nil, "", ErrNoHealthyProvider
 		}
+		r.logger.Info("routing chain fallback to default",
+			zap.String("agent_type", agentType),
+		)
 	}
 
 	for _, name := range chain {
 		p, exists := r.providers[name]
 		if !exists {
+			r.logger.Warn("provider in chain not registered",
+				zap.String("agent_type", agentType),
+				zap.String("provider", name),
+			)
 			continue
 		}
 		if p.Healthy(ctx) {
+			r.logger.Info("provider selected",
+				zap.String("agent_type", agentType),
+				zap.String("provider", name),
+				zap.String("model", r.models[name]),
+			)
 			return p, r.models[name], nil
 		}
+		r.logger.Warn("provider unhealthy, trying next",
+			zap.String("agent_type", agentType),
+			zap.String("provider", name),
+		)
+	}
+
+	r.logger.Error("all providers in chain unhealthy",
+		zap.String("agent_type", agentType),
+		zap.Strings("chain", chain),
+	)
+	return nil, "", ErrNoHealthyProvider
+}
+
+// GetAfter returns the first healthy provider in the routing chain that comes
+// after the named provider. This enables timeout failover: when a provider
+// times out, the pool can retry with the next one in the chain without
+// re-checking providers already tried.
+// Returns ErrNoHealthyProvider if no subsequent healthy provider exists.
+func (r *Registry) GetAfter(ctx context.Context, agentType, afterProvider string) (p Provider, model string, err error) {
+	chain, ok := r.routing[agentType]
+	if !ok {
+		chain, ok = r.routing["default"]
+		if !ok {
+			return nil, "", ErrNoHealthyProvider
+		}
+	}
+
+	// Find afterProvider in the chain, then check subsequent entries.
+	found := false
+	for _, name := range chain {
+		if !found {
+			if name == afterProvider {
+				found = true
+			}
+			continue
+		}
+		prov, exists := r.providers[name]
+		if !exists {
+			continue
+		}
+		if prov.Healthy(ctx) {
+			r.logger.Info("failover provider selected",
+				zap.String("agent_type", agentType),
+				zap.String("after", afterProvider),
+				zap.String("provider", name),
+				zap.String("model", r.models[name]),
+			)
+			return prov, r.models[name], nil
+		}
+		r.logger.Warn("failover provider unhealthy, trying next",
+			zap.String("agent_type", agentType),
+			zap.String("provider", name),
+		)
 	}
 
 	return nil, "", ErrNoHealthyProvider
@@ -107,6 +189,24 @@ func (r *Registry) Routing() map[string][]string {
 	return out
 }
 
+// NameOf returns the registry name for a given Provider instance, or empty
+// string if not found. Used by the pool to identify which provider timed
+// out for failover via GetAfter.
+func (r *Registry) NameOf(p Provider) string {
+	for name, prov := range r.providers {
+		if prov == p {
+			return name
+		}
+	}
+	return ""
+}
+
+// ProviderByName returns the raw Provider instance for the given name,
+// or nil if the name is not registered.
+func (r *Registry) ProviderByName(name string) Provider {
+	return r.providers[name]
+}
+
 // List returns info about all registered providers with their health status.
 func (r *Registry) List(ctx context.Context) []ProviderInfo {
 	infos := make([]ProviderInfo, 0, len(r.providers))
@@ -119,6 +219,58 @@ func (r *Registry) List(ctx context.Context) []ProviderInfo {
 		})
 	}
 	return infos
+}
+
+// codeGenChainNames lists routing chain names that should never contain
+// Ollama providers. Ollama models produce bad output on tool-use formatted
+// prompts -- they overwrite CLAUDE.md instead of implementing features.
+var codeGenChainNames = map[string]bool{
+	"default":  true,
+	"complex":  true,
+	"frontend": true,
+	"local":    true,
+}
+
+// ValidateRoutingConfig checks that Ollama providers are not present in
+// code-gen routing chains. Returns a list of warnings for each violation.
+// This is a soft validation -- it logs warnings but does not prevent startup.
+func ValidateRoutingConfig(cfg *RegistryConfig, logger *zap.Logger) []string {
+	if cfg == nil || logger == nil {
+		return nil
+	}
+
+	// Build set of ollama provider names.
+	ollamaProviders := make(map[string]bool)
+	for name := range cfg.Providers {
+		if cfg.Providers[name].Type == "ollama" {
+			ollamaProviders[name] = true
+		}
+	}
+
+	if len(ollamaProviders) == 0 {
+		return nil
+	}
+
+	var warnings []string
+	for chainName, chain := range cfg.Routing {
+		if !codeGenChainNames[chainName] {
+			continue
+		}
+		for _, providerName := range chain {
+			if ollamaProviders[providerName] {
+				msg := fmt.Sprintf(
+					"routing chain %q contains Ollama provider %q; Ollama models produce bad output on code-gen tasks (see KG#146)",
+					chainName, providerName,
+				)
+				warnings = append(warnings, msg)
+				logger.Warn("ollama in code-gen chain",
+					zap.String("chain", chainName),
+					zap.String("provider", providerName),
+				)
+			}
+		}
+	}
+	return warnings
 }
 
 // LoadRegistryConfig reads and parses a YAML config file.
@@ -138,15 +290,25 @@ func LoadRegistryConfig(path string) (*RegistryConfig, error) {
 
 // LoadRegistry reads a YAML config file, constructs providers using the
 // given factory, and returns a fully wired Registry.
-func LoadRegistry(path string, factory ProviderFactory) (*Registry, error) {
+func LoadRegistry(path string, factory ProviderFactory, logger *zap.Logger) (*Registry, error) {
 	cfg, err := LoadRegistryConfig(path)
 	if err != nil {
 		return nil, err
 	}
 
-	reg := NewRegistry()
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 
-	for name, pcfg := range cfg.Providers {
+	logger.Info("loading provider registry",
+		zap.String("path", path),
+		zap.Int("provider_count", len(cfg.Providers)),
+	)
+
+	reg := NewRegistry(logger)
+
+	for name := range cfg.Providers {
+		pcfg := cfg.Providers[name]
 		p, err := factory(name, pcfg)
 		if err != nil {
 			return nil, fmt.Errorf("create provider %q: %w", name, err)
@@ -156,6 +318,11 @@ func LoadRegistry(path string, factory ProviderFactory) (*Registry, error) {
 
 	if cfg.Routing != nil {
 		reg.SetRouting(cfg.Routing)
+		logger.Info("routing table loaded",
+			zap.Int("chain_count", len(cfg.Routing)),
+		)
+		// Warn about Ollama providers in code-gen chains (soft validation).
+		ValidateRoutingConfig(cfg, logger)
 	}
 
 	return reg, nil

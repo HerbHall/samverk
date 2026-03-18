@@ -24,7 +24,8 @@ func classifyFailure(errMsg string) models.FailureClass {
 	// Auth: OAuth/API key expiry or invalid credentials.
 	if strings.Contains(lower, "401") || strings.Contains(lower, "authentication_error") ||
 		strings.Contains(lower, "oauth token expired") || strings.Contains(lower, "unauthorized") ||
-		strings.Contains(lower, "invalid api key") || strings.Contains(lower, "invalid x-api-key") {
+		strings.Contains(lower, "invalid api key") || strings.Contains(lower, "invalid x-api-key") ||
+		strings.Contains(lower, "not logged in") {
 		return models.FailureClassAuth
 	}
 
@@ -44,10 +45,10 @@ func classifyFailure(errMsg string) models.FailureClass {
 		return models.FailureClassOOMKill
 	}
 
-	// Provider down: connection errors.
+	// Provider down: connection errors and provider hangs.
 	if strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "connection refused") ||
 		strings.Contains(lower, "no such host") || strings.Contains(lower, "i/o timeout") ||
-		strings.Contains(lower, "no healthy provider") {
+		strings.Contains(lower, "no healthy provider") || strings.Contains(lower, "hung: no output") {
 		return models.FailureClassProviderDown
 	}
 
@@ -56,9 +57,10 @@ func classifyFailure(errMsg string) models.FailureClass {
 		return models.FailureClassTimeout
 	}
 
-	// Post-process: PR creation or comment posting errors.
+	// Post-process: PR creation, comment posting, or validation failures.
 	if strings.Contains(lower, "post-process error") || strings.Contains(lower, "create pr:") ||
-		strings.Contains(lower, "create branch") || strings.Contains(lower, "add comment:") {
+		strings.Contains(lower, "create branch") || strings.Contains(lower, "add comment:") ||
+		strings.Contains(lower, "validation failed") || strings.Contains(lower, "validation retry failed") {
 		return models.FailureClassPostProcess
 	}
 

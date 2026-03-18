@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbhall/samverk/internal/audit"
 	"github.com/herbhall/samverk/pkg/models"
 
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
@@ -60,6 +61,18 @@ type Store interface {
 	IncrementIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
 	ClearIssueFailureCount(ctx context.Context, issueNumber int) error
 
+	// Correction events (written by correction engine, read by API and diagnostics)
+	SaveCorrectionEvent(ctx context.Context, e *models.CorrectionEvent) error
+	ListCorrectionEvents(ctx context.Context, issueNumber int) ([]*models.CorrectionEvent, error)
+
+	// Provider audits (written by audit CLI, read by API and diagnostics)
+	SaveAuditResults(ctx context.Context, results []audit.AuditResult) error
+	GetLastAudit(ctx context.Context) ([]audit.AuditResult, error)
+
+	// Check-in state (persists the last get_digest call time for accurate "away" duration)
+	GetLastCheckIn(ctx context.Context) (time.Time, error)
+	SetLastCheckIn(ctx context.Context, t time.Time) error
+
 	Close() error
 }
 
@@ -71,21 +84,13 @@ type SQLiteStore struct {
 // New opens (or creates) an SQLite database at dbPath, runs migrations,
 // and enables WAL mode and foreign keys.
 func New(dbPath string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	// Set pragmas via DSN so they apply to ALL pooled connections,
+	// not just the first one. PRAGMA statements only affect the connection
+	// they execute on, which causes SQLITE_BUSY on other pool connections.
+	dsn := dbPath + "?_pragma=busy_timeout%3d5000&_pragma=journal_mode%3dWAL&_pragma=foreign_keys%3dON"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
-	}
-
-	// Enable WAL mode for concurrent read performance.
-	if _, err = db.ExecContext(context.Background(), "PRAGMA journal_mode=WAL"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("enable WAL: %w", err)
-	}
-
-	// Enable foreign key enforcement.
-	if _, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys=ON"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 
 	s := &SQLiteStore{db: db}
@@ -212,6 +217,39 @@ CREATE TABLE IF NOT EXISTS issue_failure_counts (
 	count        INTEGER NOT NULL DEFAULT 0,
 	updated_at   TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS corrections (
+	id             TEXT PRIMARY KEY,
+	issue_number   INTEGER NOT NULL,
+	failure_class  TEXT NOT NULL,
+	action         TEXT NOT NULL,
+	scope          TEXT NOT NULL,
+	reason         TEXT NOT NULL DEFAULT '',
+	new_provider   TEXT NOT NULL DEFAULT '',
+	outcome        TEXT NOT NULL DEFAULT 'pending',
+	created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_corrections_issue ON corrections(issue_number);
+CREATE INDEX IF NOT EXISTS idx_corrections_created ON corrections(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS provider_audits (
+	id            TEXT PRIMARY KEY,
+	provider_name TEXT NOT NULL,
+	provider_type TEXT NOT NULL,
+	model         TEXT NOT NULL DEFAULT '',
+	healthy       INTEGER NOT NULL DEFAULT 0,
+	latency_ms    INTEGER NOT NULL DEFAULT 0,
+	error         TEXT NOT NULL DEFAULT '',
+	audited_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_audits_at ON provider_audits(audited_at DESC);
+
+CREATE TABLE IF NOT EXISTS check_in_state (
+	id            INTEGER PRIMARY KEY CHECK (id = 1),
+	checked_in_at TEXT NOT NULL
+);
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
 		return err
@@ -250,4 +288,35 @@ func generateID() string {
 // failed because the column already exists. SQLite returns "duplicate column name: X".
 func isDuplicateColumn(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "duplicate column name")
+}
+
+// GetLastCheckIn returns the time of the most recent get_digest call.
+// Returns ErrNotFound if no check-in has been recorded yet.
+func (s *SQLiteStore) GetLastCheckIn(ctx context.Context) (time.Time, error) {
+	var ts string
+	err := s.db.QueryRowContext(ctx, `SELECT checked_in_at FROM check_in_state WHERE id = 1`).Scan(&ts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, ErrNotFound
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get last check-in: %w", err)
+	}
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse last check-in time: %w", err)
+	}
+	return t, nil
+}
+
+// SetLastCheckIn records the current check-in time, replacing any previous value.
+func (s *SQLiteStore) SetLastCheckIn(ctx context.Context, t time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO check_in_state (id, checked_in_at) VALUES (1, ?)
+		 ON CONFLICT(id) DO UPDATE SET checked_in_at = excluded.checked_in_at`,
+		t.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("set last check-in: %w", err)
+	}
+	return nil
 }

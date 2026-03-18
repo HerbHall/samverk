@@ -1,0 +1,81 @@
+package dispatcher
+
+import (
+	"context"
+	"strings"
+
+	"go.uber.org/zap"
+
+	"github.com/herbhall/samverk/internal/agent"
+	"github.com/herbhall/samverk/pkg/models"
+)
+
+// QualityResult describes the outcome of a post-completion quality check.
+type QualityResult struct {
+	Pass   bool
+	Reason string
+	Score  float64 // 0.0 - 1.0
+}
+
+// checkOutputQuality evaluates agent output for basic quality signals.
+// Returns a QualityResult indicating if the output meets minimum standards.
+func checkOutputQuality(output string, agentType models.AgentType) QualityResult {
+	output = strings.TrimSpace(output)
+
+	// Empty or near-empty output.
+	if len(output) < 50 {
+		return QualityResult{Pass: false, Reason: "output too short", Score: 0.0}
+	}
+
+	// Truncation markers (model hit token limit).
+	truncationMarkers := []string{
+		"I'll continue",
+		"Let me continue",
+		"...truncated",
+		"output limit reached",
+	}
+	for _, marker := range truncationMarkers {
+		if strings.Contains(output, marker) {
+			return QualityResult{Pass: false, Reason: "output appears truncated", Score: 0.3}
+		}
+	}
+
+	// Code-gen specific: check for actual code content.
+	if agentType == models.AgentTypeCodeGen || agentType == models.AgentTypeTest {
+		hasCode := strings.Contains(output, "```") || strings.Contains(output, "EDIT:")
+		if !hasCode {
+			return QualityResult{Pass: false, Reason: "code agent produced no code blocks", Score: 0.2}
+		}
+	}
+
+	return QualityResult{Pass: true, Reason: "quality check passed", Score: 1.0}
+}
+
+// checkCompletionQuality retrieves the session output from the store and
+// runs the quality gate. Results are logged but not acted on yet --
+// escalation to a higher-tier provider depends on #492 (multi-machine routing).
+func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.TaskResult) {
+	if d.store == nil || result.SessionID == "" {
+		return
+	}
+
+	session, err := d.store.GetSession(ctx, result.SessionID)
+	if err != nil {
+		d.logger.Warn("quality gate: could not retrieve session",
+			zap.Int("issue", result.IssueNumber),
+			zap.String("session", result.SessionID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	qr := checkOutputQuality(session.PartialOutput, result.AgentType)
+	if !qr.Pass {
+		d.logger.Warn("quality gate failed",
+			zap.Int("issue", result.IssueNumber),
+			zap.String("reason", qr.Reason),
+			zap.Float64("score", qr.Score),
+			zap.String("provider", result.ProviderKey),
+		)
+	}
+}

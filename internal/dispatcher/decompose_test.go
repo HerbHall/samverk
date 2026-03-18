@@ -96,7 +96,7 @@ func TestDecomposeAndCreateChildren_DisabledWhenNoDecomposer(t *testing.T) {
 
 	issue := &forge.Issue{Number: 1, Title: "test", Body: "body"}
 	decomposed, err := d.decomposeAndCreateChildren(
-		context.Background(), issue, nil, models.AgentTypeCodeGen, 90*time.Minute,
+		context.Background(), "test", "repo", issue, nil, models.AgentTypeCodeGen, 90*time.Minute,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -118,7 +118,7 @@ func TestDecomposeAndCreateChildren_SkippedBelowThreshold(t *testing.T) {
 	tracker.issues[1] = issue
 
 	decomposed, err := d.decomposeAndCreateChildren(
-		context.Background(), issue, nil, models.AgentTypeCodeGen, 30*time.Minute,
+		context.Background(), "test", "repo", issue, nil, models.AgentTypeCodeGen, 30*time.Minute,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -135,7 +135,7 @@ func TestDecomposeAndCreateChildren_CreatesChildren(t *testing.T) {
 	tracker := newMockTracker()
 	cfg := DefaultConfig()
 	cfg.DecompositionThreshold = 30 * time.Minute
-	d := New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
+	d := New([]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: tracker}}, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
 
 	parent := &forge.Issue{Number: 100, Title: "big task", Body: "lots of work"}
 	tracker.issues[100] = parent
@@ -149,7 +149,7 @@ func TestDecomposeAndCreateChildren_CreatesChildren(t *testing.T) {
 	d.decomposer = dec
 
 	decomposed, err := d.decomposeAndCreateChildren(
-		context.Background(), parent, nil, models.AgentTypeCodeGen, 60*time.Minute,
+		context.Background(), "test", "repo", parent, nil, models.AgentTypeCodeGen, 60*time.Minute,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -216,7 +216,7 @@ func TestDecomposeAndCreateChildren_SingleSubtaskSkipped(t *testing.T) {
 	tracker := newMockTracker()
 	cfg := DefaultConfig()
 	cfg.DecompositionThreshold = 30 * time.Minute
-	d := New(tracker, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
+	d := New([]TrackerEntry{{Owner: "test", Repo: "repo", Tracker: tracker}}, &mockPolicy{costThreshold: 5.0}, nil, nil, cfg, zap.NewNop())
 
 	issue := &forge.Issue{Number: 1, Title: "test", Body: "body"}
 	tracker.issues[1] = issue
@@ -229,7 +229,7 @@ func TestDecomposeAndCreateChildren_SingleSubtaskSkipped(t *testing.T) {
 	d.decomposer = dec
 
 	decomposed, err := d.decomposeAndCreateChildren(
-		context.Background(), issue, nil, models.AgentTypeCodeGen, 60*time.Minute,
+		context.Background(), "test", "repo", issue, nil, models.AgentTypeCodeGen, 60*time.Minute,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

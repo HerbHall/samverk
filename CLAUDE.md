@@ -32,6 +32,15 @@ samverk/
 │   ├── profile/               # User profile management
 │   ├── cost/                  # Token tracking, budget, attribution
 │   ├── store/                 # SQLite persistence layer
+│   ├── hostmetrics/           # Host resource collection (disk, RAM, CPU)
+│   ├── logstore/              # Structured log persistence to SQLite
+│   ├── loganalyst/            # AI log summarization via Ollama
+│   ├── logging/               # Structured logging (zap tee)
+│   ├── metrics/               # Dispatcher and pool metrics
+│   ├── scaling/               # Adaptive worker scaling (1-N)
+│   ├── synapset/              # Synapset MCP client for memory enrichment
+│   ├── prwatcher/             # PR watcher for auto-merge
+│   ├── status/                # Health and status subsystem
 │   └── version/               # Build version injection (ldflags)
 ├── pkg/models/                # Shared types (Issue, Agent, Action, etc.)
 ├── web/                       # React SPA dashboard (Vite + TypeScript)
@@ -97,8 +106,9 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 
 ## Known Constraints
 
-- Phase 4 complete -- MCP tools, REST API, dispatcher CLI, multi-project, web dashboard scaffold
-- Phase 5 in progress -- agent runtime, provider integration, SPA embedding
+- Infrastructure complete -- all phases through 6 done
+- Current focus: agent autonomy (prompt quality, planning workflow)
+- Free-first routing: 3 Ollama GPU hosts tried before Claude API
 - Async-first architecture (not synchronous tooling)
 - Hybrid local/cloud agent model
 - Target audience: hobbyist devs with limited time, not enterprise teams
@@ -127,17 +137,24 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 - Failure recovery strategy ([ADR-027](docs/decisions/ADR-027-failure-recovery.md))
 - Cross-model QA validation ([ADR-030](docs/decisions/ADR-030-cross-model-qa.md))
 - Dual-forge operational model ([ADR-031](docs/decisions/ADR-031-dual-forge-operational-model.md))
+- Adaptive worker scaling ([ADR-032](docs/decisions/ADR-032-adaptive-worker-scaling.md))
+- Multi-machine free agent runtime ([ADR-033](docs/decisions/ADR-033-multi-machine-free-agent-runtime.md))
+- Solo developer agent model ([ADR-035](docs/decisions/ADR-035-solo-developer-agent-model.md))
 - Unified execution plan -- Q2 2026 ([docs/unified-execution-plan.md](docs/unified-execution-plan.md))
 
 ## Infrastructure
 
 - **Proxmox host:** `root@192.168.1.203` (SSH key auth configured)
-- **Samverk container:** `root@192.168.1.162` CT 202 (SSH key auth configured)
-- **Gitea instance:** CT 200 (`192.168.1.160:3000`, `gitea.herbhall.net`) -- primary runtime forge for dispatcher
+- **Samverk container:** CT 202 `root@192.168.1.162:8080` (SSH key auth)
+- **Staging container:** CT 203 `root@192.168.1.199:8080` (STOPPED -- decommissioned 2026-03-17, spin up if needed)
+- **Gitea instance:** CT 200 `192.168.1.160:3000` (`gitea.herbhall.net`) -- 40GB disk
+- **Ollama VM 300:** `192.168.1.207:11434` (RTX 3090 Ti, qwen2.5-coder:14b)
+- **Ollama HDH-NZXT:** `192.168.1.202:11434` (RTX 5090, qwen3-coder:30b)
+- **Ollama CM-ASUS:** `100.88.37.47:11434` via Tailscale (RTX 2080 Ti, qwen2.5-coder:7b)
 - **Health check:** `curl http://192.168.1.162:8080/healthz`
-- **Deploy command:** `make deploy DEPLOY_HOST=192.168.1.162`
-- **Redeploy shortcut:** `make redeploy` -- cross-compiles, deploys, restarts services, and verifies the health check in one step. Use this after any code change that should reach the live server.
-- Claude Code has SSH access to both hosts and should use it for deployment tasks
+- **Deploy:** `make redeploy` -- cross-compiles, deploys, restarts, verifies health
+- **Model check:** `bash scripts/deploy-models.sh --check` (run from CT 202)
+- Claude Code has SSH access to all hosts
 
 ## References
 

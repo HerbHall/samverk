@@ -1,0 +1,7 @@
+[Unit]
+Description=Cloudflared Tunnel Health Watchdog
+After=cloudflared.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cloudflared-watchdog.sh
