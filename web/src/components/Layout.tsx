@@ -1,13 +1,25 @@
+import { useState, useCallback } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router'
 import { HeaderBar } from './HeaderBar'
+import { ChatDrawer } from './ChatDrawer'
 
 export function Layout() {
   const location = useLocation()
   const isFullPage = location.pathname === '/devkit'
+  const [chatOpen, setChatOpen] = useState(false)
+
+  const handleChatToggle = useCallback(() => {
+    setChatOpen((prev) => !prev)
+  }, [])
+
+  const handleChatClose = useCallback(() => {
+    setChatOpen(false)
+  }, [])
 
   return (
     <div className="flex h-screen flex-col bg-gray-50 dark:bg-gray-950">
-      <HeaderBar />
+      <HeaderBar onChatToggle={handleChatToggle} chatOpen={chatOpen} />
+      <ChatDrawer open={chatOpen} onClose={handleChatClose} />
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-56 border-r dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
           <nav className="space-y-1">

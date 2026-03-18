@@ -357,6 +357,23 @@ export interface SynapsetLogEntry {
   CreatedAt: string
 }
 
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatRequest {
+  messages: ChatMessage[]
+  system: string
+}
+
+export interface ChatResponse {
+  content: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+}
+
 export const api = {
   listIssues: (params?: { state?: string; page?: number }) =>
     fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
@@ -441,4 +458,10 @@ export const api = {
 
   synapsetLogs: (limit?: number) =>
     fetchJSON<SynapsetLogEntry[]>(`/synapset/logs${limit ? '?limit=' + limit : ''}`),
+
+  sendChat: (req: ChatRequest) =>
+    fetchJSON<ChatResponse>('/chat', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
 }
