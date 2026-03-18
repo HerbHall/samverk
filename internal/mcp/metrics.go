@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/herbhall/samverk/internal/logstore"
 	"github.com/herbhall/samverk/internal/metrics"
+	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/pkg/models"
 )
 
@@ -28,6 +30,18 @@ type systemMetricsSource interface {
 // store.Store satisfies this interface.
 type scalingEventReader interface {
 	ListScalingEvents(ctx context.Context, limit int) ([]*models.ScalingEvent, error)
+}
+
+// providerHealthSource provides cached health status for all providers.
+// provider.HealthMonitor satisfies this interface.
+type providerHealthSource interface {
+	AllHealth() []provider.ProviderHealth
+}
+
+// logQuerier queries structured logs from the log store.
+// logstore.LogStore satisfies this interface.
+type logQuerier interface {
+	Query(ctx context.Context, f logstore.QueryFilter) ([]logstore.LogEntry, error)
 }
 
 // WorkerInfo is a summary of a registered PC agent worker for digest output.

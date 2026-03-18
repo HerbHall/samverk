@@ -30,6 +30,7 @@ type Project struct {
 	Tags      []string                 `json:"tags,omitempty" yaml:"tags"`
 	Tracker   forge.IssueTracker       `json:"-" yaml:"-"`
 	Reader    forge.RepoReader         `json:"-" yaml:"-"`
+	Writer    forge.RepoWriter         `json:"-" yaml:"-"`
 	PRManager forge.PullRequestManager `json:"-" yaml:"-"`
 }
 
