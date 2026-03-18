@@ -45,7 +45,7 @@ Or push via the Gitea API:
 
 ```bash
 GITEA_URL="https://gitea.herbhall.net/api/v1"
-OWNER="samverk-admin"
+OWNER="samverk"
 REPO="your-project"
 
 curl -X POST "$GITEA_URL/repos/$OWNER/$REPO/contents/.gitea/workflows/ai-review.yml" \
