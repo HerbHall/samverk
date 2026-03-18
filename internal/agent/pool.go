@@ -444,6 +444,16 @@ func (p *Pool) processTask(task Task) {
 
 		nextProv, nextModel, nextErr := p.registry.GetAfter(ctx, routingKey, provName)
 		if nextErr == nil {
+			// Post [FAILOVER] comment on the issue for visibility.
+			failoverMsg := fmt.Sprintf("[FAILOVER] Provider %s timed out after %s. Retrying with %s.",
+				provName, duration.Truncate(time.Second), nextProv.Name())
+			if _, commentErr := taskTracker.AddComment(cleanupCtx, task.Issue.Number, failoverMsg); commentErr != nil {
+				logger.Warn("failed to post failover comment",
+					zap.Int("issue", task.Issue.Number),
+					zap.Error(commentErr),
+				)
+			}
+
 			// Re-stagger to avoid overwhelming the fallback provider.
 			p.spawnMu.Lock()
 			if since := time.Since(p.lastSpawn); since < spawnStagger {
