@@ -19,6 +19,7 @@ import (
 	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/docaudit"
 	"github.com/herbhall/samverk/internal/hostmetrics"
+	"github.com/herbhall/samverk/internal/infra"
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/digest"
@@ -77,6 +78,7 @@ func run() int {
 	root.AddCommand(wakeCmd())
 	root.AddCommand(docAuditCmd())
 	root.AddCommand(auditCmd())
+	root.AddCommand(probeCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -1190,6 +1192,43 @@ func docAuditCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&repoRoot, "root", ".", "Repository root directory")
+	return cmd
+}
+
+func probeCmd() *cobra.Command {
+	var synapsetURL string
+
+	cmd := &cobra.Command{
+		Use:   "probe",
+		Short: "Run infrastructure probe and sync to Synapset",
+		Long:  "Polls known endpoints (Ollama, Samverk, Gitea) and updates Synapset machine memories with meaningful changes.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+
+			cfg := synapset.ConfigFromEnv(synapset.Config{URL: synapsetURL})
+			sc := synapset.New(cfg, logger)
+
+			endpoints := infra.DefaultEndpoints()
+			prober := infra.NewProber(sc, logger, endpoints)
+
+			results := prober.Run(ctx)
+
+			// Print summary.
+			var reachable, unreachable int
+			for i := range results {
+				if results[i].Reachable {
+					reachable++
+				} else {
+					unreachable++
+				}
+			}
+			fmt.Printf("Probe complete: %d reachable, %d unreachable (of %d endpoints)\n",
+				reachable, unreachable, len(results))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&synapsetURL, "synapset-url", "", "Synapset MCP endpoint URL (default: env or "+synapset.DefaultURL+")")
 	return cmd
 }
 

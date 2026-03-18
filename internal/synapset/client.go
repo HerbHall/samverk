@@ -427,6 +427,36 @@ func (c *Client) StoreMemory(ctx context.Context, pool, content, category string
 	return err
 }
 
+// QueryMemory performs a structured query against a Synapset pool using
+// exact-match filters (source, category, tags) rather than semantic search.
+func (c *Client) QueryMemory(ctx context.Context, pool string, opts map[string]interface{}) (memories []Memory, err error) {
+	args := map[string]interface{}{
+		"pool": pool,
+	}
+	for k, v := range opts {
+		args[k] = v
+	}
+	result, err := c.callTool(ctx, "query_memory", args)
+	if err != nil {
+		return nil, err
+	}
+	return parseMemories(result)
+}
+
+// UpdateMemory updates an existing memory entry by ID. Fields in the updates
+// map are merged into the existing record; only supplied fields are changed.
+func (c *Client) UpdateMemory(ctx context.Context, pool, id string, updates map[string]interface{}) error {
+	args := map[string]interface{}{
+		"pool": pool,
+		"id":   id,
+	}
+	for k, v := range updates {
+		args[k] = v
+	}
+	_, err := c.callTool(ctx, "update_memory", args)
+	return err
+}
+
 // parseMemories extracts Memory entries from a tool result's text content.
 func parseMemories(result *toolResult) ([]Memory, error) {
 	if result == nil || len(result.Content) == 0 {
