@@ -259,7 +259,7 @@ func ValidateRoutingConfig(cfg *RegistryConfig, logger *zap.Logger) []string {
 		for _, providerName := range chain {
 			if ollamaProviders[providerName] {
 				msg := fmt.Sprintf(
-					"routing chain %q contains Ollama provider %q; Ollama models produce bad output on code-gen tasks (see KG#146)",
+					"routing chain %q contains Ollama provider %q; Ollama restricted to triage-only pending validation (see #57)",
 					chainName, providerName,
 				)
 				warnings = append(warnings, msg)
