@@ -79,6 +79,9 @@ ssh "root@${HOST}" 'systemctl stop samverk-dispatch samverk-serve 2>/dev/null ||
 
 # Step 3: Deploy binary.
 echo "--- Deploying binary..."
+# Kill any orphaned processes holding the binary open (survive systemctl stop).
+ssh "root@${HOST}" 'fuser -k /usr/local/bin/samverk 2>/dev/null || true'
+sleep 1
 scp "bin/samverk-linux-amd64" "root@${HOST}:/usr/local/bin/samverk"
 
 # Step 4: Deploy configs and run installer.
