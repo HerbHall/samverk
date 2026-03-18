@@ -50,6 +50,7 @@ type Client struct {
 	timeout      time.Duration
 	allowedTools string // comma-separated tool list; empty means no --allowedTools flag
 	maxTurns     int    // max agentic turns; 0 means no limit
+	baseURL      string // when set, redirects CLI to this base URL (e.g. Ollama)
 	onActivity   func() // called when output bytes arrive; may be nil
 	logger       *zap.Logger
 }
@@ -58,6 +59,7 @@ type Client struct {
 type Options struct {
 	AllowedTools string      // comma-separated tool list (e.g. "Bash,Read,Edit,Write,Glob,Grep")
 	MaxTurns     int         // max agentic turns per session; 0 means no limit
+	BaseURL      string      // override ANTHROPIC_BASE_URL (e.g. Ollama endpoint)
 	Logger       *zap.Logger // structured logger; nil uses nop logger
 }
 
@@ -79,6 +81,7 @@ func NewWithTimeout(model string, timeout time.Duration, opts ...Options) *Clien
 	if len(opts) > 0 {
 		c.allowedTools = opts[0].AllowedTools
 		c.maxTurns = opts[0].MaxTurns
+		c.baseURL = opts[0].BaseURL
 		if opts[0].Logger != nil {
 			c.logger = opts[0].Logger
 		}
@@ -157,15 +160,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	// propagate to claude-cli. Belt-and-suspenders alongside KillMode=process.
 	setProcessGroup(cmd)
 
-	// Inherit environment but strip ANTHROPIC_API_KEY so the CLI uses
-	// OAuth credentials (~/.claude) instead of API credits.
-	env := make([]string, 0, len(os.Environ()))
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
-			env = append(env, e)
-		}
-	}
-	cmd.Env = env
+	cmd.Env = c.buildEnv()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -239,6 +234,41 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 			Content: strings.TrimSpace(output.String()),
 		},
 	}, nil
+}
+
+// buildEnv constructs the subprocess environment.
+// Always strips ANTHROPIC_API_KEY so the CLI uses OAuth (~/.claude) not API credits.
+// When baseURL is configured (e.g. Ollama), also replaces ANTHROPIC_BASE_URL and
+// ANTHROPIC_AUTH_TOKEN with values appropriate for the custom backend.
+func (c *Client) buildEnv() []string {
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		switch {
+		case strings.HasPrefix(e, "ANTHROPIC_API_KEY="):
+			continue
+		case c.baseURL != "" && strings.HasPrefix(e, "ANTHROPIC_BASE_URL="):
+			continue
+		case c.baseURL != "" && strings.HasPrefix(e, "ANTHROPIC_AUTH_TOKEN="):
+			continue
+		default:
+			env = append(env, e)
+		}
+	}
+	// When a custom base URL is configured (e.g. Ollama), redirect the CLI
+	// to that endpoint. ANTHROPIC_AUTH_TOKEN is set to a dummy value because
+	// the CLI requires it but Ollama ignores it. Nonessential traffic
+	// (usage/billing) is disabled to prevent 404 errors from non-Anthropic
+	// backends. Token counting is skipped to avoid hangs on Ollama's missing
+	// /v1/messages/count_tokens endpoint (see ollama/ollama#13949).
+	if c.baseURL != "" {
+		env = append(env,
+			"ANTHROPIC_BASE_URL="+c.baseURL,
+			"ANTHROPIC_AUTH_TOKEN=ollama",
+			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+			"CLAUDE_CODE_SKIP_TOKEN_COUNTING=1",
+		)
+	}
+	return env
 }
 
 // streamOutput reads from stdout and stderr concurrently, writing to output.

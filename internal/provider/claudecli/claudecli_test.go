@@ -253,3 +253,146 @@ func TestChatOmitsOptionalFlags(t *testing.T) {
 		t.Errorf("output should not contain --max-turns when not configured, got: %s", content)
 	}
 }
+
+// TestBaseURLStoredInClient verifies that BaseURL from Options is stored.
+func TestBaseURLStoredInClient(t *testing.T) {
+	c := New("model", Options{BaseURL: "http://192.168.1.207:11434"})
+	if c.baseURL != "http://192.168.1.207:11434" {
+		t.Errorf("baseURL = %q, want %q", c.baseURL, "http://192.168.1.207:11434")
+	}
+}
+
+// TestOllamaEnvInjection verifies that when baseURL is set, the subprocess
+// environment includes Ollama-specific env vars.
+func TestOllamaEnvInjection(t *testing.T) {
+	// buildEnv extracts the env slice that Chat would construct.
+	// We test the env-building logic by inspecting the Client's buildEnv helper.
+	c := &Client{
+		claudeBin: "echo", // won't actually run in this test path
+		model:     "qwen2.5-coder:14b",
+		timeout:   defaultTimeout,
+		baseURL:   "http://192.168.1.207:11434",
+	}
+
+	env := c.buildEnv()
+
+	envMap := make(map[string]string, len(env))
+	for _, e := range env {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+
+	// Verify Ollama env vars are injected.
+	if got, ok := envMap["ANTHROPIC_BASE_URL"]; !ok || got != "http://192.168.1.207:11434" {
+		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, "http://192.168.1.207:11434")
+	}
+	if got, ok := envMap["ANTHROPIC_AUTH_TOKEN"]; !ok || got != "ollama" {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q, want %q", got, "ollama")
+	}
+	if got, ok := envMap["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"]; !ok || got != "1" {
+		t.Errorf("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = %q, want %q", got, "1")
+	}
+	if got, ok := envMap["CLAUDE_CODE_SKIP_TOKEN_COUNTING"]; !ok || got != "1" {
+		t.Errorf("CLAUDE_CODE_SKIP_TOKEN_COUNTING = %q, want %q", got, "1")
+	}
+
+	// Verify ANTHROPIC_API_KEY is stripped.
+	if _, ok := envMap["ANTHROPIC_API_KEY"]; ok {
+		t.Error("ANTHROPIC_API_KEY should be stripped when baseURL is set")
+	}
+}
+
+// TestNoOllamaEnvWithoutBaseURL verifies that without a baseURL,
+// no Ollama-specific env vars are injected.
+func TestNoOllamaEnvWithoutBaseURL(t *testing.T) {
+	c := &Client{
+		claudeBin: "echo",
+		model:     "claude-sonnet-4-6",
+		timeout:   defaultTimeout,
+	}
+
+	env := c.buildEnv()
+
+	for _, e := range env {
+		if strings.HasPrefix(e, "ANTHROPIC_BASE_URL=") {
+			t.Errorf("ANTHROPIC_BASE_URL should not be set without baseURL, got: %s", e)
+		}
+		if strings.HasPrefix(e, "ANTHROPIC_AUTH_TOKEN=") {
+			t.Errorf("ANTHROPIC_AUTH_TOKEN should not be set without baseURL, got: %s", e)
+		}
+		if strings.HasPrefix(e, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=") {
+			t.Errorf("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC should not be set without baseURL, got: %s", e)
+		}
+		if strings.HasPrefix(e, "CLAUDE_CODE_SKIP_TOKEN_COUNTING=") {
+			t.Errorf("CLAUDE_CODE_SKIP_TOKEN_COUNTING should not be set without baseURL, got: %s", e)
+		}
+	}
+
+	// ANTHROPIC_API_KEY should still be stripped (OAuth mode).
+	for _, e := range env {
+		if strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
+			t.Error("ANTHROPIC_API_KEY should always be stripped")
+		}
+	}
+}
+
+// TestOllamaEnvStripsExistingAnthropicVars verifies that pre-existing
+// ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the environment are
+// replaced (not duplicated) when baseURL is set.
+func TestOllamaEnvStripsExistingAnthropicVars(t *testing.T) {
+	// Set env vars that should be replaced.
+	t.Setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "real-token")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+	c := &Client{
+		claudeBin: "echo",
+		model:     "qwen2.5-coder:14b",
+		timeout:   defaultTimeout,
+		baseURL:   "http://192.168.1.207:11434",
+	}
+
+	env := c.buildEnv()
+
+	// Count occurrences of each key.
+	counts := map[string]int{
+		"ANTHROPIC_BASE_URL":  0,
+		"ANTHROPIC_AUTH_TOKEN": 0,
+		"ANTHROPIC_API_KEY":   0,
+	}
+	for _, e := range env {
+		for key := range counts {
+			if strings.HasPrefix(e, key+"=") {
+				counts[key]++
+			}
+		}
+	}
+
+	if counts["ANTHROPIC_BASE_URL"] != 1 {
+		t.Errorf("ANTHROPIC_BASE_URL appears %d times, want 1", counts["ANTHROPIC_BASE_URL"])
+	}
+	if counts["ANTHROPIC_AUTH_TOKEN"] != 1 {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN appears %d times, want 1", counts["ANTHROPIC_AUTH_TOKEN"])
+	}
+	if counts["ANTHROPIC_API_KEY"] != 0 {
+		t.Errorf("ANTHROPIC_API_KEY appears %d times, want 0", counts["ANTHROPIC_API_KEY"])
+	}
+
+	// Verify the injected values are correct (not the original env values).
+	for _, e := range env {
+		if strings.HasPrefix(e, "ANTHROPIC_BASE_URL=") {
+			val := strings.TrimPrefix(e, "ANTHROPIC_BASE_URL=")
+			if val != "http://192.168.1.207:11434" {
+				t.Errorf("ANTHROPIC_BASE_URL value = %q, want Ollama URL", val)
+			}
+		}
+		if strings.HasPrefix(e, "ANTHROPIC_AUTH_TOKEN=") {
+			val := strings.TrimPrefix(e, "ANTHROPIC_AUTH_TOKEN=")
+			if val != "ollama" {
+				t.Errorf("ANTHROPIC_AUTH_TOKEN value = %q, want 'ollama'", val)
+			}
+		}
+	}
+}
