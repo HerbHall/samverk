@@ -433,7 +433,7 @@ func serveCmd() *cobra.Command {
 }
 
 func dispatchCmd() *cobra.Command {
-	var owner, repo, dbPath, providersConfig, scalingConfig, repoDir string
+	var owner, repo, dbPath, projectsConfig, providersConfig, scalingConfig, repoDir string
 	var forgeName, giteaURL string
 	var pollSeconds, workers, scalingMin, scalingMax int
 	var budget float64
@@ -446,50 +446,145 @@ func dispatchCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
+			// Build project registry from config and/or legacy flags.
+			registry := internalmcp.NewProjectRegistry()
+
+			// Load projects from config file if specified.
+			if projectsConfig != "" {
+				if configs, loadErr := internalmcp.LoadProjectConfig(projectsConfig); loadErr == nil {
+					var ghHTTPClient *http.Client
+					for i := range configs {
+						pc := &configs[i]
+						var p *internalmcp.Project
+						if pc.Forge == "gitea" {
+							giteaToken := pc.GiteaToken
+							if giteaToken == "" {
+								giteaToken = os.Getenv("GITEA_TOKEN")
+							}
+							gtClient, gtErr := giteaadapter.New(pc.GiteaURL, giteaToken, pc.Owner, pc.Repo)
+							if gtErr != nil {
+								logger.Warn("could not create Gitea client for project",
+									zap.String("name", pc.Name), zap.Error(gtErr))
+								continue
+							}
+							if pollSeconds > 0 {
+								gtClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
+							}
+							p = &internalmcp.Project{
+								Name:      pc.Name,
+								Owner:     pc.Owner,
+								Repo:      pc.Repo,
+								Phase:     pc.Phase,
+								Tags:      pc.Tags,
+								Tracker:   gtClient,
+								PRManager: gtClient,
+							}
+						} else {
+							// GitHub project.
+							token := os.Getenv("GITHUB_TOKEN")
+							if token == "" {
+								logger.Warn("skipping GitHub project: GITHUB_TOKEN not set",
+									zap.String("name", pc.Name))
+								continue
+							}
+							if ghHTTPClient == nil {
+								ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+								ghHTTPClient = oauth2.NewClient(ctx, ts)
+							}
+							ghClient := github.New(pc.Owner, pc.Repo, ghHTTPClient)
+							if pollSeconds > 0 {
+								ghClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
+							}
+							p = &internalmcp.Project{
+								Name:      pc.Name,
+								Owner:     pc.Owner,
+								Repo:      pc.Repo,
+								Phase:     pc.Phase,
+								Tags:      pc.Tags,
+								Tracker:   ghClient,
+								PRManager: ghClient,
+							}
+						}
+						if regErr := registry.Register(p); regErr != nil {
+							logger.Warn("could not register project",
+								zap.String("name", pc.Name), zap.Error(regErr))
+						}
+					}
+					registry.SetConfigPath(projectsConfig)
+				} else if !os.IsNotExist(loadErr) {
+					logger.Warn("could not load projects config",
+						zap.String("path", projectsConfig), zap.Error(loadErr))
+				}
+			}
+
+			// Legacy single-project flags: add as backward-compatible entry if not already in registry.
 			if owner == "" {
 				owner = os.Getenv("SAMVERK_GITHUB_OWNER")
 			}
 			if repo == "" {
 				repo = os.Getenv("SAMVERK_GITHUB_REPO")
 			}
-			if owner == "" || repo == "" {
-				return fmt.Errorf("--owner and --repo are required")
+			if owner != "" && repo != "" {
+				if _, exists := registry.Get(repo); !exists {
+					var legacyTracker forge.IssueTracker
+					var legacyPRMgr forge.PullRequestManager
+					switch forgeName {
+					case "gitea":
+						giteaToken := os.Getenv("GITEA_TOKEN")
+						if giteaToken == "" {
+							return fmt.Errorf("GITEA_TOKEN env var is required for --forge gitea")
+						}
+						if giteaURL == "" {
+							return fmt.Errorf("--gitea-url is required for --forge gitea")
+						}
+						gtClient, gtErr := giteaadapter.New(giteaURL, giteaToken, owner, repo)
+						if gtErr != nil {
+							return fmt.Errorf("creating Gitea client: %w", gtErr)
+						}
+						if pollSeconds > 0 {
+							gtClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
+						}
+						legacyTracker = gtClient
+						legacyPRMgr = gtClient
+					default: // "github" or empty
+						token := os.Getenv("GITHUB_TOKEN")
+						if token == "" {
+							return fmt.Errorf("GITHUB_TOKEN env var is required")
+						}
+						ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+						hc := oauth2.NewClient(ctx, ts)
+						ghClient := github.New(owner, repo, hc)
+						if pollSeconds > 0 {
+							ghClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
+						}
+						legacyTracker = ghClient
+						legacyPRMgr = ghClient
+					}
+					legacyProject := &internalmcp.Project{
+						Name:      repo,
+						Owner:     owner,
+						Repo:      repo,
+						Phase:     "development",
+						Tracker:   legacyTracker,
+						PRManager: legacyPRMgr,
+					}
+					if regErr := registry.Register(legacyProject); regErr != nil {
+						logger.Warn("could not register legacy project", zap.Error(regErr))
+					}
+				}
 			}
 
-			// Build forge client based on --forge flag.
-			var tracker forge.IssueTracker
-			var prMgr forge.PullRequestManager
-			switch forgeName {
-			case "gitea":
-				giteaToken := os.Getenv("GITEA_TOKEN")
-				if giteaToken == "" {
-					return fmt.Errorf("GITEA_TOKEN env var is required for --forge gitea")
-				}
-				if giteaURL == "" {
-					return fmt.Errorf("--gitea-url is required for --forge gitea")
-				}
-				gtClient, gtErr := giteaadapter.New(giteaURL, giteaToken, owner, repo)
-				if gtErr != nil {
-					return fmt.Errorf("creating Gitea client: %w", gtErr)
-				}
-				tracker = gtClient
-				prMgr = gtClient
-				if pollSeconds > 0 {
-					gtClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
-				}
-			default: // "github" or empty
-				token := os.Getenv("GITHUB_TOKEN")
-				if token == "" {
-					return fmt.Errorf("GITHUB_TOKEN env var is required")
-				}
-				ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-				httpClient := oauth2.NewClient(ctx, ts)
-				ghClient := github.New(owner, repo, httpClient)
-				if pollSeconds > 0 {
-					ghClient.SetPollInterval(time.Duration(pollSeconds) * time.Second)
-				}
-				tracker = ghClient
-				prMgr = ghClient
+			// At least one project is required.
+			if len(registry.List()) == 0 {
+				return fmt.Errorf("no projects configured: set --projects-config or --owner/--repo flags")
+			}
+
+			// Resolve primary tracker from the active registry project.
+			var primaryTracker forge.IssueTracker
+			var primaryPRMgr forge.PullRequestManager
+			if activeProj, activeErr := registry.Active(); activeErr == nil {
+				primaryTracker = activeProj.Tracker
+				primaryPRMgr = activeProj.PRManager
 			}
 
 			// Load autonomy policy.
@@ -541,7 +636,7 @@ func dispatchCmd() *cobra.Command {
 				} else {
 					providerRegistry = reg
 					costs := cost.NewTracker(st, budget, 24)
-					pool = agent.NewPool(reg, tracker, st, costs, workers, logger)
+					pool = agent.NewPool(reg, primaryTracker, st, costs, workers, logger)
 					defer pool.Shutdown()
 					logger.Info("agent pool started", zap.Int("workers", workers), zap.Int("providers", len(reg.List(ctx))))
 				}
@@ -569,11 +664,18 @@ func dispatchCmd() *cobra.Command {
 				}
 			}
 
-			// Build tracker entries for multi-repo dispatch.
-			trackerEntries := []dispatcher.TrackerEntry{
-				{Owner: owner, Repo: repo, Tracker: tracker},
+			// Build tracker entries from registry for multi-repo dispatch.
+			regProjects := registry.List()
+			trackerEntries := make([]dispatcher.TrackerEntry, 0, len(regProjects))
+			for _, p := range regProjects {
+				trackerEntries = append(trackerEntries, dispatcher.TrackerEntry{
+					Owner:   p.Owner,
+					Repo:    p.Repo,
+					Tracker: p.Tracker,
+				})
 			}
 			disp := dispatcher.New(trackerEntries, policy, st, pool, nil, logger)
+			disp.SetProjectResolver(registry)
 
 			// Start health monitor for pre-flight provider health gating.
 			if providerRegistry != nil {
@@ -602,7 +704,7 @@ func dispatchCmd() *cobra.Command {
 				logger.Info("provider health monitor started")
 			}
 
-			logger.Info("starting dispatcher", zap.String("owner", owner), zap.String("repo", repo))
+			logger.Info("starting dispatcher", zap.Int("projects", len(trackerEntries)))
 
 			g, gctx := errgroup.WithContext(ctx)
 
@@ -696,7 +798,7 @@ func dispatchCmd() *cobra.Command {
 
 			// Start PR watcher if auto-merge is enabled.
 			if policyCfg.Merge.AutoMergeOnCIPass {
-				pw := prwatcher.New(prMgr, tracker, policyCfg.Merge, time.Duration(pollSeconds)*time.Second, logger)
+				pw := prwatcher.New(primaryPRMgr, primaryTracker, policyCfg.Merge, time.Duration(pollSeconds)*time.Second, logger)
 				g.Go(func() error {
 					return pw.Run(gctx)
 				})
@@ -722,6 +824,7 @@ func dispatchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&scalingConfig, "scaling-config", "", "Path to scaling policy YAML config (optional)")
 	cmd.Flags().IntVar(&scalingMin, "scaling-min", 0, "Override min workers from scaling config (0 = use config value)")
 	cmd.Flags().IntVar(&scalingMax, "scaling-max", 0, "Override max workers from scaling config (0 = use config value)")
+	cmd.Flags().StringVar(&projectsConfig, "projects-config", ".samverk/server.yaml", "Path to projects YAML config (multi-repo dispatch)")
 	cmd.Flags().StringVar(&repoDir, "repo-dir", "", "Local git clone path for agent worktree isolation (env: SAMVERK_REPO_DIR)")
 
 	return cmd
