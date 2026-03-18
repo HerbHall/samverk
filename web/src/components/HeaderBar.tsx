@@ -1,6 +1,11 @@
 import { useTheme } from '../hooks/useTheme'
 
-export function HeaderBar() {
+interface HeaderBarProps {
+  onChatToggle?: () => void
+  chatOpen?: boolean
+}
+
+export function HeaderBar({ onChatToggle, chatOpen }: HeaderBarProps) {
   const { theme, toggle } = useTheme()
   const version = window.__SAMVERK_VERSION__ || 'dev'
   const commit = window.__SAMVERK_COMMIT__
@@ -18,13 +23,24 @@ export function HeaderBar() {
           {version}
         </span>
       </div>
-      <button
-        onClick={toggle}
-        className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-      >
-        {theme === 'dark' ? '\u2600' : '\u263D'}
-      </button>
+      <div className="flex items-center gap-2">
+        {onChatToggle != null && (
+          <button
+            onClick={onChatToggle}
+            className={`rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 ${chatOpen === true ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : ''}`}
+            title={chatOpen === true ? 'Close chat' : 'Chat with Claude'}
+          >
+            {'\u{1F4AC}'}
+          </button>
+        )}
+        <button
+          onClick={toggle}
+          className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? '\u2600' : '\u263D'}
+        </button>
+      </div>
     </header>
   )
 }

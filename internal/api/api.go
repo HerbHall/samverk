@@ -49,6 +49,8 @@ type API struct {
 	scalingMax     int
 	synapsetProxy  *SynapsetProxy    // may be nil; proxies Synapset API requests
 	logStore       *logstore.LogStore // may be nil; for log query API
+	chatAPIKey     string            // Anthropic API key for chat proxy; empty = use env
+	chatRateLimit  *chatRateLimit    // rate limiter for chat endpoint
 	history        []historyEntry    // ring buffer of recent snapshots; guarded by historyMu
 	logger         *zap.Logger
 }
@@ -61,11 +63,12 @@ func New(tracker forge.IssueTracker, s store.Store, costs digest.CostSource, log
 		logger = zap.NewNop()
 	}
 	return &API{
-		tracker: tracker,
-		store:   s,
-		costs:   costs,
-		workers: newWorkerRegistry(),
-		logger:  logger,
+		tracker:       tracker,
+		store:         s,
+		costs:         costs,
+		workers:       newWorkerRegistry(),
+		chatRateLimit: newChatRateLimit(),
+		logger:        logger,
 	}
 }
 
@@ -129,6 +132,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/agents", a.handleAgents)
 	mux.HandleFunc("GET /api/v1/logs", a.handleListLogs)
 	mux.HandleFunc("GET /api/v1/logs/summary", a.handleLogSummary)
+	mux.HandleFunc("POST /api/v1/chat", a.handleChat)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)
