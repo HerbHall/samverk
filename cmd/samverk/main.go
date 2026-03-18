@@ -1269,6 +1269,7 @@ func makeProviderFactory(l *zap.Logger) provider.ProviderFactory {
 			opts := claudecli.Options{
 				AllowedTools: normalizeCSV(cfg.AllowedTools),
 				MaxTurns:     cfg.MaxTurns,
+				BaseURL:      cfg.BaseURL,
 				Logger:       plog,
 			}
 			if cfg.TimeoutSeconds > 0 {
