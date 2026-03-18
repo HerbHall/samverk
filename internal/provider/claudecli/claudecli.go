@@ -31,7 +31,14 @@ const (
 	// startupTimeout is how long Chat waits for the first byte of output after
 	// spawning the process. If nothing arrives within this window, the process
 	// is assumed to have failed to start (e.g. OAuth hang, binary crash).
-	startupTimeout = 30 * time.Second
+	//
+	// Must be long enough to allow claude-cli's first agentic round-trip
+	// (prompt → API → tool call → API → first output) to complete.
+	// In --print mode the CLI buffers all output until the session ends, so
+	// the first byte may not arrive until after multiple tool-call iterations.
+	// 120 s covers complex code-gen prompts while still catching true crashes
+	// (which exit the process and close the pipe long before the timer fires).
+	startupTimeout = 120 * time.Second
 
 	// staleOutputTimeout is how long Chat waits for new bytes before treating
 	// the process as hung. Must be shorter than the dispatcher heartbeat timeout.
