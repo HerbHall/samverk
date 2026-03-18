@@ -32,7 +32,7 @@ func spaHandler() http.Handler {
 	}
 
 	// Build injection script with version info only -- no auth token.
-	var scriptParts []string
+	scriptParts := make([]string, 0, 2)
 	scriptParts = append(scriptParts,
 		`window.__SAMVERK_VERSION__="`+html.EscapeString(version.Version)+`"`,
 		`window.__SAMVERK_COMMIT__="`+html.EscapeString(version.GitCommit)+`"`,

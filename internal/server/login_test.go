@@ -32,6 +32,21 @@ func noRedirectClient() *http.Client {
 	}
 }
 
+// postForm performs a context-aware POST form request.
+func postForm(t *testing.T, client *http.Client, url string, data url.Values) *http.Response {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, strings.NewReader(data.Encode()))
+	if err != nil {
+		t.Fatalf("new POST request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", url, err)
+	}
+	return resp
+}
+
 func TestLoginPage_Renders(t *testing.T) {
 	ts := newAuthTestServer(t, "secret-123")
 
@@ -57,12 +72,9 @@ func TestLoginSubmit_CorrectPassword(t *testing.T) {
 	ts := newAuthTestServer(t, token)
 	client := noRedirectClient()
 
-	resp, err := client.PostForm(ts.URL+"/login", url.Values{
+	resp := postForm(t, client, ts.URL+"/login", url.Values{
 		"password": {token},
 	})
-	if err != nil {
-		t.Fatalf("POST /login: %v", err)
-	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Should redirect to /
@@ -95,12 +107,9 @@ func TestLoginSubmit_WrongPassword(t *testing.T) {
 	ts := newAuthTestServer(t, "correct-password-123")
 	client := noRedirectClient()
 
-	resp, err := client.PostForm(ts.URL+"/login", url.Values{
+	resp := postForm(t, client, ts.URL+"/login", url.Values{
 		"password": {"wrong-password"},
 	})
-	if err != nil {
-		t.Fatalf("POST /login: %v", err)
-	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
@@ -146,12 +155,9 @@ func TestSPAAccessibleWithSession(t *testing.T) {
 	client := noRedirectClient()
 
 	// Login first.
-	loginResp, err := client.PostForm(ts.URL+"/login", url.Values{
+	loginResp := postForm(t, client, ts.URL+"/login", url.Values{
 		"password": {token},
 	})
-	if err != nil {
-		t.Fatalf("POST /login: %v", err)
-	}
 	_ = loginResp.Body.Close()
 
 	// Extract session cookie.
@@ -199,12 +205,9 @@ func TestAPIAcceptsSessionCookie(t *testing.T) {
 	client := noRedirectClient()
 
 	// Login first.
-	loginResp, err := client.PostForm(ts.URL+"/login", url.Values{
+	loginResp := postForm(t, client, ts.URL+"/login", url.Values{
 		"password": {token},
 	})
-	if err != nil {
-		t.Fatalf("POST /login: %v", err)
-	}
 	_ = loginResp.Body.Close()
 
 	var sessionCookie *http.Cookie
@@ -320,12 +323,9 @@ func TestLogout(t *testing.T) {
 	client := noRedirectClient()
 
 	// Login first.
-	loginResp, err := client.PostForm(ts.URL+"/login", url.Values{
+	loginResp := postForm(t, client, ts.URL+"/login", url.Values{
 		"password": {token},
 	})
-	if err != nil {
-		t.Fatalf("POST /login: %v", err)
-	}
 	_ = loginResp.Body.Close()
 
 	var sessionCookie *http.Cookie

@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -121,7 +122,7 @@ func TestSPANoTokenInHTML(t *testing.T) {
 			return http.ErrUseLastResponse
 		},
 	}
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/", http.NoBody)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/", http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
