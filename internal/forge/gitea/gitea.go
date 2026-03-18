@@ -5,6 +5,7 @@ package gitea
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,9 +23,11 @@ var (
 
 // Client implements forge.IssueTracker for Gitea repositories.
 type Client struct {
-	gt    *gogitea.Client
-	owner string
-	repo  string
+	gt      *gogitea.Client
+	baseURL string // Gitea instance base URL for raw API calls
+	token   string // API token for raw HTTP requests
+	owner   string
+	repo    string
 
 	// polling state for Watch
 	pollInterval time.Duration
@@ -46,6 +49,8 @@ func New(url, token, owner, repo string) (*Client, error) {
 
 	return &Client{
 		gt:           gt,
+		baseURL:      strings.TrimRight(url, "/"),
+		token:        token,
 		owner:        owner,
 		repo:         repo,
 		pollInterval: 30 * time.Second,

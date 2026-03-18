@@ -44,6 +44,8 @@ func newTestClient(t *testing.T, handler http.Handler) (*Client, *httptest.Serve
 
 	return &Client{
 		gt:           gt,
+		baseURL:      srv.URL,
+		token:        "test-token",
 		owner:        "owner",
 		repo:         "repo",
 		pollInterval: 30 * time.Second,
