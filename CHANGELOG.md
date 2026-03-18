@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.1.21](https://github.com/HerbHall/samverk/compare/v0.1.20...v0.1.21) (2026-03-18)
+
+
+### Features
+
+* add bulk forge operations and project summary MCP tools ([#662](https://github.com/HerbHall/samverk/issues/662)) ([f023e80](https://github.com/HerbHall/samverk/commit/f023e8054d678111ecbc038275ede6cf694787e2)), closes [#69](https://github.com/HerbHall/samverk/issues/69)
+* add MCP write tools and agent observability tools ([#657](https://github.com/HerbHall/samverk/issues/657)) ([3ddcaf5](https://github.com/HerbHall/samverk/commit/3ddcaf500693d9a12a3213e11a690b380bcd4221))
+* add phase-aware routing and set_project_phase MCP tool ([#35](https://github.com/HerbHall/samverk/issues/35), [#36](https://github.com/HerbHall/samverk/issues/36)) ([#645](https://github.com/HerbHall/samverk/issues/645)) ([70334d0](https://github.com/HerbHall/samverk/commit/70334d092dd7f51034b607cdf5af30414ce2786b))
+* add search_issues and search_prs MCP tools ([#661](https://github.com/HerbHall/samverk/issues/661)) ([b9899de](https://github.com/HerbHall/samverk/commit/b9899de168ed180a14015e85b278dd74ffece7a8)), closes [#68](https://github.com/HerbHall/samverk/issues/68)
+* Claude Code CLI with Ollama backend for free dispatcher inference ([#660](https://github.com/HerbHall/samverk/issues/660)) ([01ce7e5](https://github.com/HerbHall/samverk/commit/01ce7e55adbf85d1c810456e9f7646af74d14c82)), closes [#62](https://github.com/HerbHall/samverk/issues/62)
+* embedded Claude chat drawer in dashboard ([#654](https://github.com/HerbHall/samverk/issues/654)) ([585fc99](https://github.com/HerbHall/samverk/commit/585fc9931deb4ec9f3c68fcd815cde9409ad9543))
+* nightly infrastructure probe for Synapset memory sync ([#663](https://github.com/HerbHall/samverk/issues/663)) ([32f5f55](https://github.com/HerbHall/samverk/commit/32f5f55ce34651198537d2144c99fdabb70e2f88)), closes [#58](https://github.com/HerbHall/samverk/issues/58)
+* pc-agent-task skill and get-pc-task.ps1 handoff workflow ([#656](https://github.com/HerbHall/samverk/issues/656)) ([a5713d2](https://github.com/HerbHall/samverk/commit/a5713d241c5c9d9dd595fcd9e9e8d261c4484b06)), closes [#56](https://github.com/HerbHall/samverk/issues/56)
+* sync providers config to live multi-Ollama setup ([#650](https://github.com/HerbHall/samverk/issues/650)) ([b219761](https://github.com/HerbHall/samverk/commit/b2197612f1279a7292e4a307c0f45a7cb92550c1))
+
+
+### Bug Fixes
+
+* add agent:pc to autonomy gate skip list and overlay labels ([#652](https://github.com/HerbHall/samverk/issues/652)) ([8412adf](https://github.com/HerbHall/samverk/commit/8412adfcf9233f7a0334f97be7fdffc9e1474035)), closes [#55](https://github.com/HerbHall/samverk/issues/55)
+* get_diff returns actual diff content with pagination and filters ([#658](https://github.com/HerbHall/samverk/issues/658)) ([8fc5368](https://github.com/HerbHall/samverk/commit/8fc5368b12456f42b9898b1c0c1e2063a5a4e5d5))
+* implement dashboard and MCP authentication ([#664](https://github.com/HerbHall/samverk/issues/664)) ([27cb62f](https://github.com/HerbHall/samverk/commit/27cb62fd82aa36499ed8611dd459e65974712998))
+* **lint:** preallocate siblings and blocking slices ([d96284e](https://github.com/HerbHall/samverk/commit/d96284e34705d165e6a007156318378bb0b1bb97))
+* persist last check-in time so get_digest shows accurate away duration ([#648](https://github.com/HerbHall/samverk/issues/648)) ([d520ecc](https://github.com/HerbHall/samverk/commit/d520ecc808dc904dd92ea28ad2f99895a4c09ed7))
+* provider failover on Ollama timeout with circuit breaker ([#653](https://github.com/HerbHall/samverk/issues/653)) ([327ba11](https://github.com/HerbHall/samverk/commit/327ba113855d08940bac4880edc5d54e5ef9fb93)), closes [#65](https://github.com/HerbHall/samverk/issues/65)
+* **registry:** update Ollama warning message to reference [#57](https://github.com/HerbHall/samverk/issues/57) ([#659](https://github.com/HerbHall/samverk/issues/659)) ([e3744aa](https://github.com/HerbHall/samverk/commit/e3744aa01809f4c721712ae464689a01bb669eff)), closes [#61](https://github.com/HerbHall/samverk/issues/61)
+
 ## [0.1.20](https://github.com/HerbHall/samverk/compare/v0.1.19...v0.1.20) (2026-03-17)
 
 
