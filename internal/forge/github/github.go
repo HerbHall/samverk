@@ -140,6 +140,41 @@ func (c *Client) ListIssues(ctx context.Context, opts *forge.ListOptions) ([]*fo
 	return result, nil
 }
 
+// SearchIssues performs full-text search across issue titles and bodies
+// using the GitHub Search API.
+func (c *Client) SearchIssues(ctx context.Context, opts *forge.SearchOptions) ([]*forge.Issue, error) {
+	q := fmt.Sprintf("%s repo:%s/%s", opts.Query, c.owner, c.repo)
+
+	// Filter by type: issues or PRs.
+	if opts.IsPullRequest != nil && *opts.IsPullRequest {
+		q += " type:pr"
+	} else {
+		q += " type:issue"
+	}
+
+	if opts.State != "" {
+		q += " state:" + string(opts.State)
+	}
+	for _, label := range opts.Labels {
+		q += fmt.Sprintf(" label:%q", label)
+	}
+
+	searchResult, resp, err := c.gh.Search.Issues(ctx, q, nil)
+	if err != nil {
+		return nil, fmt.Errorf("github: search issues %q: %w", opts.Query, err)
+	}
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+
+	result := make([]*forge.Issue, 0, len(searchResult.Issues))
+	for i := range searchResult.Issues {
+		result = append(result, convertIssue(searchResult.Issues[i]))
+	}
+
+	return result, nil
+}
+
 // AddComment posts a new comment on the given issue.
 func (c *Client) AddComment(ctx context.Context, number int, body string) (*forge.Comment, error) {
 	comment, _, err := c.gh.Issues.CreateComment(ctx, c.owner, c.repo, number, &gogithub.IssueComment{

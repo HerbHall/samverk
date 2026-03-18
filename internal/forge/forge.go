@@ -46,6 +46,9 @@ type IssueTracker interface {
 	UpdateIssue(ctx context.Context, number int, req *UpdateIssueRequest) (*Issue, error)
 	ListIssues(ctx context.Context, opts *ListOptions) ([]*Issue, error)
 
+	// Search performs full-text search across issue titles and bodies.
+	SearchIssues(ctx context.Context, opts *SearchOptions) ([]*Issue, error)
+
 	// Comments
 	AddComment(ctx context.Context, number int, body string) (*Comment, error)
 	ListComments(ctx context.Context, number int) ([]*Comment, error)
@@ -121,6 +124,14 @@ type ListOptions struct {
 	Assignee string
 	Page     int
 	PerPage  int
+}
+
+// SearchOptions controls full-text search across issues.
+type SearchOptions struct {
+	Query         string   // required search string
+	State         State    // optional state filter (open, closed); empty means all
+	Labels        []string // optional additional label filter
+	IsPullRequest *bool    // nil = issues only; true = PRs only
 }
 
 // MergeMethod specifies how a pull request should be merged.

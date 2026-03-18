@@ -155,6 +155,39 @@ func (c *Client) ListIssues(ctx context.Context, opts *forge.ListOptions) (issue
 	return result, nil
 }
 
+// SearchIssues performs full-text search across issue titles and bodies
+// using Gitea's keyword search parameter.
+func (c *Client) SearchIssues(ctx context.Context, opts *forge.SearchOptions) (issues []*forge.Issue, err error) {
+	issueType := gogitea.IssueTypeIssue
+	if opts.IsPullRequest != nil && *opts.IsPullRequest {
+		issueType = gogitea.IssueTypePull
+	}
+
+	gOpts := gogitea.ListIssueOption{
+		ListOptions: gogitea.ListOptions{PageSize: 50},
+		KeyWord:     opts.Query,
+		Type:        issueType,
+	}
+	if opts.State != "" {
+		gOpts.State = gogitea.StateType(opts.State)
+	}
+	if len(opts.Labels) > 0 {
+		gOpts.Labels = opts.Labels
+	}
+
+	gi, _, err := c.gt.ListRepoIssues(c.owner, c.repo, gOpts)
+	if err != nil {
+		return nil, fmt.Errorf("gitea: search issues %q: %w", opts.Query, err)
+	}
+
+	result := make([]*forge.Issue, 0, len(gi))
+	for i := range gi {
+		result = append(result, convertIssue(gi[i]))
+	}
+
+	return result, nil
+}
+
 // AddComment posts a new comment on the given issue.
 func (c *Client) AddComment(ctx context.Context, number int, body string) (comment *forge.Comment, err error) {
 	gc, _, err := c.gt.CreateIssueComment(c.owner, c.repo, int64(number), gogitea.CreateIssueCommentOption{

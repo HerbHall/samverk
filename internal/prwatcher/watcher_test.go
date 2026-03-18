@@ -209,6 +209,9 @@ func (m *mockIssueTracker) RemoveLabel(context.Context, int, string) error  { pa
 func (m *mockIssueTracker) Assign(context.Context, int, string) error       { panic("not called") }
 func (m *mockIssueTracker) Unassign(context.Context, int, string) error     { panic("not called") }
 func (m *mockIssueTracker) Watch(context.Context, func(forge.Event)) error  { panic("not called") }
+func (m *mockIssueTracker) SearchIssues(context.Context, *forge.SearchOptions) ([]*forge.Issue, error) {
+	panic("not called")
+}
 
 func TestCheckReviewComments_CreatesRemediationIssue(t *testing.T) {
 	pm := &mockPRManager{

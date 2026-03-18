@@ -96,6 +96,10 @@ func (m *mockTracker) Watch(_ context.Context, _ func(forge.Event)) error {
 	return errors.New("not implemented")
 }
 
+func (m *mockTracker) SearchIssues(_ context.Context, _ *forge.SearchOptions) ([]*forge.Issue, error) {
+	return nil, errors.New("not implemented")
+}
+
 // mockStore implements store.Store for testing.
 type mockStore struct {
 	sessions []*models.Session

@@ -151,6 +151,27 @@ func (m *mockTracker) Assign(_ context.Context, _ int, _ string) error    { retu
 func (m *mockTracker) Unassign(_ context.Context, _ int, _ string) error  { return nil }
 func (m *mockTracker) Watch(_ context.Context, _ func(forge.Event)) error { return nil }
 
+func (m *mockTracker) SearchIssues(_ context.Context, opts *forge.SearchOptions) ([]*forge.Issue, error) {
+	result := make([]*forge.Issue, 0, len(m.issues))
+	query := strings.ToLower(opts.Query)
+	for _, iss := range m.issues {
+		// Filter by PR flag.
+		if opts.IsPullRequest != nil && iss.IsPullRequest != *opts.IsPullRequest {
+			continue
+		}
+		// Filter by state.
+		if opts.State != "" && iss.State != opts.State {
+			continue
+		}
+		// Simple text match on title and body.
+		if strings.Contains(strings.ToLower(iss.Title), query) ||
+			strings.Contains(strings.ToLower(iss.Body), query) {
+			result = append(result, iss)
+		}
+	}
+	return result, nil
+}
+
 // mockCostSource implements digest.CostSource for testing.
 type mockCostSource struct {
 	summary digest.CostSummary
@@ -282,8 +303,8 @@ func TestToolsListDiscovery(t *testing.T) {
 			t.Errorf("%s tool not found in tools/list", name)
 		}
 	}
-	if len(result.Tools) != 47 {
-		t.Errorf("expected 47 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 49 {
+		t.Errorf("expected 49 tools, got %d", len(result.Tools))
 	}
 }
 

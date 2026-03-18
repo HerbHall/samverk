@@ -75,6 +75,9 @@ func (m *mockTracker) RemoveLabel(_ context.Context, _ int, _ string) error { re
 func (m *mockTracker) Assign(_ context.Context, _ int, _ string) error      { return nil }
 func (m *mockTracker) Unassign(_ context.Context, _ int, _ string) error    { return nil }
 func (m *mockTracker) Watch(_ context.Context, _ func(forge.Event)) error   { return nil }
+func (m *mockTracker) SearchIssues(_ context.Context, _ *forge.SearchOptions) ([]*forge.Issue, error) {
+	return nil, nil
+}
 
 func TestBuildDigest(t *testing.T) {
 	now := time.Now()
