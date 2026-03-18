@@ -8,21 +8,20 @@
 # A single repository can be listed twice to watch both forges simultaneously:
 
 projects:
+  - name: samverk
+    owner: samverk
+    repo: samverk
+    forge: gitea
+    gitea_url: http://192.168.1.160:3000
+
   - name: devkit
     owner: samverk
     repo: devkit
     forge: gitea
     gitea_url: http://192.168.1.160:3000
-  # GitHub project (default forge):
-  # - name: samverk
-  #   owner: herbhall
-  #   repo: samverk
-  #   forge: github
-  #
-  # Same repo on self-hosted Gitea:
-  # - name: samverk-gitea
-  #   owner: samverk
-  #   repo: samverk
-  #   forge: gitea
-  #   gitea_url: https://gitea.herbhall.net
-  #   gitea_token: ""   # omit to use GITEA_TOKEN env var
+
+  - name: synapset
+    owner: samverk
+    repo: synapset
+    forge: gitea
+    gitea_url: http://192.168.1.160:3000
