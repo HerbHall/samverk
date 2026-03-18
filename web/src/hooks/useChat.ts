@@ -31,15 +31,10 @@ export function useChat({ system }: UseChatOptions = {}) {
       const allMessages = [...messages, userMessage]
 
       try {
-        const token = window.__SAMVERK_TOKEN__
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`
-        }
-
         const res = await fetch('/api/v1/chat', {
           method: 'POST',
-          headers,
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
             system: system ?? '',

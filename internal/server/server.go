@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
 	"net"
 	"net/http"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // APIRegistrar can register REST API routes on an http.ServeMux.
@@ -34,10 +35,11 @@ type Config struct {
 
 // Server is the main HTTP server.
 type Server struct {
-	cfg    Config
-	mux    *http.ServeMux
-	server *http.Server
-	logger *zap.Logger
+	cfg      Config
+	mux      *http.ServeMux
+	server   *http.Server
+	logger   *zap.Logger
+	sessions *SessionManager
 
 	mu         sync.Mutex
 	listenAddr string
@@ -48,10 +50,17 @@ func New(cfg Config, logger *zap.Logger) *Server {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+
+	var sessions *SessionManager
+	if cfg.AuthToken != "" || cfg.KeyStore != nil {
+		sessions = NewSessionManager()
+	}
+
 	s := &Server{
 		cfg:        cfg,
 		mux:        http.NewServeMux(),
 		logger:     logger,
+		sessions:   sessions,
 		listenAddr: cfg.Addr,
 	}
 
@@ -63,6 +72,12 @@ func New(cfg Config, logger *zap.Logger) *Server {
 
 	s.registerRoutes()
 	return s
+}
+
+// Sessions returns the session manager (may be nil if auth is not configured).
+// Exposed for the MCP-only listener to share sessions with the main server.
+func (s *Server) Sessions() *SessionManager {
+	return s.sessions
 }
 
 // Addr returns the address the server is listening on.
@@ -118,10 +133,18 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
-// Shutdown gracefully stops the server.
+// Shutdown gracefully stops the server and cleans up sessions.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("server shutting down")
+	if s.sessions != nil {
+		s.sessions.Stop()
+	}
 	return s.server.Shutdown(ctx)
+}
+
+// authEnabled returns true when any form of authentication is configured.
+func (s *Server) authEnabled() bool {
+	return s.cfg.AuthToken != "" || s.cfg.KeyStore != nil
 }
 
 // registerRoutes wires all HTTP endpoints.
@@ -135,19 +158,25 @@ func (s *Server) registerRoutes() {
 		writeJSON(w, http.StatusNotFound, errorResponse{Error: "not found"})
 	})
 
+	// Login / logout routes (unauthenticated).
+	if s.authEnabled() {
+		s.mux.HandleFunc("GET /login", s.handleLoginPage)
+		s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
+		s.mux.HandleFunc("POST /logout", s.handleLogout)
+	}
+
 	if s.cfg.MCPHandler != nil {
-		// MCP endpoint is unauthenticated -- security is handled by
-		// Cloudflare Tunnel (same model as Synapset MCP).
+		// MCP endpoints require Bearer token auth when configured.
 		// Register without method prefix so StreamableHTTPHandler receives
 		// POST (messages), GET (SSE streams), and DELETE (session teardown).
-		//
-		// Cloudflare AI protection blocks paths it recognizes as AI
-		// endpoints (/mcp, /sse) with 403 "invalid Host header".
-		// Use /connect for external access through Cloudflare Tunnel.
-		// Custom Connector URL: https://samverk.herbhall.net/connect
-		// Keep /mcp for LAN/Tailscale and existing configs.
-		s.mux.Handle("/connect", s.cfg.MCPHandler)
-		s.mux.Handle("/mcp", s.cfg.MCPHandler)
+		if s.authEnabled() {
+			mcpAuth := BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)
+			s.mux.Handle("/connect", mcpAuth(s.cfg.MCPHandler))
+			s.mux.Handle("/mcp", mcpAuth(s.cfg.MCPHandler))
+		} else {
+			s.mux.Handle("/connect", s.cfg.MCPHandler)
+			s.mux.Handle("/mcp", s.cfg.MCPHandler)
+		}
 	} else {
 		s.mux.HandleFunc("/connect", s.handleNotImplemented)
 		s.mux.HandleFunc("/mcp", s.handleNotImplemented)
@@ -156,8 +185,9 @@ func (s *Server) registerRoutes() {
 	if s.cfg.APIHandler != nil {
 		apiMux := http.NewServeMux()
 		s.cfg.APIHandler.RegisterRoutes(apiMux)
-		if s.cfg.AuthToken != "" || s.cfg.KeyStore != nil {
-			s.mux.Handle("/api/", BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)(apiMux))
+		if s.authEnabled() {
+			// API accepts either Bearer token or session cookie.
+			s.mux.Handle("/api/", BearerOrSessionAuth(s.cfg.AuthToken, s.cfg.KeyStore, s.sessions)(apiMux))
 		} else {
 			s.mux.Handle("/api/", apiMux)
 		}
@@ -166,7 +196,13 @@ func (s *Server) registerRoutes() {
 	}
 
 	// Serve embedded SPA for all unmatched routes.
-	s.mux.Handle("/", spaHandler(s.cfg.AuthToken))
+	// When auth is enabled, require a valid session cookie.
+	spa := spaHandler()
+	if s.authEnabled() {
+		s.mux.Handle("/", requireSession(s.sessions)(spa))
+	} else {
+		s.mux.Handle("/", spa)
+	}
 }
 
 // healthResponse is the JSON body returned by /healthz.

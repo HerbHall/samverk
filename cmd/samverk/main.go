@@ -394,7 +394,12 @@ func serveCmd() *cobra.Command {
 			// that serve HTML (the SPA catch-all triggers it).
 			if cfg.MCPHandler != nil {
 				mcpMux := http.NewServeMux()
-				mcpMux.Handle("/", cfg.MCPHandler)
+				// Apply Bearer auth to MCP-only listener when configured.
+				if cfg.AuthToken != "" || cfg.KeyStore != nil {
+					mcpMux.Handle("/", server.BearerAuth(cfg.AuthToken, cfg.KeyStore)(cfg.MCPHandler))
+				} else {
+					mcpMux.Handle("/", cfg.MCPHandler)
+				}
 				mcpMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = w.Write([]byte(`{"status":"ok"}`))

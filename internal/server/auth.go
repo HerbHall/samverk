@@ -50,3 +50,70 @@ func BearerAuth(token string, keyStore *KeyStore) func(http.Handler) http.Handle
 		})
 	}
 }
+
+// BearerOrSessionAuth returns middleware that accepts EITHER a valid Bearer
+// token (for programmatic/MCP access) OR a valid session cookie (for SPA
+// browser access). If auth is not configured (empty token + nil keyStore +
+// nil sessions), the middleware is a no-op.
+func BearerOrSessionAuth(token string, keyStore *KeyStore, sessions *SessionManager) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token == "" && keyStore == nil && sessions == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Try session cookie first (browser access).
+			if sessions != nil {
+				if id := GetSessionID(r); id != "" && sessions.Validate(id) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// Try Bearer token (programmatic access).
+			auth := r.Header.Get("Authorization")
+			if auth != "" {
+				const prefix = "Bearer "
+				if strings.HasPrefix(auth, prefix) {
+					bearerToken := auth[len(prefix):]
+
+					if token != "" && subtle.ConstantTimeCompare([]byte(bearerToken), []byte(token)) == 1 {
+						next.ServeHTTP(w, r)
+						return
+					}
+
+					if keyStore != nil {
+						if _, ok := keyStore.Validate(bearerToken); ok {
+							next.ServeHTTP(w, r)
+							return
+						}
+					}
+				}
+			}
+
+			writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "authentication required"})
+		})
+	}
+}
+
+// requireSession is middleware that redirects unauthenticated users to /login.
+// Used for the SPA and static file serving.
+func requireSession(sessions *SessionManager) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if sessions == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			id := GetSessionID(r)
+			if id == "" || !sessions.Validate(id) {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
