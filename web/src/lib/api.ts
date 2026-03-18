@@ -1,32 +1,28 @@
 const BASE = '/api/v1'
 
-// Read auth token injected by the Go server at serve time.
+// Version/commit info injected by the Go server at serve time.
 declare global {
   interface Window {
-    __SAMVERK_TOKEN__?: string
     __SAMVERK_VERSION__?: string
     __SAMVERK_COMMIT__?: string
   }
 }
 
-function getAuthHeaders(): HeadersInit {
-  const token = window.__SAMVERK_TOKEN__
-  if (token) {
-    return { Authorization: `Bearer ${token}` }
-  }
-  return {}
-}
-
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
+    credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      ...getAuthHeaders(),
       ...init?.headers,
     },
   })
   if (!res.ok) {
+    // If session expired, redirect to login.
+    if (res.status === 401 || res.status === 303) {
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
     const body = await res.text()
     throw new Error(`API ${res.status}: ${body}`)
   }

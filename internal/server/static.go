@@ -17,30 +17,26 @@ var staticFS embed.FS
 // spaHandler serves the embedded SPA files. For paths that don't match a
 // static file, it serves index.html to support client-side routing.
 //
-// When authToken is non-empty, index.html responses are rewritten to inject
-// a <script> tag that sets window.__SAMVERK_TOKEN__ so the SPA can
-// authenticate against the API.
-func spaHandler(authToken string) http.Handler {
+// Only version info is injected into index.html. Auth tokens are never
+// included in the HTML source -- the SPA authenticates via session cookies.
+func spaHandler() http.Handler {
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		panic("embedded static filesystem: " + err.Error())
 	}
 
-	// Pre-read index.html to inject runtime config (token + version).
+	// Pre-read index.html to inject runtime config (version only).
 	raw, readErr := fs.ReadFile(sub, "index.html")
 	if readErr != nil {
 		panic("read embedded index.html: " + readErr.Error())
 	}
 
-	// Build injection script with version info (always) and auth token (when configured).
+	// Build injection script with version info only -- no auth token.
 	var scriptParts []string
 	scriptParts = append(scriptParts,
 		`window.__SAMVERK_VERSION__="`+html.EscapeString(version.Version)+`"`,
 		`window.__SAMVERK_COMMIT__="`+html.EscapeString(version.GitCommit)+`"`,
 	)
-	if authToken != "" {
-		scriptParts = append(scriptParts, `window.__SAMVERK_TOKEN__="`+html.EscapeString(authToken)+`"`)
-	}
 	tag := []byte(`<script>` + strings.Join(scriptParts, ";") + `;</script>`)
 	injectedIndex := bytes.Replace(raw, []byte("</head>"), append(tag, []byte("</head>")...), 1)
 

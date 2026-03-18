@@ -86,60 +86,9 @@ func TestAPIRoutesPriority(t *testing.T) {
 	}
 }
 
-func TestSPATokenInjection(t *testing.T) {
-	const token = "test-dashboard-token"
-
-	s := server.New(server.Config{
-		Addr:      "localhost:0",
-		AuthToken: token,
-	}, nil)
-	ts := httptest.NewServer(s.Handler())
-	t.Cleanup(ts.Close)
-
-	tests := []struct {
-		name string
-		path string
-	}{
-		{"root", "/"},
-		{"index.html", "/index.html"},
-		{"client route fallback", "/settings"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resp := get(t, ts.URL+tt.path)
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
-			}
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatalf("read body: %v", err)
-			}
-			html := string(body)
-
-			// Verify token and version are injected.
-			if !strings.Contains(html, `__SAMVERK_TOKEN__="test-dashboard-token"`) {
-				t.Errorf("token not found in response:\n%s", html)
-			}
-			if !strings.Contains(html, `__SAMVERK_VERSION__=`) {
-				t.Errorf("version not found in response:\n%s", html)
-			}
-			// Injection script must appear before </head>.
-			tagIdx := strings.Index(html, "__SAMVERK_VERSION__")
-			headIdx := strings.Index(html, "</head>")
-			if tagIdx > headIdx {
-				t.Errorf("token tag at %d appears after </head> at %d", tagIdx, headIdx)
-			}
-		})
-	}
-}
-
-func TestSPANoTokenWhenEmpty(t *testing.T) {
-	// When AuthToken is empty, no script tag should be injected.
-	ts := newTestServer(t) // uses empty Config
+func TestSPAVersionInjected(t *testing.T) {
+	// Version should always be injected (no auth token in HTML).
+	ts := newTestServer(t)
 
 	resp := get(t, ts.URL+"/")
 	defer func() { _ = resp.Body.Close() }()
@@ -149,12 +98,48 @@ func TestSPANoTokenWhenEmpty(t *testing.T) {
 		t.Fatalf("read body: %v", err)
 	}
 	html := string(body)
-	if strings.Contains(html, "__SAMVERK_TOKEN__") {
-		t.Errorf("token should not be present when AuthToken is empty:\n%s", html)
-	}
-	// Version should always be injected, even without auth token.
 	if !strings.Contains(html, "__SAMVERK_VERSION__") {
 		t.Errorf("version should always be injected:\n%s", html)
+	}
+}
+
+func TestSPANoTokenInHTML(t *testing.T) {
+	// Even with AuthToken configured, the token must NOT appear in HTML.
+	const token = "test-dashboard-token"
+
+	s := server.New(server.Config{
+		Addr:      "localhost:0",
+		AuthToken: token,
+	}, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	// With auth enabled, unauthenticated requests redirect to /login.
+	// Use a non-redirect client to check the redirect.
+	client := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/", http.NoBody)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Should redirect to /login (not serve SPA with token).
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d (redirect to login)", resp.StatusCode, http.StatusSeeOther)
+	}
+
+	// Fetch the login page and verify no token is present.
+	loginResp := get(t, ts.URL+"/login")
+	defer func() { _ = loginResp.Body.Close() }()
+
+	loginBody, _ := io.ReadAll(loginResp.Body)
+	if strings.Contains(string(loginBody), token) {
+		t.Errorf("auth token should not appear in login page HTML")
 	}
 }
 
