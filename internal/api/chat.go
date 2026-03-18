@@ -162,10 +162,7 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 	// Build Anthropic API request.
 	messages := make([]anthropicMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		messages = append(messages, anthropicMessage{
-			Role:    m.Role,
-			Content: m.Content,
-		})
+		messages = append(messages, anthropicMessage(m))
 	}
 
 	anthropicReq := anthropicRequest{
@@ -194,7 +191,7 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(httpReq)
+	resp, err := client.Do(httpReq) //nolint:gosec // G704: URL is a constant (anthropicAPIURL), not user input
 	if err != nil {
 		a.logger.Warn("chat: anthropic request failed", zap.Error(err))
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("upstream request failed: %v", err))

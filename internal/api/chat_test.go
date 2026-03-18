@@ -195,7 +195,7 @@ func chatProxyTest(t *testing.T, a *API, upstreamURL string, w http.ResponseWrit
 
 	messages := make([]anthropicMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		messages = append(messages, anthropicMessage{Role: m.Role, Content: m.Content})
+		messages = append(messages, anthropicMessage(m))
 	}
 
 	anthropicReq := anthropicRequest{
