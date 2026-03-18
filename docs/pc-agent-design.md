@@ -309,6 +309,68 @@ cc:
   output_format: json
 ```
 
+## Manual Session Workflow (agent:pc)
+
+The automated runner (above) handles tasks end-to-end. For tasks that need
+human oversight or interactive debugging, a manual workflow is available via
+a Claude Desktop skill or a PowerShell script.
+
+### Task Discovery
+
+Two equivalent entry points:
+
+1. **Claude Desktop skill** (`.samverk/skills/pc-agent-task/SKILL.md`): Say
+   "get my next PC task" in Claude Desktop. The skill calls Samverk MCP to
+   find, prioritize, and claim the next `agent:pc` + `status:queued` issue,
+   then renders a handoff prompt.
+
+2. **PowerShell script** (`scripts/pc-agent/get-pc-task.ps1`): Run headlessly
+   from any terminal. Requires `$env:SAMVERK_AUTH_TOKEN`. Writes the handoff
+   prompt to clipboard and `$env:TEMP\pc-task-prompt.md`.
+
+Both methods apply the same priority ordering: `priority:critical` first, then
+`priority:high`, then `priority:normal`, then oldest `created_at`.
+
+### CC Session Lifecycle
+
+1. **Claim**: The discovery step swaps `status:queued` to `status:claimed` on
+   the selected issue so no other agent picks it up.
+
+2. **Workspace setup**: The handoff prompt instructs the CC agent to create a
+   git worktree under `D:\bots\` on a new branch from `origin/main`.
+
+3. **Implementation**: The CC agent reads `CLAUDE.md`, implements the acceptance
+   criteria, and runs `make ci` to verify the build, tests, and lint pass.
+
+4. **Commit and push**: The agent commits changes locally, then pushes the
+   branch to the remote.
+
+### MCP-Based Completion Flow
+
+After pushing, the CC agent uses Samverk MCP tools (available in the VS Code
+session) to close the loop:
+
+1. **Create PR**: `create_pr(title=..., head=<branch>, base="main", body="Closes #<N>...")`
+2. **Update labels**: `set_labels(issue_number=<N>, labels=[...status:needs-qc...])` --
+   replaces `status:claimed` with `status:needs-qc`, preserving all other labels.
+3. **Post comment**: `add_comment(issue_number=<N>, body="PR opened: #<PR> -- <branch>")`
+
+### Blocked Path
+
+If the agent cannot complete the task, it creates `AGENT_BLOCKED.md` in the
+project root describing the blocker, then updates labels to `status:needs-human`
+via MCP. No incomplete code is committed.
+
+### How This Differs From the Automated Runner
+
+| Aspect | Automated Runner | Manual Workflow |
+|--------|-----------------|-----------------|
+| Discovery | Continuous polling loop | On-demand (skill or script) |
+| Execution | Headless `claude --print` | Interactive CC session in VS Code |
+| Post-task | Automatic push, PR, label update | Agent follows prompt instructions |
+| Oversight | Fully autonomous | Human can intervene mid-task |
+| Use case | Routine issues, batch processing | Complex issues, debugging, learning |
+
 ## Related Documents
 
 - [PC Agent Research Findings](https://github.com/HerbHall/samverk/issues/304#issuecomment-4020751460) — CC headless invocation modes
