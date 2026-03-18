@@ -32,9 +32,11 @@ jobs:
       - name: Install trivy
         run: |
           which curl >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq curl)
+          mkdir -p "$HOME/.local/bin"
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b /usr/local/bin
-          trivy --version
+            | sh -s -- -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/trivy" --version
 
       # Scan Go modules and project files only. Skip node_modules and
       # web build artifacts — those are dev-time dependencies not shipped

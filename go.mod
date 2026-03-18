@@ -1,6 +1,6 @@
 module github.com/herbhall/samverk
 
-go 1.25.0
+go 1.26.1
 
 require (
 	code.gitea.io/sdk/gitea v0.23.2
