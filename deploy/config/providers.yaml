@@ -1,48 +1,49 @@
 # Samverk AI Provider Registry
-# Configure which AI providers are available for agent work.
 
 providers:
   claude-haiku:
     type: claude-cli
     default_model: claude-haiku-4-5-20251001
-    # default timeout (300s) is sufficient for triage/simple tasks
+    allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
+    max_turns: 25
 
   claude-sonnet:
     type: claude-cli
     default_model: claude-sonnet-4-6
-    timeout_seconds: 600  # 10 min for standard code-gen and research
+    timeout_seconds: 600
+    allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
+    max_turns: 25
 
   claude-opus:
     type: claude-cli
     default_model: claude-opus-4-6
-    timeout_seconds: 900  # 15 min for complex/architectural tasks
+    timeout_seconds: 900
+    allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
+    max_turns: 25
 
-  ollama-coder:
+  ollama-nzxt:
+    type: ollama
+    base_url: http://192.168.1.202:11434
+    default_model: qwen3-coder:30b
+    timeout_seconds: 600
+    wol_mac: "E8-9C-25-78-69-D6"
+
+  ollama-vm300:
     type: ollama
     base_url: http://192.168.1.207:11434
+    default_model: qwen2.5-coder:32b
+    timeout_seconds: 600
+
+  ollama-cmasus:
+    type: ollama
+    base_url: http://100.88.37.47:11434
     default_model: qwen2.5-coder:7b
-    timeout_seconds: 120  # 2 min — covers cold model load + inference
+    timeout_seconds: 300
+    wol_mac: "FC-34-97-A5-27-E4"
 
-# Routing chains: tried in order, first healthy provider wins.
-# Non-default chains include claude-sonnet as a fallback.
 routing:
-  # Fast, cheap: label changes, status updates, simple research.
-  # Ollama is safe here -- triage tasks are text-only, no code-gen.
-  triage:   [ollama-coder, claude-haiku, claude-sonnet]
-
-  # Default workhorse: most code-gen, research, docs, tests
-  default:  [claude-sonnet]
-
-  # Heavy lifting: architectural decisions, complex refactors
+  triage:   [ollama-cmasus, ollama-vm300, claude-haiku]
+  default:  [ollama-nzxt, claude-sonnet]
   complex:  [claude-opus, claude-sonnet]
-
-  # Free local inference: triage and text-only tasks only.
-  # Ollama models produce bad output on code-gen (overwrite CLAUDE.md, see KG#146).
-  local:    [claude-sonnet]
-
-  # Frontend SPA work
+  local:    [ollama-nzxt, ollama-vm300, ollama-cmasus, claude-sonnet]
   frontend: [claude-sonnet]
-
-  # QC validation: use a different model than the default code-gen chain (ADR-030).
-  # Haiku first ensures cross-model diversity; sonnet fallback if haiku is unhealthy.
-  qc:       [claude-haiku, claude-sonnet]
