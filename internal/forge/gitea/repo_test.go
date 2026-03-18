@@ -324,7 +324,48 @@ func TestGetCommitLog_DefaultBranch(t *testing.T) {
 }
 
 func TestGetDiff(t *testing.T) {
+	const fakeDiff = `diff --git a/main.go b/main.go
+index abc1234..def5678 100644
+--- a/main.go
++++ b/main.go
+@@ -1,3 +1,4 @@
+ package main
++import "fmt"
+ func main() {
++	fmt.Println("hello")
+ }
+`
+
 	handler := http.NewServeMux()
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/compare/main...feature", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(fakeDiff))
+	})
+
+	c, _ := newTestClient(t, handler)
+
+	diff, err := c.GetDiff(context.Background(), "main", "feature")
+	if err != nil {
+		t.Fatalf("GetDiff: %v", err)
+	}
+	if diff == "" {
+		t.Fatal("expected non-empty diff")
+	}
+	if !strings.Contains(diff, "diff --git") {
+		t.Errorf("diff missing git header, got %q", diff)
+	}
+	if !strings.Contains(diff, "+import \"fmt\"") {
+		t.Errorf("diff missing added line, got %q", diff)
+	}
+}
+
+func TestGetDiff_Fallback(t *testing.T) {
+	// When the compare endpoint returns non-200, fallback to branch info.
+	handler := http.NewServeMux()
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/compare/main...feature", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
 	handler.HandleFunc("GET /api/v1/repos/owner/repo/branches/main", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(t, w, http.StatusOK, &gogitea.Branch{
 			Name: "main",
@@ -346,22 +387,13 @@ func TestGetDiff(t *testing.T) {
 
 	diff, err := c.GetDiff(context.Background(), "main", "feature")
 	if err != nil {
-		t.Fatalf("GetDiff: %v", err)
-	}
-	if diff == "" {
-		t.Fatal("expected non-empty diff summary")
-	}
-	if !strings.Contains(diff, "main") {
-		t.Errorf("diff missing base ref, got %q", diff)
-	}
-	if !strings.Contains(diff, "feature") {
-		t.Errorf("diff missing head ref, got %q", diff)
+		t.Fatalf("GetDiff fallback: %v", err)
 	}
 	if !strings.Contains(diff, "base-sha-111") {
-		t.Errorf("diff missing base commit SHA, got %q", diff)
+		t.Errorf("fallback diff missing base SHA, got %q", diff)
 	}
 	if !strings.Contains(diff, "head-sha-222") {
-		t.Errorf("diff missing head commit SHA, got %q", diff)
+		t.Errorf("fallback diff missing head SHA, got %q", diff)
 	}
 }
 

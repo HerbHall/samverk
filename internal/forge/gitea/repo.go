@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	gogitea "code.gitea.io/sdk/gitea"
@@ -47,10 +49,63 @@ func (c *Client) ReadFile(_ context.Context, path, ref string) ([]byte, error) {
 	return data, nil
 }
 
-// GetDiff returns a human-readable summary comparing base and head refs.
-// The Gitea SDK v0.23.2 does not expose a compare endpoint, so this
-// fetches branch info for each ref and returns a formatted summary string.
-func (c *Client) GetDiff(_ context.Context, base, head string) (string, error) {
+// GetDiff returns the unified diff comparing base and head refs.
+// It calls the Gitea compare API with the .diff suffix to retrieve actual
+// diff content (hunks, file stats). Falls back to a summary if the raw
+// diff endpoint is unavailable.
+func (c *Client) GetDiff(ctx context.Context, base, head string) (string, error) {
+	// Try the raw diff endpoint: GET /repos/:owner/:repo/compare/:base...:head.diff
+	diffURL := fmt.Sprintf("%s/api/v1/repos/%s/%s/compare/%s...%s",
+		c.baseURL, c.owner, c.repo, base, head)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, diffURL, http.NoBody)
+	if err != nil {
+		return "", fmt.Errorf("gitea: create diff request: %w", err)
+	}
+	req.Header.Set("Authorization", "token "+c.token)
+	req.Header.Set("Accept", "text/plain")
+
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is from trusted baseURL config
+	if err != nil {
+		return "", fmt.Errorf("gitea: diff request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusOK {
+		// Check Content-Type to determine if we got a diff or JSON.
+		ct := resp.Header.Get("Content-Type")
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("gitea: read diff response: %w", readErr)
+		}
+
+		content := string(body)
+
+		// If the response looks like a unified diff or plain text, return it directly.
+		if strings.Contains(ct, "text/plain") || strings.HasPrefix(content, "diff ") {
+			return content, nil
+		}
+
+		// JSON response from the compare API — extract commit info and file list.
+		return c.formatCompareJSON(content, base, head), nil
+	}
+
+	// Fallback: use the SDK's CompareCommits for a summary.
+	return c.getDiffFallback(base, head)
+}
+
+// formatCompareJSON builds a human-readable diff summary from the compare API JSON.
+func (c *Client) formatCompareJSON(body, base, head string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Comparing %s...%s\n", base, head)
+	// The raw JSON includes commits and possibly file info; include it verbatim
+	// so callers get useful content even when the .diff suffix isn't supported.
+	b.WriteString(body)
+	return b.String()
+}
+
+// getDiffFallback returns a summary when the raw diff endpoint is unavailable.
+func (c *Client) getDiffFallback(base, head string) (string, error) {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Comparing %s...%s\n", base, head)

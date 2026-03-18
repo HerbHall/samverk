@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -28,9 +29,14 @@ type readFileInput struct {
 
 // getDiffInput is the typed input for the get_diff tool.
 type getDiffInput struct {
-	Base string `json:"base" jsonschema:"required,base ref (branch, tag, or commit SHA)"`
-	Head string `json:"head" jsonschema:"required,head ref (branch, tag, or commit SHA)"`
+	Base     string `json:"base" jsonschema:"required,base ref (branch, tag, or commit SHA)"`
+	Head     string `json:"head" jsonschema:"required,head ref (branch, tag, or commit SHA)"`
+	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"max response bytes before truncation (default 32768)"`
+	Paths    string `json:"paths,omitempty" jsonschema:"comma-separated file glob filters (e.g. internal/provider/**)"`
+	StatOnly bool   `json:"stat_only,omitempty" jsonschema:"return only file change summary without line content"`
 }
+
+const defaultMaxDiffBytes = 32768
 
 // listBranchesInput is the typed input for the list_branches tool.
 type listBranchesInput struct{}
@@ -60,7 +66,7 @@ func registerRepoTools(srv *gosdk.Server, h *Handler) {
 
 	gosdk.AddTool(srv, &gosdk.Tool{
 		Name:        "get_diff",
-		Description: "Get the diff between two refs (branches, tags, or commits)",
+		Description: "Get the diff between two refs (branches, tags, or commits). Supports max_bytes truncation, paths filtering, and stat_only mode.",
 	}, h.handleGetDiff)
 
 	gosdk.AddTool(srv, &gosdk.Tool{
@@ -165,7 +171,7 @@ func (h *Handler) handleReadFile(
 	}, nil, nil
 }
 
-// handleGetDiff returns the diff between two refs.
+// handleGetDiff returns the diff between two refs with optional filtering and truncation.
 func (h *Handler) handleGetDiff(
 	ctx context.Context,
 	_ *gosdk.CallToolRequest,
@@ -191,11 +197,198 @@ func (h *Handler) handleGetDiff(
 		return nil, nil, fmt.Errorf("getting diff: %w", err)
 	}
 
+	// Apply path filtering if requested.
+	if input.Paths != "" {
+		diff = filterDiffByPaths(diff, input.Paths)
+	}
+
+	// Apply stat-only mode if requested.
+	if input.StatOnly {
+		diff = extractDiffStats(diff)
+	}
+
+	// Apply max_bytes truncation.
+	maxBytes := input.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxDiffBytes
+	}
+	diff = truncateDiff(diff, maxBytes)
+
 	return &gosdk.CallToolResult{
 		Content: []gosdk.Content{
 			&gosdk.TextContent{Text: diff},
 		},
 	}, nil, nil
+}
+
+// filterDiffByPaths filters a unified diff to only include files matching
+// the comma-separated glob patterns. Each pattern is matched against the
+// file path using filepath.Match semantics.
+func filterDiffByPaths(diff, paths string) string {
+	patterns := strings.Split(paths, ",")
+	for i := range patterns {
+		patterns[i] = strings.TrimSpace(patterns[i])
+	}
+
+	sections := splitDiffSections(diff)
+	var b strings.Builder
+
+	// Keep header lines (before first diff section).
+	if len(sections) > 0 && sections[0].file == "" {
+		b.WriteString(sections[0].content)
+		sections = sections[1:]
+	}
+
+	for _, sec := range sections {
+		if matchesAnyPattern(sec.file, patterns) {
+			b.WriteString(sec.content)
+		}
+	}
+
+	result := b.String()
+	if result == "" {
+		return fmt.Sprintf("No files matched path filter: %s", paths)
+	}
+	return result
+}
+
+// diffSection represents a file section within a unified diff.
+type diffSection struct {
+	file    string
+	content string
+}
+
+// splitDiffSections splits a unified diff into per-file sections.
+// Each section starts with a line beginning with "diff " or "--- ".
+func splitDiffSections(diff string) []diffSection {
+	lines := strings.Split(diff, "\n")
+	var sections []diffSection
+	var current strings.Builder
+	currentFile := ""
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "diff --git ") {
+			// Save previous section.
+			if current.Len() > 0 {
+				sections = append(sections, diffSection{file: currentFile, content: current.String()})
+				current.Reset()
+			}
+			currentFile = extractFilePath(line)
+		} else if strings.HasPrefix(line, "--- ") && currentFile == "" {
+			// Alternate diff format without "diff --git" header.
+			if current.Len() > 0 {
+				sections = append(sections, diffSection{file: currentFile, content: current.String()})
+				current.Reset()
+			}
+			currentFile = extractFileFromDashLine(line)
+		}
+		current.WriteString(line)
+		current.WriteByte('\n')
+	}
+
+	if current.Len() > 0 {
+		sections = append(sections, diffSection{file: currentFile, content: current.String()})
+	}
+
+	return sections
+}
+
+// extractFilePath extracts the file path from a "diff --git a/path b/path" line.
+func extractFilePath(line string) string {
+	// Format: "diff --git a/path/to/file b/path/to/file"
+	parts := strings.SplitN(line, " b/", 2)
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return line
+}
+
+// extractFileFromDashLine extracts the file path from a "--- a/path" line.
+func extractFileFromDashLine(line string) string {
+	trimmed := strings.TrimPrefix(line, "--- ")
+	trimmed = strings.TrimPrefix(trimmed, "a/")
+	return trimmed
+}
+
+// matchesAnyPattern checks if the file path matches any of the glob patterns.
+// Supports ** for recursive matching by splitting on path separators.
+func matchesAnyPattern(file string, patterns []string) bool {
+	for _, pat := range patterns {
+		if pat == "" {
+			continue
+		}
+		// Handle ** patterns by converting to simple prefix match.
+		if strings.Contains(pat, "**") {
+			prefix := strings.Split(pat, "**")[0]
+			if strings.HasPrefix(file, prefix) {
+				return true
+			}
+			continue
+		}
+		if matched, _ := filepath.Match(pat, file); matched {
+			return true
+		}
+		// Also try matching just the filename.
+		if matched, _ := filepath.Match(pat, filepath.Base(file)); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// extractDiffStats parses a unified diff and returns only file-level statistics.
+func extractDiffStats(diff string) string {
+	sections := splitDiffSections(diff)
+	var b strings.Builder
+	totalAdded, totalRemoved, fileCount := 0, 0, 0
+
+	// Keep header lines.
+	if len(sections) > 0 && sections[0].file == "" {
+		b.WriteString(sections[0].content)
+		sections = sections[1:]
+	}
+
+	for _, sec := range sections {
+		if sec.file == "" {
+			continue
+		}
+		fileCount++
+		added, removed := countChanges(sec.content)
+		totalAdded += added
+		totalRemoved += removed
+		fmt.Fprintf(&b, "%s | +%d -%d\n", sec.file, added, removed)
+	}
+
+	fmt.Fprintf(&b, "\n%d files changed, %d insertions(+), %d deletions(-)\n",
+		fileCount, totalAdded, totalRemoved)
+
+	return b.String()
+}
+
+// countChanges counts added and removed lines in a diff section.
+func countChanges(section string) (added, removed int) {
+	for _, line := range strings.Split(section, "\n") {
+		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			added++
+		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			removed++
+		}
+	}
+	return added, removed
+}
+
+// truncateDiff truncates diff content to maxBytes, appending a marker if truncated.
+func truncateDiff(diff string, maxBytes int) string {
+	if len(diff) <= maxBytes {
+		return diff
+	}
+	totalBytes := len(diff)
+	truncated := diff[:maxBytes]
+	// Try to truncate at a line boundary.
+	if idx := strings.LastIndex(truncated, "\n"); idx > 0 {
+		truncated = truncated[:idx+1]
+	}
+	return fmt.Sprintf("%s\n... [truncated, %d bytes total]", truncated, totalBytes)
 }
 
 // handleListBranches lists all branches in the repository.

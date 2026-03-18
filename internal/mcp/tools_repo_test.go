@@ -290,6 +290,208 @@ func TestGetDiff_EmptyBase(t *testing.T) {
 	}
 }
 
+func TestGetDiff_Truncation(t *testing.T) {
+	// Build a diff larger than the requested max_bytes.
+	largeDiff := "diff --git a/main.go b/main.go\n" + strings.Repeat("+added line\n", 500)
+	repo := &mockRepoReader{diff: largeDiff}
+	ts := newTestMCPServerWithRepo(t, &mockTracker{}, repo)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      50,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "get_diff",
+			"arguments": map[string]any{
+				"base":      "main",
+				"head":      "feature",
+				"max_bytes": 200,
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+	text := result.Content[0].Text
+	if !strings.Contains(text, "[truncated,") {
+		t.Errorf("expected truncation marker, got %q", text)
+	}
+	// The truncated content plus marker should be reasonable size.
+	if len(text) > 500 {
+		t.Errorf("truncated response too large: %d bytes", len(text))
+	}
+}
+
+func TestGetDiff_StatOnly(t *testing.T) {
+	diff := `diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -1,3 +1,4 @@
+ package main
++import "fmt"
+ func main() {
++	fmt.Println("hello")
+ }
+diff --git a/go.mod b/go.mod
+--- a/go.mod
++++ b/go.mod
+@@ -1,2 +1,3 @@
+ module example
++require something v1.0
+ go 1.22
+`
+	repo := &mockRepoReader{diff: diff}
+	ts := newTestMCPServerWithRepo(t, &mockTracker{}, repo)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      51,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "get_diff",
+			"arguments": map[string]any{
+				"base":      "main",
+				"head":      "feature",
+				"stat_only": true,
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+	text := result.Content[0].Text
+	if !strings.Contains(text, "files changed") {
+		t.Errorf("expected stat summary, got %q", text)
+	}
+	if !strings.Contains(text, "main.go") {
+		t.Errorf("expected main.go in stats, got %q", text)
+	}
+	if !strings.Contains(text, "go.mod") {
+		t.Errorf("expected go.mod in stats, got %q", text)
+	}
+	// Should NOT contain actual diff hunks.
+	if strings.Contains(text, "@@") {
+		t.Errorf("stat_only should not contain hunk headers, got %q", text)
+	}
+}
+
+func TestGetDiff_PathsFilter(t *testing.T) {
+	diff := `diff --git a/internal/server/handler.go b/internal/server/handler.go
+--- a/internal/server/handler.go
++++ b/internal/server/handler.go
+@@ -1,3 +1,4 @@
+ package server
++func newHandler() {}
+diff --git a/cmd/main.go b/cmd/main.go
+--- a/cmd/main.go
++++ b/cmd/main.go
+@@ -1,3 +1,4 @@
+ package main
++import "os"
+`
+	repo := &mockRepoReader{diff: diff}
+	ts := newTestMCPServerWithRepo(t, &mockTracker{}, repo)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      52,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "get_diff",
+			"arguments": map[string]any{
+				"base":  "main",
+				"head":  "feature",
+				"paths": "internal/**",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+	text := result.Content[0].Text
+	if !strings.Contains(text, "handler.go") {
+		t.Errorf("expected handler.go in filtered diff, got %q", text)
+	}
+	if strings.Contains(text, "cmd/main.go") {
+		t.Errorf("expected cmd/main.go to be filtered out, got %q", text)
+	}
+}
+
+func TestGetDiff_NilReader(t *testing.T) {
+	ts := newTestMCPServerWithRepo(t, &mockTracker{}, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      53,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name": "get_diff",
+			"arguments": map[string]any{
+				"base": "main",
+				"head": "feature",
+			},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+	if !strings.Contains(result.Content[0].Text, "not available") {
+		t.Errorf("expected 'not available' message, got %q", result.Content[0].Text)
+	}
+}
+
 func TestListBranches(t *testing.T) {
 	repo := &mockRepoReader{
 		branches: []forge.Branch{
