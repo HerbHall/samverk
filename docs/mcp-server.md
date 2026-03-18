@@ -119,7 +119,24 @@ Project context is set per-conversation via the `set_project` tool, or inferred 
 | `get_commit_log` | Recent commits on a branch | Tier 1 |
 | `search_code` | Search file contents (grep-like) | Tier 1 |
 
-All repository operations are read-only. The front-end agent does not modify files directly -- that is the back-end agents' job. File changes happen through the issue system.
+### Repository Write Operations
+
+| Tool | Description | Autonomy |
+|------|-------------|----------|
+| `write_file` | Create or update a file on a branch with a commit message | Tier 2 |
+| `create_branch` | Create a new branch from the default branch HEAD | Tier 2 |
+
+Write operations require a `RepoWriter` to be configured. They degrade gracefully with a descriptive message when unavailable.
+
+### Agent Observability
+
+| Tool | Description | Autonomy |
+|------|-------------|----------|
+| `list_workers` | List active worker sessions with pool status | Tier 1 |
+| `get_session_log` | Get recent log output for an agent session by issue number | Tier 1 |
+| `get_provider_health` | Get health status of all configured AI providers | Tier 1 |
+
+Observability tools allow supervision of agent activity at scale. All degrade gracefully when their backing services are unavailable.
 
 ## Autonomy Tier Enforcement
 

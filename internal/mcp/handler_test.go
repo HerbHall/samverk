@@ -274,14 +274,16 @@ func TestToolsListDiscovery(t *testing.T) {
 		"get_commit_log", "search_code",
 		"list_projects", "set_project",
 		"get_failure_summary",
+		"write_file", "create_branch",
+		"list_workers", "get_session_log", "get_provider_health",
 	}
 	for _, name := range expectedTools {
 		if !toolNames[name] {
 			t.Errorf("%s tool not found in tools/list", name)
 		}
 	}
-	if len(result.Tools) != 42 {
-		t.Errorf("expected 42 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 47 {
+		t.Errorf("expected 47 tools, got %d", len(result.Tools))
 	}
 }
 

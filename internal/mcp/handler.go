@@ -24,6 +24,7 @@ type Handler struct {
 	policy    autonomy.AutonomyPolicy     // may be nil (no enforcement)
 	pending   *pendingActions              // Tier 3 action queue
 	repo      forge.RepoReader            // may be nil (no repo browsing)
+	writer    forge.RepoWriter            // may be nil (no repo write operations)
 	prManager forge.PullRequestManager    // may be nil (no PR operations)
 	projects  *ProjectRegistry            // may be nil (single-project mode)
 	poolM         poolMetricsSource       // may be nil (pool not running here)
@@ -32,6 +33,8 @@ type Handler struct {
 	scalingEvents scalingEventReader      // may be nil (reads from store)
 	workersM      workerLister            // may be nil (no PC agent workers registered)
 	work          WorkCoordinator         // may be nil (dispatcher not connected)
+	healthM       providerHealthSource   // may be nil (no health monitor)
+	logs          logQuerier             // may be nil (no log store)
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
@@ -74,6 +77,21 @@ func (h *Handler) SetWorkCoordinator(wc WorkCoordinator) {
 	h.work = wc
 }
 
+// SetWriter attaches a RepoWriter for write operations (create_branch, write_file).
+func (h *Handler) SetWriter(w forge.RepoWriter) {
+	h.writer = w
+}
+
+// SetProviderHealth attaches a provider health source for the get_provider_health tool.
+func (h *Handler) SetProviderHealth(ph providerHealthSource) {
+	h.healthM = ph
+}
+
+// SetLogQuerier attaches a log querier for the get_session_log tool.
+func (h *Handler) SetLogQuerier(lq logQuerier) {
+	h.logs = lq
+}
+
 // activeOwnerRepo returns the owner and repo for the currently active project.
 func (h *Handler) activeOwnerRepo() (owner, repo string, err error) {
 	if h.projects != nil {
@@ -109,6 +127,19 @@ func (h *Handler) activeReader() forge.RepoReader {
 		}
 	}
 	return h.repo
+}
+
+// activeWriter returns the RepoWriter to use for the current context.
+// If a project registry is configured, it uses the active project's writer.
+// Otherwise, it falls back to the handler's directly-configured writer.
+func (h *Handler) activeWriter() forge.RepoWriter {
+	if h.projects != nil {
+		p, err := h.projects.Active()
+		if err == nil && p.Writer != nil {
+			return p.Writer
+		}
+	}
+	return h.writer
 }
 
 // activePRManager returns the PullRequestManager to use for the current context.
@@ -166,6 +197,8 @@ func newMCPServer(h *Handler) *gosdk.Server {
 	registerPRReviewTools(srv, h)
 	registerScalingTools(srv, h)
 	registerWorkerTools(srv, h)
+	registerRepoWriteTools(srv, h)
+	registerObservabilityTools(srv, h)
 	return srv
 }
 
