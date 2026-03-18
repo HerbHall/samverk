@@ -7,7 +7,12 @@
 #
 # A single repository can be listed twice to watch both forges simultaneously:
 
-projects: []
+projects:
+  - name: devkit
+    owner: samverk
+    repo: devkit
+    forge: gitea
+    gitea_url: http://192.168.1.160:3000
   # GitHub project (default forge):
   # - name: samverk
   #   owner: herbhall
