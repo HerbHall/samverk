@@ -18,6 +18,7 @@
 
     Additional skip conditions (independent of tier):
         - agent:human label            → always skip
+        - agent:pc label               → reserved for PC agent, skip autonomous dispatch
         - status:needs-human label     → already escalated, skip
         - depends_on references open issues  → skip (dependency unresolved)
         - pc-failure-N >= max_failures → skip (exhausted retries elsewhere)
@@ -25,7 +26,7 @@
     Default config (overridden by -Config hashtable):
         MaxTier      = 2     # Maximum tier the PC agent will auto-execute
         MaxFailures  = 2     # Maximum prior failures before skipping
-        SkipLabels   = @('agent:human', 'status:needs-human')
+        SkipLabels   = @('agent:human', 'status:needs-human', 'agent:pc')
 #>
 
 Set-StrictMode -Version 3.0
@@ -37,7 +38,7 @@ $script:ModuleDir = $PSScriptRoot
 $script:DefaultAutonomyConfig = @{
     MaxTier     = 2
     MaxFailures = 2
-    SkipLabels  = @('agent:human', 'status:needs-human')
+    SkipLabels  = @('agent:human', 'status:needs-human', 'agent:pc')
 }
 
 # ---------------------------------------------------------------------------

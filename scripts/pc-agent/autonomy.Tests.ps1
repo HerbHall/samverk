@@ -175,7 +175,7 @@ Describe 'Test-AutonomyGate' {
         $script:DefaultCfg = @{
             MaxTier     = 2
             MaxFailures = 2
-            SkipLabels  = @('agent:human', 'status:needs-human')
+            SkipLabels  = @('agent:human', 'status:needs-human', 'agent:pc')
         }
     }
 
@@ -214,6 +214,14 @@ Describe 'Test-AutonomyGate' {
         $result = Test-AutonomyGate -Issue $issue -Config $script:DefaultCfg -SkipDependencyCheck
         $result.Allowed | Should -BeFalse
         $result.Reason | Should -Match 'needs-human'
+    }
+
+    It 'blocks issue with agent:pc label' {
+        $issue = New-TestIssue -Labels @('complexity:local', 'priority:normal', 'agent:pc')
+        $result = Test-AutonomyGate -Issue $issue -Config $script:DefaultCfg -SkipDependencyCheck
+        $result.Allowed | Should -BeFalse
+        $result.Tier | Should -Be 0
+        $result.Reason | Should -Match 'agent:pc'
     }
 
     It 'blocks issue that has reached max failures' {

@@ -55,6 +55,11 @@
     "description": "Requires user input or decision"
   },
   {
+    "name": "agent:pc",
+    "color": "1D76DB",
+    "description": "Reserved for PC agent (Claude Code in VS Code)"
+  },
+  {
     "name": "status:queued",
     "color": "0075ca",
     "description": "Ready for agent to claim"
