@@ -17,6 +17,10 @@ ExecStartPre=/bin/sleep 2
 ExecStart=/usr/local/bin/samverk dispatch \
   --db /var/lib/samverk/.samverk/samverk.db \
   --providers-config /var/lib/samverk/.samverk/providers.yaml \
+  --owner samverk \
+  --repo devkit \
+  --forge gitea \
+  --gitea-url http://192.168.1.160:3000 \
   --poll-interval 30 \
   --workers 3 \
   --scaling \
