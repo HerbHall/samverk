@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-17T06:00:00Z
+updated: 2026-03-17T23:50:00Z
 updated_by: claude-code
 ---
 
@@ -20,7 +20,7 @@ All critical and high autonomy gaps now have fixes in PRs or merged.
 - Health monitor: 60s probes, WoL for sleeping hosts
 - Watcher: auto-restart with backoff (no more silent hangs)
 - Dashboard: unified with Synapset native + DevKit iframe
-- Gitea CI: CT 200 (40GB disk, weekly cleanup cron)
+- Gitea CI: CT 200 (80GB disk, daily cleanup cron at 3am)
 - Cloudflare Tunnel: e86ba6e3 (samverk + synapset + mcp subdomains)
 
 ### GPU Fleet
@@ -35,10 +35,7 @@ Note: Ollama restricted to triage-only (PR #613). Code-gen routes to Claude CLI/
 
 ## Open Issues
 
-2 remain, both deferred strategic decisions:
-
-- #252 -- Gitea migration requirements checklist (deferred)
-- #250 -- GitHub to Gitea migration strategy (deferred)
+0 open issues. All resolved or closed.
 
 ## Gaps to Full Autonomy
 
@@ -58,42 +55,33 @@ Note: Ollama restricted to triage-only (PR #613). Code-gen routes to Claude CLI/
 
 ## Recommended Next Session
 
-1. Deploy to CT 202 after PRs merge (`make redeploy`)
-2. Run dispatcher on test issues to validate all 5 fixes end-to-end
-3. Address medium gaps if autonomy validated
-4. Consider v0.1.19 release (release-please PR #612 ready)
+1. Run dispatcher on real issues to validate autonomy end-to-end
+2. Address medium gaps (Synapset#62 parse error, DevKit dashboard native React)
+3. Consider filing new issues as needed
 
-## Session Summary (2026-03-17, session 2)
+## Session Summary (2026-03-17, session 3)
 
-Sprint: 4 worktree-isolated agents, 4 PRs, 7 issues resolved.
+Housekeeping and bug fix session.
 
-### PRs Created
+### PRs Merged
 
-- #610 -- Copilot feedback before auto-merge (closes #608) -- MERGED
-- #611 -- CLI timeout + provider failover (closes #606) -- auto-merging
-- #613 -- Ollama triage restriction + output validation (closes #605) -- auto-merging
-- #614 -- Explore-before-code planning step (closes #607) -- auto-merging
+- #644 -- Decouple MCP handler init from GitHub env vars (Gitea #38)
+- #645 -- Phase-aware routing + set_project_phase MCP tool (Gitea #35, #36)
+- #647 -- Revise ADR-031 to single-forge-per-project model (Gitea #39)
+- #648 -- Fix get_digest "away" duration (echoed `since` param instead of real elapsed time)
 
-### Issues Resolved
+### Synapset v0.3.1 Released
 
-- #605 -- Ollama agents overwrite CLAUDE.md (PR #613)
-- #606 -- Claude CLI hangs on CT 202 (PR #611)
-- #607 -- Explore-before-code planning step (PR #614)
-- #608 -- Copilot review feedback before merge (PR #610)
-- #609 -- DevKit data to CT 202 (closed: Synapset covers it)
-- #251 -- Documentation integrity epic (closed: doc-audit CLI sufficient)
-- #250, #252 -- Gitea migration (deferred)
+Synapset semantic-release pipeline fully working. Key fixes:
 
-### Decisions Made
+- Remove `@semantic-release/git` + changelog plugins (incompatible with branch protection)
+- Add `repositoryUrl` for correct release note links
+- Second `url.insteadOf` to bypass Cloudflare auth header stripping on tag push
+- Gitea disk crisis resolved: CT 200 resized 40GB → 80GB, daily actcache pruning installed
 
-- Ollama: triage-only now, code-gen prompt template deferred to future issue
-- DevKit data: no sync needed, Synapset is the knowledge transport
-- Doc integrity: doc-audit CLI is sufficient for current scale
-- Gitea migration: dual-forge stable, defer until needed
+### Prior Session (2026-03-17, session 2)
 
-### Prior Session (2026-03-17, session 1)
-
-6 PRs merged: #595-#599, #604. 9 issues closed. Key fix: MCP Custom Connector.
+Sprint: 4 worktree agents, 4 PRs, 7 issues resolved. Key fixes: Ollama triage restriction, CLI timeout, explore-before-code, Copilot review watcher.
 
 ## Start Here
 

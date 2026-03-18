@@ -1,4 +1,4 @@
-# ADR-033: Multi-Machine Free Agent Runtime
+# ADR-036: Multi-Machine Free Agent Runtime
 
 **Status:** Proposed
 **Date:** 2026-03-15
