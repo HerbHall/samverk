@@ -160,7 +160,7 @@ func discoverGoSiblings(repoDir, relDir string, seen map[string]bool) []string {
 		return nil
 	}
 
-	var siblings []string
+	siblings := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
