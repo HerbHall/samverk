@@ -120,8 +120,8 @@ func (d *Dispatcher) detectCycle(ctx context.Context, owner, repo string, startI
 				}
 			}
 			if cycleStart >= 0 {
-				cycle := make([]int, len(path)-cycleStart)
-				copy(cycle, path[cycleStart:])
+				cycle := make([]int, 0, len(path)-cycleStart+1)
+				cycle = append(cycle, path[cycleStart:]...)
 				return append(cycle, node)
 			}
 			return []int{node}
