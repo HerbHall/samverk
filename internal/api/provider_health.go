@@ -14,14 +14,6 @@ func (a *API) SetHealthMonitor(hm *provider.HealthMonitor) {
 	a.healthMonitor = hm
 }
 
-// SetProviderRegistry attaches a provider registry so the health endpoint
-// can include the routing_chains map. Call from serve after loading
-// provider config. The registry may have no instantiated providers (routing
-// metadata only).
-func (a *API) SetProviderRegistry(reg *provider.Registry) {
-	a.providerRegistry = reg
-}
-
 // healthEntry is the per-provider entry in the /api/v1/providers/health response.
 type healthEntry struct {
 	Name          string `json:"name"`
