@@ -106,6 +106,11 @@ func serveCmd() *cobra.Command {
 				logger.Info("MCP authentication enabled (env token)")
 			}
 
+			// Persist browser sessions alongside the database so logins survive restarts.
+			if dbPath != "" {
+				cfg.SessionFile = strings.TrimSuffix(dbPath, ".db") + "-sessions.json"
+			}
+
 			// Load YAML-backed API key store if the file exists.
 			if authKeysPath != "" {
 				if _, statErr := os.Stat(authKeysPath); statErr == nil {

@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -91,7 +92,7 @@ func TestSessionManager_SetCookie(t *testing.T) {
 }
 
 func TestGetSessionID(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "samverk_session", Value: "test-id-123"})
 
 	id := server.GetSessionID(req)
@@ -101,7 +102,7 @@ func TestGetSessionID(t *testing.T) {
 }
 
 func TestGetSessionID_NoCookie(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 
 	id := server.GetSessionID(req)
 	if id != "" {
