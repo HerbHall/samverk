@@ -11,9 +11,11 @@ package prwatcher
 import (
 	"context"
 	"fmt"
-	"go.uber.org/zap"
+	"regexp"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
@@ -142,6 +144,10 @@ func (w *Watcher) poll(ctx context.Context) error {
 		commitMsg := fmt.Sprintf("auto-merge: %s (#%d)", pr.Title, pr.Number)
 		if mergeErr := w.prManager.MergePullRequest(ctx, pr.Number, forge.MergeMethodSquash, commitMsg); mergeErr != nil {
 			w.logger.Error("pr-watcher: merge failed", zap.Int("pr", pr.Number), zap.Error(mergeErr))
+			continue
+		}
+		if w.issueTracker != nil {
+			w.closeLinkedIssues(ctx, pr)
 		}
 	}
 
@@ -320,6 +326,58 @@ func buildRemediationBody(pr *forge.PullRequest, comments []forge.ReviewComment)
 	fmt.Fprintf(&b, "When all comments are addressed, add the label `review:addressed` to PR #%d.\n", pr.Number)
 
 	return b.String()
+}
+
+// linkedIssueRe matches "Closes #N", "Fixes #N", "Resolves #N" (case-insensitive)
+// and "(#N)" anywhere in title or body.
+var linkedIssueRe = regexp.MustCompile(`(?i)(?:closes|fixes|resolves)\s+#(\d+)|\(#(\d+)\)`)
+
+// parseLinkedIssues extracts issue numbers from PR title and body.
+// It matches: "Closes #N", "Fixes #N", "Resolves #N" in body (case-insensitive),
+// and "(#N)" anywhere in title or body. Duplicates are removed.
+func parseLinkedIssues(pr *forge.PullRequest) []int {
+	text := pr.Title + "\n" + pr.Body
+	matches := linkedIssueRe.FindAllStringSubmatch(text, -1)
+
+	seen := make(map[int]bool)
+	result := make([]int, 0, len(matches))
+	for _, m := range matches {
+		// m[1] is the keyword-style match, m[2] is the (#N) style match.
+		raw := m[1]
+		if raw == "" {
+			raw = m[2]
+		}
+		n := 0
+		for _, ch := range raw {
+			n = n*10 + int(ch-'0')
+		}
+		if n > 0 && !seen[n] {
+			seen[n] = true
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
+// closeLinkedIssues closes all issues referenced in the PR title or body and
+// replaces their status labels with "status:done".
+func (w *Watcher) closeLinkedIssues(ctx context.Context, pr *forge.PullRequest) {
+	issueNums := parseLinkedIssues(pr)
+	for _, num := range issueNums {
+		closed := forge.StateClosed
+		_, err := w.issueTracker.UpdateIssue(ctx, num, &forge.UpdateIssueRequest{State: &closed})
+		if err != nil {
+			w.log().Warn("prwatcher: failed to close linked issue",
+				zap.Int("issue", num), zap.Int("pr", pr.Number), zap.Error(err))
+			continue
+		}
+		w.log().Info("prwatcher: closed linked issue",
+			zap.Int("issue", num), zap.Int("pr", pr.Number))
+		if err = w.issueTracker.SetLabels(ctx, num, []string{"status:done"}); err != nil {
+			w.log().Warn("prwatcher: failed to set status:done on linked issue",
+				zap.Int("issue", num), zap.Error(err))
+		}
+	}
 }
 
 // isEligible checks static PR attributes against merge policy.
