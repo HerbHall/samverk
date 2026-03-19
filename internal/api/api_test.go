@@ -322,8 +322,9 @@ func TestListIssues(t *testing.T) {
 				return
 			}
 
-			var issues []map[string]any
-			decodeJSON(t, resp, &issues)
+			var body map[string]any
+			decodeJSON(t, resp, &body)
+			issues, _ := body["issues"].([]any)
 			if len(issues) != tt.wantLen {
 				t.Errorf("issue count = %d, want %d", len(issues), tt.wantLen)
 			}
@@ -622,15 +623,13 @@ func TestIssueResponseEmptySlices(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 
 	// Verify that nil slices are serialized as empty arrays, not null.
-	var raw json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	var wrapper struct {
+		Issues []map[string]json.RawMessage `json:"issues"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-
-	var issues []map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &issues); err != nil {
-		t.Fatalf("unmarshal issues: %v", err)
-	}
+	issues := wrapper.Issues
 	if len(issues) == 0 {
 		t.Fatal("expected at least one issue")
 	}
@@ -642,4 +641,210 @@ func TestIssueResponseEmptySlices(t *testing.T) {
 			t.Errorf("%s = null, want empty array []", field)
 		}
 	}
+}
+
+func TestListIssues_DefaultParams(t *testing.T) {
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	tracker := newMockTracker(
+		&forge.Issue{Number: 1, Title: "A", State: forge.StateOpen, CreatedAt: now, UpdatedAt: now},
+	)
+	ts := newTestAPI(t, tracker, nil, nil)
+
+	resp := doGet(t, ts.URL+"/api/v1/issues")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body map[string]any
+	decodeJSON(t, resp, &body)
+
+	if limit, _ := body["limit"].(float64); limit != 50 {
+		t.Errorf("limit = %v, want 50", body["limit"])
+	}
+	if offset, _ := body["offset"].(float64); offset != 0 {
+		t.Errorf("offset = %v, want 0", body["offset"])
+	}
+	if page, _ := body["page"].(float64); page != 1 {
+		t.Errorf("page = %v, want 1", body["page"])
+	}
+}
+
+func TestListIssues_LimitOffset(t *testing.T) {
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	tracker := newMockTracker(
+		&forge.Issue{Number: 1, Title: "A", State: forge.StateOpen, CreatedAt: now, UpdatedAt: now},
+	)
+	ts := newTestAPI(t, tracker, nil, nil)
+
+	resp := doGet(t, ts.URL+"/api/v1/issues?limit=10&offset=20")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body map[string]any
+	decodeJSON(t, resp, &body)
+
+	if limit, _ := body["limit"].(float64); limit != 10 {
+		t.Errorf("limit = %v, want 10", body["limit"])
+	}
+	if offset, _ := body["offset"].(float64); offset != 20 {
+		t.Errorf("offset = %v, want 20", body["offset"])
+	}
+	// page = offset/limit + 1 = 20/10 + 1 = 3
+	if page, _ := body["page"].(float64); page != 3 {
+		t.Errorf("page = %v, want 3", body["page"])
+	}
+}
+
+func TestListIssues_LimitCap(t *testing.T) {
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	tracker := newMockTracker(
+		&forge.Issue{Number: 1, Title: "A", State: forge.StateOpen, CreatedAt: now, UpdatedAt: now},
+	)
+	ts := newTestAPI(t, tracker, nil, nil)
+
+	resp := doGet(t, ts.URL+"/api/v1/issues?limit=500")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body map[string]any
+	decodeJSON(t, resp, &body)
+
+	if limit, _ := body["limit"].(float64); limit != 200 {
+		t.Errorf("limit = %v, want 200 (capped)", body["limit"])
+	}
+}
+
+func TestListIssues_StateFilter(t *testing.T) {
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	var capturedOpts *forge.ListOptions
+	tracker := &capturingMockTracker{
+		issues: []*forge.Issue{
+			{Number: 1, Title: "Closed one", State: forge.StateClosed, CreatedAt: now, UpdatedAt: now},
+		},
+		captureOpts: func(opts *forge.ListOptions) {
+			capturedOpts = opts
+		},
+	}
+	ts := newTestAPI(t, tracker, nil, nil)
+
+	resp := doGet(t, ts.URL+"/api/v1/issues?state=closed")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	if capturedOpts == nil {
+		t.Fatal("opts not captured")
+	}
+	if capturedOpts.State != forge.StateClosed {
+		t.Errorf("opts.State = %q, want %q", capturedOpts.State, forge.StateClosed)
+	}
+}
+
+func TestListIssues_WrappedResponse(t *testing.T) {
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	tracker := newMockTracker(
+		&forge.Issue{Number: 1, Title: "A", State: forge.StateOpen, CreatedAt: now, UpdatedAt: now},
+	)
+	ts := newTestAPI(t, tracker, nil, nil)
+
+	resp := doGet(t, ts.URL+"/api/v1/issues")
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body map[string]any
+	decodeJSON(t, resp, &body)
+
+	// Must have "issues" key with array value.
+	issues, ok := body["issues"]
+	if !ok {
+		t.Fatal("response missing 'issues' key")
+	}
+	issueArr, ok := issues.([]any)
+	if !ok {
+		t.Fatalf("'issues' is not an array, got %T", issues)
+	}
+	if len(issueArr) != 1 {
+		t.Errorf("issues count = %d, want 1", len(issueArr))
+	}
+
+	// Must have pagination fields.
+	for _, field := range []string{"total", "limit", "offset", "page", "per_page"} {
+		if _, ok := body[field]; !ok {
+			t.Errorf("response missing %q field", field)
+		}
+	}
+}
+
+// capturingMockTracker records the ListOptions passed to ListIssues.
+type capturingMockTracker struct {
+	issues      []*forge.Issue
+	captureOpts func(*forge.ListOptions)
+}
+
+func (m *capturingMockTracker) ListIssues(_ context.Context, opts *forge.ListOptions) ([]*forge.Issue, error) {
+	if m.captureOpts != nil {
+		m.captureOpts(opts)
+	}
+	return m.issues, nil
+}
+
+func (m *capturingMockTracker) GetIssue(_ context.Context, _ int) (*forge.Issue, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) CreateIssue(_ context.Context, _ *forge.CreateIssueRequest) (*forge.Issue, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) UpdateIssue(_ context.Context, _ int, _ *forge.UpdateIssueRequest) (*forge.Issue, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) AddComment(_ context.Context, _ int, _ string) (*forge.Comment, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) ListComments(_ context.Context, _ int) ([]*forge.Comment, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) SetLabels(_ context.Context, _ int, _ []string) error {
+	return errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) AddLabel(_ context.Context, _ int, _ string) error {
+	return errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) RemoveLabel(_ context.Context, _ int, _ string) error {
+	return errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) Assign(_ context.Context, _ int, _ string) error {
+	return errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) Unassign(_ context.Context, _ int, _ string) error {
+	return errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) Watch(_ context.Context, _ func(forge.Event)) error {
+	return errors.New("not implemented")
+}
+
+func (m *capturingMockTracker) SearchIssues(_ context.Context, _ *forge.SearchOptions) ([]*forge.Issue, error) {
+	return nil, errors.New("not implemented")
 }
