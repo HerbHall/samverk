@@ -16,7 +16,10 @@ func dialWS(t *testing.T, srv *httptest.Server, path string) *websocket.Conn {
 	url := "ws" + srv.URL[len("http"):] + path
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, url, nil)
+	conn, resp, err := websocket.Dial(ctx, url, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		t.Fatalf("websocket.Dial: %v", err)
 	}
