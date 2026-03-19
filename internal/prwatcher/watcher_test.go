@@ -2,6 +2,7 @@ package prwatcher
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -169,12 +170,26 @@ func (m *mockPRManager) ListReviewComments(_ context.Context, _ int) ([]forge.Re
 	return m.reviewComments, m.reviewErr
 }
 
+type updateCall struct {
+	number int
+	req    *forge.UpdateIssueRequest
+}
+
+type setLabelsCall struct {
+	number int
+	labels []string
+}
+
 type mockIssueTracker struct {
 	existingIssues []*forge.Issue
 	listErr        error
 	createdIssue   *forge.CreateIssueRequest
 	createErr      error
 	prComments     map[int][]string // PR number -> comments added
+	updateCalls    []updateCall
+	updateErr      error
+	setLabelsCalls []setLabelsCall
+	setLabelsErr   error
 }
 
 func (m *mockIssueTracker) CreateIssue(_ context.Context, req *forge.CreateIssueRequest) (*forge.Issue, error) {
@@ -187,8 +202,12 @@ func (m *mockIssueTracker) CreateIssue(_ context.Context, req *forge.CreateIssue
 func (m *mockIssueTracker) GetIssue(context.Context, int) (*forge.Issue, error) {
 	panic("not called")
 }
-func (m *mockIssueTracker) UpdateIssue(context.Context, int, *forge.UpdateIssueRequest) (*forge.Issue, error) {
-	panic("not called")
+func (m *mockIssueTracker) UpdateIssue(_ context.Context, number int, req *forge.UpdateIssueRequest) (*forge.Issue, error) {
+	m.updateCalls = append(m.updateCalls, updateCall{number: number, req: req})
+	if m.updateErr != nil {
+		return nil, m.updateErr
+	}
+	return &forge.Issue{Number: number, State: forge.StateClosed}, nil
 }
 func (m *mockIssueTracker) ListIssues(_ context.Context, _ *forge.ListOptions) ([]*forge.Issue, error) {
 	return m.existingIssues, m.listErr
@@ -203,12 +222,15 @@ func (m *mockIssueTracker) AddComment(_ context.Context, number int, body string
 func (m *mockIssueTracker) ListComments(context.Context, int) ([]*forge.Comment, error) {
 	panic("not called")
 }
-func (m *mockIssueTracker) SetLabels(context.Context, int, []string) error  { panic("not called") }
-func (m *mockIssueTracker) AddLabel(context.Context, int, string) error     { panic("not called") }
-func (m *mockIssueTracker) RemoveLabel(context.Context, int, string) error  { panic("not called") }
-func (m *mockIssueTracker) Assign(context.Context, int, string) error       { panic("not called") }
-func (m *mockIssueTracker) Unassign(context.Context, int, string) error     { panic("not called") }
-func (m *mockIssueTracker) Watch(context.Context, func(forge.Event)) error  { panic("not called") }
+func (m *mockIssueTracker) SetLabels(_ context.Context, number int, labels []string) error {
+	m.setLabelsCalls = append(m.setLabelsCalls, setLabelsCall{number: number, labels: labels})
+	return m.setLabelsErr
+}
+func (m *mockIssueTracker) AddLabel(context.Context, int, string) error    { panic("not called") }
+func (m *mockIssueTracker) RemoveLabel(context.Context, int, string) error { panic("not called") }
+func (m *mockIssueTracker) Assign(context.Context, int, string) error      { panic("not called") }
+func (m *mockIssueTracker) Unassign(context.Context, int, string) error    { panic("not called") }
+func (m *mockIssueTracker) Watch(context.Context, func(forge.Event)) error { panic("not called") }
 func (m *mockIssueTracker) SearchIssues(context.Context, *forge.SearchOptions) ([]*forge.Issue, error) {
 	panic("not called")
 }
@@ -473,6 +495,109 @@ func TestIsCopilotAuthor(t *testing.T) {
 				t.Errorf("isCopilotAuthor(%q) = %v, want %v", tt.author, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseLinkedIssues(t *testing.T) {
+	tests := []struct {
+		name string
+		pr   *forge.PullRequest
+		want []int
+	}{
+		{
+			name: "title with (#N)",
+			pr:   &forge.PullRequest{Title: "fix(auth): add WWW-Authenticate header (#123)"},
+			want: []int{123},
+		},
+		{
+			name: "body with Closes and Fixes",
+			pr:   &forge.PullRequest{Body: "Closes #42\nFixes #43"},
+			want: []int{42, 43},
+		},
+		{
+			name: "body with Resolves",
+			pr:   &forge.PullRequest{Body: "Resolves #99"},
+			want: []int{99},
+		},
+		{
+			name: "body lowercase closes",
+			pr:   &forge.PullRequest{Body: "closes #5"},
+			want: []int{5},
+		},
+		{
+			name: "no linked issues",
+			pr:   &forge.PullRequest{Title: "chore: update deps", Body: "Routine update."},
+			want: []int{},
+		},
+		{
+			name: "duplicate references",
+			pr:   &forge.PullRequest{Body: "Closes #42\nCloses #42"},
+			want: []int{42},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseLinkedIssues(tt.pr)
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseLinkedIssues() = %v, want %v", got, tt.want)
+			}
+			for i, v := range got {
+				if v != tt.want[i] {
+					t.Errorf("parseLinkedIssues()[%d] = %d, want %d", i, v, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestCloseLinkedIssues(t *testing.T) {
+	it := &mockIssueTracker{}
+	w := &Watcher{issueTracker: it}
+
+	pr := &forge.PullRequest{
+		Number: 55,
+		Title:  "feat: implement thing",
+		Body:   "Closes #10",
+	}
+
+	w.closeLinkedIssues(context.Background(), pr)
+
+	// Assert UpdateIssue was called with StateClosed.
+	if len(it.updateCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIssue call, got %d", len(it.updateCalls))
+	}
+	if it.updateCalls[0].number != 10 {
+		t.Errorf("UpdateIssue issue number = %d, want 10", it.updateCalls[0].number)
+	}
+	if it.updateCalls[0].req.State == nil || *it.updateCalls[0].req.State != forge.StateClosed {
+		t.Errorf("UpdateIssue state = %v, want StateClosed", it.updateCalls[0].req.State)
+	}
+
+	// Assert SetLabels was called with status:done.
+	if len(it.setLabelsCalls) != 1 {
+		t.Fatalf("expected 1 SetLabels call, got %d", len(it.setLabelsCalls))
+	}
+	if it.setLabelsCalls[0].number != 10 {
+		t.Errorf("SetLabels issue number = %d, want 10", it.setLabelsCalls[0].number)
+	}
+	if len(it.setLabelsCalls[0].labels) != 1 || it.setLabelsCalls[0].labels[0] != "status:done" {
+		t.Errorf("SetLabels labels = %v, want [status:done]", it.setLabelsCalls[0].labels)
+	}
+}
+
+func TestCloseLinkedIssues_UpdateError_SkipsSetLabels(t *testing.T) {
+	it := &mockIssueTracker{updateErr: fmt.Errorf("api error")}
+	w := &Watcher{issueTracker: it}
+
+	pr := &forge.PullRequest{Number: 1, Body: "Closes #7"}
+	w.closeLinkedIssues(context.Background(), pr)
+
+	if len(it.updateCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIssue call, got %d", len(it.updateCalls))
+	}
+	if len(it.setLabelsCalls) != 0 {
+		t.Errorf("SetLabels should not be called when UpdateIssue fails")
 	}
 }
 
