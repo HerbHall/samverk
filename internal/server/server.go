@@ -41,6 +41,7 @@ type Server struct {
 	server   *http.Server
 	logger   *zap.Logger
 	sessions *SessionManager
+	hub      *Hub
 
 	mu         sync.Mutex
 	listenAddr string
@@ -66,6 +67,7 @@ func New(cfg Config, logger *zap.Logger) *Server {
 		mux:        http.NewServeMux(),
 		logger:     logger,
 		sessions:   sessions,
+		hub:        NewHub(logger),
 		listenAddr: cfg.Addr,
 	}
 
@@ -83,6 +85,12 @@ func New(cfg Config, logger *zap.Logger) *Server {
 // Exposed for the MCP-only listener to share sessions with the main server.
 func (s *Server) Sessions() *SessionManager {
 	return s.sessions
+}
+
+// Hub returns the WebSocket hub. Callers can call Hub().Broadcast to push
+// events to all connected dashboard clients.
+func (s *Server) Hub() *Hub {
+	return s.hub
 }
 
 // Addr returns the address the server is listening on.
@@ -115,6 +123,9 @@ func (s *Server) Start(ctx context.Context) error {
 	s.mu.Unlock()
 
 	s.logger.Info("server listening", zap.String("addr", actual))
+
+	// Run the WebSocket hub in the background for the lifetime of the server.
+	go s.hub.Run(ctx)
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -185,6 +196,14 @@ func (s *Server) registerRoutes() {
 	} else {
 		s.mux.HandleFunc("/connect", s.handleNotImplemented)
 		s.mux.HandleFunc("/mcp", s.handleNotImplemented)
+	}
+
+	// WebSocket event hub — requires Bearer token or session auth when configured.
+	if s.authEnabled() {
+		wsAuth := BearerOrSessionAuth(s.cfg.AuthToken, s.cfg.KeyStore, s.sessions)
+		s.mux.Handle("GET /ws", wsAuth(http.HandlerFunc(s.handleWS)))
+	} else {
+		s.mux.HandleFunc("GET /ws", s.handleWS)
 	}
 
 	if s.cfg.APIHandler != nil {
