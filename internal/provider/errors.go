@@ -40,6 +40,25 @@ func (e *ErrProviderTimeout) Retryable() bool {
 	return true
 }
 
+// ErrProviderUnavailable is returned when a provider cannot be reached due to
+// a connection-level failure (e.g., connection refused, EOF, network error).
+// It is retryable, allowing the pool to fall back to the next provider in
+// the routing chain.
+type ErrProviderUnavailable struct {
+	Provider string
+	Cause    error
+}
+
+func (e *ErrProviderUnavailable) Error() string {
+	return fmt.Sprintf("provider %s unavailable: %v", e.Provider, e.Cause)
+}
+
+// Unwrap returns the underlying cause so errors.Is/As traversal works.
+func (e *ErrProviderUnavailable) Unwrap() error { return e.Cause }
+
+// Retryable returns true, indicating the pool should try the next provider.
+func (e *ErrProviderUnavailable) Retryable() bool { return true }
+
 // IsRetryable checks whether an error is retryable. Returns true if the error
 // implements the Retryable() bool interface and returns true.
 func IsRetryable(err error) bool {

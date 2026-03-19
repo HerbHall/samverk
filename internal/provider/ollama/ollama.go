@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -104,6 +105,16 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (resp *prov
 				Model:       req.Model,
 				TimeoutType: provider.TimeoutStale,
 				Duration:    dur,
+			}
+		}
+		// Wrap transport-level failures (connection refused, EOF, network
+		// errors) as ErrProviderUnavailable so the pool triggers failover.
+		// These occur when Ollama is down, not yet started, or unreachable.
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: "ollama",
+				Cause:    err,
 			}
 		}
 		return nil, fmt.Errorf("ollama: chat: %w", err)
