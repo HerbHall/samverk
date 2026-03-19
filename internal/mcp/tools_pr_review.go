@@ -21,7 +21,7 @@ type reviewPRInput struct {
 
 // listOpenPRsInput is the typed input for the list_open_prs tool.
 type listOpenPRsInput struct {
-	// No required fields — lists all open PRs across all projects.
+	Project string `json:"project,omitempty" jsonschema:"optional project name; omit to list PRs across all projects"`
 }
 
 // bulkMergeInput is the typed input for the bulk_merge tool.
@@ -197,15 +197,24 @@ type projectPR struct {
 }
 
 // handleListOpenPRs aggregates open PRs across all registered projects.
+// When input.Project is set, only that project's PRs are returned.
 func (h *Handler) handleListOpenPRs(
 	ctx context.Context,
 	_ *gosdk.CallToolRequest,
-	_ listOpenPRsInput,
+	input listOpenPRsInput,
 ) (*gosdk.CallToolResult, any, error) {
 	var results []projectPR
 
 	if h.projects != nil {
+		if input.Project != "" {
+			if _, ok := h.projects.Get(input.Project); !ok {
+				return nil, nil, fmt.Errorf("project %q not found", input.Project)
+			}
+		}
 		for _, proj := range h.projects.List() {
+			if input.Project != "" && proj.Name != input.Project {
+				continue
+			}
 			if proj.PRManager == nil || proj.Phase == "inactive" {
 				continue
 			}
@@ -242,8 +251,9 @@ func (h *Handler) handleListOpenPRs(
 		}
 	}
 
-	// Also include the default/active project if no registry or registry is empty.
-	if len(results) == 0 {
+	// Also include the default/active project if no registry or registry is empty,
+	// and no project filter was specified.
+	if len(results) == 0 && input.Project == "" {
 		prm := h.activePRManager()
 		if prm != nil {
 			prs, err := prm.ListPullRequests(ctx, &forge.ListPROptions{

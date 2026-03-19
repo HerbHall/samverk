@@ -103,6 +103,22 @@ func (h *Handler) activeOwnerRepo() (owner, repo string, err error) {
 	return "", "", fmt.Errorf("no active project configured")
 }
 
+// resolveTracker returns the IssueTracker for the named project, or the active
+// tracker if name is empty. Returns an error if the named project is not found.
+func (h *Handler) resolveTracker(name string) (forge.IssueTracker, error) {
+	if name == "" {
+		return h.activeTracker(), nil
+	}
+	if h.projects == nil {
+		return nil, fmt.Errorf("multi-project support not configured")
+	}
+	p, ok := h.projects.Get(name)
+	if !ok {
+		return nil, fmt.Errorf("project %q not found", name)
+	}
+	return p.Tracker, nil
+}
+
 // activeTracker returns the IssueTracker to use for the current context.
 // If a project registry is configured, it uses the active project's tracker.
 // Otherwise, it falls back to the handler's directly-configured tracker.
