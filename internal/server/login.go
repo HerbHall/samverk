@@ -70,6 +70,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, _ *http.Request) {
 
 // handleLoginSubmit validates the password and creates a session.
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 4096) //nolint:gomnd // 4096: login form is tiny; limit prevents memory exhaustion
 	if err := r.ParseForm(); err != nil {
 		s.renderLogin(w, "Invalid form submission.")
 		return

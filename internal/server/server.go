@@ -28,6 +28,7 @@ type Config struct {
 	Addr             string          // listen address, e.g. ":8080"
 	AuthToken        string          //nolint:gosec // G117: config field, not a hardcoded secret
 	KeyStore         *KeyStore       // YAML-backed API key store (may be nil)
+	SessionFile      string          // optional path for persistent session storage (survive restarts)
 	MCPHandler       http.Handler    // optional MCP protocol handler; nil keeps the 501 placeholder
 	APIHandler       APIRegistrar    // optional REST API handler; nil keeps the 501 placeholder
 	PressureProvider PressureProvider // optional; /healthz omits pressure field when nil
@@ -53,7 +54,11 @@ func New(cfg Config, logger *zap.Logger) *Server {
 
 	var sessions *SessionManager
 	if cfg.AuthToken != "" || cfg.KeyStore != nil {
-		sessions = NewSessionManager()
+		if cfg.SessionFile != "" {
+			sessions = NewSessionManagerWithFile(cfg.SessionFile)
+		} else {
+			sessions = NewSessionManager()
+		}
 	}
 
 	s := &Server{

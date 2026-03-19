@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -68,7 +69,7 @@ func TestBearerAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := server.BearerAuth(tt.token, nil)(okHandler)
 
-			req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", http.NoBody)
 			if tt.authHeader != "" {
 				req.Header.Set("Authorization", tt.authHeader)
 			}
@@ -151,7 +152,7 @@ func TestBearerAuth_WithKeyStore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := server.BearerAuth(tt.token, ks)(okHandler)
 
-			req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", http.NoBody)
 			if tt.authHeader != "" {
 				req.Header.Set("Authorization", tt.authHeader)
 			}
