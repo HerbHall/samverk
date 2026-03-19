@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-17T23:50:00Z
+updated: 2026-03-18T20:10:00Z
 updated_by: claude-code
 ---
 
@@ -32,38 +32,82 @@ All critical and high autonomy gaps now have fixes in PRs or merged.
 | CM-ASUS | RTX 2080 Ti 11GB | qwen2.5-coder:7b | triage |
 
 Note: Ollama restricted to triage-only (PR #613). Code-gen routes to Claude CLI/API.
+VM 300 runs qwen2.5-coder:32b (not 14b -- confirmed via /api/tags). 600s triage timeout acceptable; claude-haiku fallback works.
 
 ## Open Issues
 
-0 open issues. All resolved or closed.
+3 issues in samverk/devkit (E2E test issues):
+
+- #2 `status:needs-qc` -- docs audit (ran to completion, quality gate: output too short)
+- #3 `status:needs-qc` -- validate-issue-schema.sh (completed prior session)
+- #4 (no status) -- forge-wrappers tests (escalated after 4 timeout attempts; needs `status:needs-human`)
 
 ## Gaps to Full Autonomy
 
 ### Resolved This Session
 
-1. **Ollama output quality** -- FIXED: Restricted to triage-only + output validation guard (PR #613)
-2. **Claude CLI hangs** -- FIXED: 30s timeout + startup detection + auto-failover (PR #611)
-3. **No planning step** -- FIXED: Explore phase reads CLAUDE.md + sibling files (PR #614)
-4. **DevKit data on local machine** -- RESOLVED: Synapset covers knowledge, server self-sufficient (#609 closed)
-5. **Copilot review feedback** -- FIXED: PR watcher reads Copilot comments before merge (PR #610)
+1. **claude-cli startup timeout too short** -- FIXED: Increased 30s → 120s (PR #672, merged)
+   - Root cause: `claude --print` buffers ALL output until session ends; 30s was insufficient
+   - Confirmed via strace: process was making active Anthropic API TLS calls within window
+   - Validated: issue #2 responded in 78s (would have failed at 30s)
+
+2. **handleLabeled no-op causes missed re-queues** -- KNOWN GAP (not fixed this session)
+   - If `status:queued` is manually re-added, dispatcher doesn't pick it up
+   - Workaround: restart `samverk-dispatch.service` after manual label changes
 
 ### Medium (remaining)
 
-1. Synapset parse error (Synapset#62 filed)
+1. Synapset parse error (Synapset#62 filed) -- all memory lookups fail with `invalid character 'F'`
 2. DevKit dashboard native React (replace iframe)
-3. Multi-repo dispatch (code ready, config needed)
+3. handleLabeled is no-op -- re-queued issues require service restart to pick up
+4. Issue #4 escalated with no `status:needs-human` label (correction sets no label on escalate path)
+5. Quality gate "output too short" fires on triage-routed tasks (claude-haiku produces brief output for complex requests -- correct behavior, agent just needs to be re-run with higher complexity routing)
 
 ## Recommended Next Session
 
-1. Run dispatcher on real issues to validate autonomy end-to-end
-2. Address medium gaps (Synapset#62 parse error, DevKit dashboard native React)
-3. Consider filing new issues as needed
+1. Close devkit issues #2, #3, #4 or re-route with `complexity:cloud` to claude-sonnet
+2. Fix handleLabeled to re-route when `status:queued` is added (removes need for restart)
+3. Fix escalation path to set `status:needs-human` label on Gitea
+4. Synapset#62 parse error (affects all agent memory enrichment)
 
-## Session Summary (2026-03-17, session 3)
+## Session Summary (2026-03-18, session 4)
+
+E2E dispatcher test + root cause fix for claude-cli startup timeout.
+
+### Root Cause Found and Fixed
+
+**claude-cli `--print` mode buffers all output** until the entire agentic session completes.
+The old 30s `startupTimeout` was killing legitimate processes that were actively making
+Anthropic API calls but hadn't yet written any bytes. Confirmed via strace on CT 202.
+
+Fix: `startupTimeout` 30s → 120s (`internal/provider/claudecli/claudecli.go`).
+Validated: issue #2 (docs) responded in 78s -- would have been killed at 30s.
+
+### PRs Merged
+
+- #666 -- Asset hash change (index.html, carry-over from prior session)
+- #672 -- claude-cli startup timeout 30s → 120s (E2E test validation)
+
+### Dispatcher E2E Test Results
+
+Created 3 issues in Gitea `samverk/devkit` repo:
+
+- #2 (docs): claude-haiku completed in 78s, `status:needs-qc` (quality: output too short)
+- #3 (code-gen): completed prior session, `status:needs-qc`
+- #4 (test): timed out after 4 attempts, escalated (no human label set -- gap)
+
+### Secondary Findings
+
+- `handleLabeled` is a Phase 1 stub (no-op): manually re-adding `status:queued` requires service restart
+- `correction.escalate` path does not set any Gitea label
+- VM 300 actually runs `qwen2.5-coder:32b` (not 14b); 600s Ollama triage timeout is fine
+- Concurrent claude-cli processes (2 simultaneous) may interfere -- issue #4 timed out while #2 succeeded
+
+### Prior Session (2026-03-17, session 3)
 
 Housekeeping and bug fix session.
 
-### PRs Merged
+#### PRs Merged
 
 - #644 -- Decouple MCP handler init from GitHub env vars (Gitea #38)
 - #645 -- Phase-aware routing + set_project_phase MCP tool (Gitea #35, #36)
