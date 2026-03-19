@@ -3,6 +3,7 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -215,6 +216,9 @@ const (
 	// stalePollMultiplier defines how many poll intervals with no events
 	// triggers a stale-watcher warning log.
 	stalePollMultiplier = 10
+	// maxStalePeriodsBeforeReconnect is how many consecutive stale periods
+	// trigger a forced watcher reconnect.
+	maxStalePeriodsBeforeReconnect = 3
 )
 
 // watcherState tracks restart state for a single tracker watcher goroutine.
@@ -222,6 +226,7 @@ type watcherState struct {
 	entry          TrackerEntry
 	failures       []time.Time // timestamps of recent failures
 	currentBackoff time.Duration
+	cancel         context.CancelFunc // cancels the current Watch goroutine
 }
 
 // Run starts the watch loop and heartbeat ticker. It blocks until ctx is
@@ -244,6 +249,10 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 	}
 	errCh := make(chan watcherError, len(d.trackerEntries))
 
+	// stalePeriods counts consecutive heartbeat intervals with no events,
+	// used to trigger forced watcher reconnects.
+	stalePeriods := 0
+
 	// Build watcher state for each tracker.
 	watchers := make([]watcherState, len(d.trackerEntries))
 	for i := range d.trackerEntries {
@@ -254,15 +263,23 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 	}
 
 	// startWatcher launches a goroutine for the given tracker index.
+	// Each watcher gets its own cancellable context so stale detection can
+	// force a reconnect without cancelling the entire dispatcher.
 	startWatcher := func(idx int) {
+		if watchers[idx].cancel != nil {
+			watchers[idx].cancel() // cancel any previous goroutine
+		}
+		wctx, wcancel := context.WithCancel(ctx)
+		watchers[idx].cancel = wcancel
 		entry := watchers[idx].entry
 		go func() {
-			err := entry.Tracker.Watch(ctx, func(ev forge.Event) {
+			err := entry.Tracker.Watch(wctx, func(ev forge.Event) {
 				d.handleEvent(ctx, ev)
 				d.mu.Lock()
 				d.lastEventTime = time.Now()
 				d.mu.Unlock()
 			})
+			wcancel() // release the cancel func
 			errCh <- watcherError{idx: idx, err: err}
 		}()
 	}
@@ -294,9 +311,22 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			return ctx.Err()
 
 		case we := <-errCh:
-			// Context cancellation is a clean shutdown, not a failure.
+			// Parent context cancellation is a clean shutdown, not a failure.
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+
+			// Per-watcher context cancellation means a forced reconnect was
+			// requested (e.g., stale detection). Restart immediately without
+			// counting as a failure.
+			if errors.Is(we.err, context.Canceled) {
+				watchers[we.idx].currentBackoff = initialWatcherBackoff
+				d.logger.Info("watcher reconnecting after forced cancel",
+					zap.String("owner", watchers[we.idx].entry.Owner),
+					zap.String("repo", watchers[we.idx].entry.Repo),
+				)
+				startWatcher(we.idx)
+				continue
 			}
 
 			ws := &watchers[we.idx]
@@ -366,15 +396,36 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			d.metrics.PollCompleted(time.Since(pollStart))
 
 			// Stale watcher detection: warn if no events for a long time.
+			// After maxStalePeriodsBeforeReconnect consecutive stale periods,
+			// force-cancel and restart all watcher goroutines.
 			d.mu.Lock()
 			lastEvt := d.lastEventTime
 			d.mu.Unlock()
 			staleThreshold := time.Duration(stalePollMultiplier) * d.config.HeartbeatCheckInterval
 			if time.Since(lastEvt) > staleThreshold {
+				stalePeriods++
 				d.logger.Warn("no events received recently, watchers may be stale",
 					zap.Duration("since_last_event", time.Since(lastEvt)),
 					zap.Duration("threshold", staleThreshold),
+					zap.Int("stale_periods", stalePeriods),
 				)
+				if stalePeriods >= maxStalePeriodsBeforeReconnect {
+					stalePeriods = 0
+					d.logger.Warn("forcing watcher reconnect after consecutive stale periods",
+						zap.Int("threshold", maxStalePeriodsBeforeReconnect),
+					)
+					for i := range watchers {
+						if watchers[i].cancel != nil {
+							watchers[i].cancel()
+						}
+					}
+					// Reset lastEventTime so we don't immediately re-trigger.
+					d.mu.Lock()
+					d.lastEventTime = time.Now()
+					d.mu.Unlock()
+				}
+			} else {
+				stalePeriods = 0
 			}
 		}
 	}
@@ -507,10 +558,44 @@ func (d *Dispatcher) handleClosed(ctx context.Context, ev forge.Event) error {
 	return d.unblockDependents(ctx, ev.IssueNumber)
 }
 
-// handleLabeled re-evaluates routing when a status label changes.
-func (d *Dispatcher) handleLabeled(_ context.Context, _ forge.Event) error {
-	// Phase 1: no re-evaluation on label changes beyond what handleOpened covers.
-	return nil
+// handleLabeled re-evaluates routing when a status label is added.
+// When status:queued is added and the issue has no active status, route it
+// the same way handleOpened does — this handles issues re-queued at runtime
+// (e.g., after a correction or manual label change) without requiring a
+// dispatcher restart.
+func (d *Dispatcher) handleLabeled(ctx context.Context, ev forge.Event) error {
+	if ev.Label != "status:queued" {
+		return nil
+	}
+
+	tracker := d.trackerFor(ev.Owner, ev.Repo)
+	if tracker == nil {
+		return fmt.Errorf("no tracker for %s/%s", ev.Owner, ev.Repo)
+	}
+
+	issue, err := tracker.GetIssue(ctx, ev.IssueNumber)
+	if err != nil {
+		return fmt.Errorf("get issue #%d: %w", ev.IssueNumber, err)
+	}
+
+	labels := make(map[string]bool, len(issue.Labels))
+	for _, l := range issue.Labels {
+		labels[l] = true
+	}
+	// Skip if already actively worked on or awaiting human.
+	if labels["status:needs-human"] || labels["status:human-pending"] ||
+		labels["status:blocked"] || labels["status:claimed"] || labels["status:in-progress"] {
+		d.logger.Debug("skipping re-queued issue with active status", zap.Int("issue", issue.Number))
+		return nil
+	}
+
+	agentType, fm, err := d.classify(ctx, ev.Owner, ev.Repo, issue)
+	if err != nil {
+		d.recordFailure(ctx, issue.Number, "", "", "", err.Error(), 0)
+		return d.escalate(ctx, ev.Owner, ev.Repo, issue.Number, "invalid_frontmatter", err.Error())
+	}
+
+	return d.route(ctx, ev.Owner, ev.Repo, issue, agentType, fm)
 }
 
 // handleCommented checks for heartbeat comments from agents.
@@ -562,6 +647,9 @@ func (d *Dispatcher) escalate(ctx context.Context, owner, repo string, issueNumb
 		"ESCALATE [dispatcher] [%s]\ntrigger: %s\ndetails: %s\naction_needed: Manual review required.",
 		time.Now().UTC().Format(time.RFC3339), trigger, details,
 	)
+	// Clear in-progress status labels before marking as needs-human.
+	_ = tracker.RemoveLabel(ctx, issueNumber, "status:claimed")
+	_ = tracker.RemoveLabel(ctx, issueNumber, "status:in-progress")
 	if err := tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
 		return fmt.Errorf("add needs-human label: %w", err)
 	}

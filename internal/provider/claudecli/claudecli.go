@@ -36,9 +36,10 @@ const (
 	// (prompt → API → tool call → API → first output) to complete.
 	// In --print mode the CLI buffers all output until the session ends, so
 	// the first byte may not arrive until after multiple tool-call iterations.
-	// 120 s covers complex code-gen prompts while still catching true crashes
-	// (which exit the process and close the pipe long before the timer fires).
-	startupTimeout = 120 * time.Second
+	// Complex code-gen issues on claude-sonnet regularly exceed 120s before
+	// producing any output (observed: devkit#7 timed out 3x at 120s). 300s
+	// still catches true crashes which close the pipe long before the timer.
+	startupTimeout = 300 * time.Second
 
 	// staleOutputTimeout is how long Chat waits for new bytes before treating
 	// the process as hung. Must be shorter than the dispatcher heartbeat timeout.
