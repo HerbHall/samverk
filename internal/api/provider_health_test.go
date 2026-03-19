@@ -85,6 +85,7 @@ func TestProviderHealth_LastSuccessAt(t *testing.T) {
 	ts := buildHealthAPI(t, st, []string{"claude-1"}, true, nil)
 
 	resp := doGet(t, ts.URL+"/api/v1/providers/health")
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
@@ -120,6 +121,7 @@ func TestProviderHealth_NeverSucceeded(t *testing.T) {
 	ts := buildHealthAPI(t, st, []string{"claude-1"}, true, nil)
 
 	resp := doGet(t, ts.URL+"/api/v1/providers/health")
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
@@ -158,6 +160,7 @@ func TestProviderHealth_RoutingChains(t *testing.T) {
 	ts := buildHealthAPI(t, st, []string{"claude-1"}, true, routingReg)
 
 	resp := doGet(t, ts.URL+"/api/v1/providers/health")
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
@@ -185,6 +188,7 @@ func TestProviderHealth_NoRegistry(t *testing.T) {
 	ts := buildHealthAPI(t, st, []string{"claude-1"}, true, nil)
 
 	resp := doGet(t, ts.URL+"/api/v1/providers/health")
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
