@@ -42,8 +42,9 @@ type API struct {
 	hostMetrics    *hostmetrics.Collector   // may be nil if collector not started
 	capacity       *capacityDTO            // may be nil if no providers configured
 	logAnalyst     *loganalyst.Analyst      // may be nil if logstore not configured
-	healthMonitor  *provider.HealthMonitor  // may be nil if health monitor not started
-	workers        *workerRegistry         // in-memory registry of PC agent workers
+	healthMonitor    *provider.HealthMonitor  // may be nil if health monitor not started
+	providerRegistry *provider.Registry       // may be nil if no provider registry configured
+	workers          *workerRegistry          // in-memory registry of PC agent workers
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
 	scalingMax     int

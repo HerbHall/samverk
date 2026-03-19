@@ -340,6 +340,11 @@ func serveCmd() *cobra.Command {
 						})
 					}
 					apiHandler.SetCapacity(pdtos, regCfg.Routing)
+					// Build a routing-only registry for the health endpoint so it can
+					// include routing_chains without requiring full provider instantiation.
+					routingReg := provider.NewRegistry(logger)
+					routingReg.SetRouting(regCfg.Routing)
+					apiHandler.SetProviderRegistry(routingReg)
 					logger.Info("provider capacity loaded for dashboard", zap.Int("providers", len(pdtos)))
 				} else if !os.IsNotExist(pcErr) {
 					logger.Warn("could not load providers config for dashboard", zap.Error(pcErr))
