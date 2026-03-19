@@ -111,6 +111,12 @@ func (a *API) SetLogAnalyst(la *loganalyst.Analyst) {
 	a.logAnalyst = la
 }
 
+// SetProviderRegistry attaches the provider registry so the health endpoint
+// can include routing_chains in its response. Call before serving. May be nil.
+func (a *API) SetProviderRegistry(reg *provider.Registry) {
+	a.providerRegistry = reg
+}
+
 // SetProjectRegistry attaches the MCP project registry so the projects endpoint
 // can list registered projects. Call before serving. May be nil (single-project mode).
 func (a *API) SetProjectRegistry(reg *internalmcp.ProjectRegistry) {
