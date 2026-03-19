@@ -192,7 +192,7 @@ func (h *Handler) handleGetSessionLog(
 
 // handleGetProviderHealth returns health status of all configured providers.
 func (h *Handler) handleGetProviderHealth(
-	_ context.Context,
+	ctx context.Context,
 	_ *gosdk.CallToolRequest,
 	_ getProviderHealthInput,
 ) (*gosdk.CallToolResult, any, error) {
@@ -206,15 +206,27 @@ func (h *Handler) handleGetProviderHealth(
 
 	allHealth := h.healthM.AllHealth()
 
+	// Fetch last-success timestamps per provider if store is available.
+	var lastSuccess map[string]time.Time
+	if h.store != nil {
+		var storeErr error
+		lastSuccess, storeErr = h.store.LatestSuccessByProvider(ctx)
+		if storeErr != nil {
+			// Non-fatal: omit last_success_at rather than failing the whole call.
+			lastSuccess = nil
+		}
+	}
+
 	type healthEntry struct {
-		Name        string `json:"name"`
-		Healthy     bool   `json:"healthy"`
-		LastChecked string `json:"last_checked,omitempty"`
-		LastHealthy string `json:"last_healthy,omitempty"`
-		Error       string `json:"error,omitempty"`
-		ModelLoaded bool   `json:"model_loaded,omitempty"`
-		VRAMFree    int64  `json:"vram_free_bytes,omitempty"`
-		VRAMTotal   int64  `json:"vram_total_bytes,omitempty"`
+		Name          string `json:"name"`
+		Healthy       bool   `json:"healthy"`
+		LastChecked   string `json:"last_checked,omitempty"`
+		LastHealthy   string `json:"last_healthy,omitempty"`
+		LastSuccessAt string `json:"last_success_at,omitempty"`
+		Error         string `json:"error,omitempty"`
+		ModelLoaded   bool   `json:"model_loaded,omitempty"`
+		VRAMFree      int64  `json:"vram_free_bytes,omitempty"`
+		VRAMTotal     int64  `json:"vram_total_bytes,omitempty"`
 	}
 
 	entries := make([]healthEntry, 0, len(allHealth))
@@ -234,13 +246,27 @@ func (h *Handler) handleGetProviderHealth(
 		if !ph.LastHealthy.IsZero() {
 			entry.LastHealthy = ph.LastHealthy.UTC().Format(time.RFC3339)
 		}
+		if lastSuccess != nil {
+			if t, ok := lastSuccess[ph.Name]; ok {
+				entry.LastSuccessAt = t.UTC().Format(time.RFC3339)
+			} else {
+				entry.LastSuccessAt = "never"
+			}
+		}
 		entries = append(entries, entry)
 	}
 
-	result, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"providers": entries,
 		"count":     len(entries),
-	})
+	}
+
+	// Include routing chain configuration if provider registry is available.
+	if h.provReg != nil {
+		payload["routing_chains"] = h.provReg.Routing()
+	}
+
+	result, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshalling provider health: %w", err)
 	}

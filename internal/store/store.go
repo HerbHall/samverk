@@ -73,6 +73,9 @@ type Store interface {
 	GetLastCheckIn(ctx context.Context) (time.Time, error)
 	SetLastCheckIn(ctx context.Context, t time.Time) error
 
+	// Provider success timestamps (read by MCP get_provider_health for enriched status)
+	LatestSuccessByProvider(ctx context.Context) (map[string]time.Time, error)
+
 	Close() error
 }
 
