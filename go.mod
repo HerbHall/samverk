@@ -16,6 +16,7 @@ require (
 
 require (
 	github.com/42wim/httpsig v1.2.3 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
