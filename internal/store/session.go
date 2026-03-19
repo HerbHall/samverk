@@ -137,6 +137,33 @@ func (s *SQLiteStore) ListSessions(ctx context.Context, status models.SessionSta
 	return result, rows.Err()
 }
 
+// LatestSuccessByProvider returns the most recent successful session completion
+// timestamp per provider name. Providers with no successful sessions are omitted.
+func (s *SQLiteStore) LatestSuccessByProvider(ctx context.Context) (map[string]time.Time, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT provider, MAX(finished_at) FROM sessions
+		 WHERE status = 'completed' AND finished_at IS NOT NULL
+		 GROUP BY provider`)
+	if err != nil {
+		return nil, fmt.Errorf("query latest success by provider: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string]time.Time)
+	for rows.Next() {
+		var providerName, finishedAt string
+		if scanErr := rows.Scan(&providerName, &finishedAt); scanErr != nil {
+			return nil, fmt.Errorf("scan provider success row: %w", scanErr)
+		}
+		t, parseErr := time.Parse(time.RFC3339, finishedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse finished_at for provider %q: %w", providerName, parseErr)
+		}
+		result[providerName] = t
+	}
+	return result, rows.Err()
+}
+
 // scanSession scans a single session from a *sql.Row.
 func scanSession(row *sql.Row) (*models.Session, error) {
 	var (

@@ -295,6 +295,117 @@ func TestGetProviderHealth_Success(t *testing.T) {
 	}
 }
 
+func TestGetProviderHealth_RoutingChains(t *testing.T) {
+	now := time.Date(2026, 3, 19, 10, 0, 0, 0, time.UTC)
+	health := &mockProviderHealth{
+		health: []provider.ProviderHealth{
+			{
+				Name:        "claude-sonnet",
+				Healthy:     true,
+				LastChecked: now,
+				LastHealthy: now,
+			},
+		},
+	}
+	ts := newTestMCPServerWithObservability(t, nil, health, nil)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      7,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name":      "get_provider_health",
+			"arguments": map[string]any{},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+	text := result.Content[0].Text
+
+	// When no provider registry is set, routing_chains key must be absent.
+	if strings.Contains(text, "routing_chains") {
+		t.Errorf("expected no routing_chains without registry, got %q", text)
+	}
+}
+
+func TestGetProviderHealth_WithRegistry(t *testing.T) {
+	now := time.Date(2026, 3, 19, 10, 0, 0, 0, time.UTC)
+	health := &mockProviderHealth{
+		health: []provider.ProviderHealth{
+			{
+				Name:        "claude-sonnet",
+				Healthy:     true,
+				LastChecked: now,
+				LastHealthy: now,
+			},
+		},
+	}
+
+	reg := provider.NewRegistry(nil)
+	reg.SetRouting(map[string][]string{
+		"default": {"claude-sonnet"},
+		"triage":  {"claude-sonnet"},
+	})
+
+	h := internalmcp.NewHandler(&mockTracker{}, nil, nil, nil, nil)
+	h.SetProviderHealth(health)
+	h.SetProviderRegistry(reg)
+	handler := internalmcp.NewHTTPHandler(h)
+	ts := httptest.NewServer(handler)
+	t.Cleanup(ts.Close)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      8,
+		Method:  "tools/call",
+		Params: map[string]any{
+			"name":      "get_provider_health",
+			"arguments": map[string]any{},
+		},
+	})
+
+	var resp jsonRPCResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, respBody)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in response")
+	}
+	text := result.Content[0].Text
+
+	if !strings.Contains(text, "routing_chains") {
+		t.Errorf("expected routing_chains in response, got %q", text)
+	}
+	if !strings.Contains(text, "default") {
+		t.Errorf("expected 'default' chain in routing_chains, got %q", text)
+	}
+	if !strings.Contains(text, "triage") {
+		t.Errorf("expected 'triage' chain in routing_chains, got %q", text)
+	}
+}
+
 func TestGetProviderHealth_NilMonitor(t *testing.T) {
 	ts := newTestMCPServerWithObservability(t, nil, nil, nil)
 

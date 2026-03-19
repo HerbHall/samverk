@@ -11,6 +11,7 @@ import (
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/internal/version"
 )
@@ -35,6 +36,7 @@ type Handler struct {
 	work          WorkCoordinator         // may be nil (dispatcher not connected)
 	healthM       providerHealthSource   // may be nil (no health monitor)
 	logs          logQuerier             // may be nil (no log store)
+	provReg       *provider.Registry    // may be nil (no provider registry for routing chains)
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
@@ -90,6 +92,11 @@ func (h *Handler) SetProviderHealth(ph providerHealthSource) {
 // SetLogQuerier attaches a log querier for the get_session_log tool.
 func (h *Handler) SetLogQuerier(lq logQuerier) {
 	h.logs = lq
+}
+
+// SetProviderRegistry attaches a provider registry for routing chain and last-success data.
+func (h *Handler) SetProviderRegistry(reg *provider.Registry) {
+	h.provReg = reg
 }
 
 // activeOwnerRepo returns the owner and repo for the currently active project.
