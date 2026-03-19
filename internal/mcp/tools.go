@@ -51,6 +51,7 @@ type createIssueInput struct {
 
 // listIssuesInput is the typed input for the list_issues tool.
 type listIssuesInput struct {
+	Project  string   `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 	State    string   `json:"state,omitempty" jsonschema:"filter by state: open or closed"`
 	Labels   []string `json:"labels,omitempty" jsonschema:"filter by label names"`
 	Assignee string   `json:"assignee,omitempty" jsonschema:"filter by assignee username"`
@@ -409,6 +410,11 @@ func (h *Handler) handleListIssues(
 	_ *gosdk.CallToolRequest,
 	input listIssuesInput,
 ) (*gosdk.CallToolResult, any, error) {
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	opts := &forge.ListOptions{
 		State:    forge.State(input.State),
 		Labels:   input.Labels,
@@ -417,7 +423,7 @@ func (h *Handler) handleListIssues(
 		PerPage:  input.PerPage,
 	}
 
-	issues, err := h.activeTracker().ListIssues(ctx, opts)
+	issues, err := tracker.ListIssues(ctx, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing issues: %w", err)
 	}

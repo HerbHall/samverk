@@ -13,9 +13,10 @@ import (
 
 // searchIssuesInput is the typed input for the search_issues tool.
 type searchIssuesInput struct {
-	Query  string   `json:"query" jsonschema:"required,search string to match against issue titles and bodies"`
-	State  string   `json:"state,omitempty" jsonschema:"filter by state: open, closed, or all (default: open)"`
-	Labels []string `json:"labels,omitempty" jsonschema:"optional additional label filter"`
+	Project string   `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
+	Query   string   `json:"query" jsonschema:"required,search string to match against issue titles and bodies"`
+	State   string   `json:"state,omitempty" jsonschema:"filter by state: open, closed, or all (default: open)"`
+	Labels  []string `json:"labels,omitempty" jsonschema:"optional additional label filter"`
 }
 
 // searchPRsInput is the typed input for the search_prs tool.
@@ -56,6 +57,11 @@ func (h *Handler) handleSearchIssues(
 		return nil, nil, fmt.Errorf("query must not be empty")
 	}
 
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	state := forge.StateOpen
 	switch forge.State(input.State) {
 	case forge.StateClosed:
@@ -74,7 +80,7 @@ func (h *Handler) handleSearchIssues(
 		IsPullRequest: &isPR,
 	}
 
-	issues, err := h.activeTracker().SearchIssues(ctx, opts)
+	issues, err := tracker.SearchIssues(ctx, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("searching issues: %w", err)
 	}
