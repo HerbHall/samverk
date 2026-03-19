@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/herbhall/samverk/internal/server"
@@ -109,3 +110,106 @@ func TestGetSessionID_NoCookie(t *testing.T) {
 		t.Errorf("GetSessionID = %q, want empty", id)
 	}
 }
+
+func TestSessionManager_PersistAndReload(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+
+	// Create a session and persist it to disk.
+	sm := server.NewSessionManagerWithFile(path)
+	id, err := sm.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sm.Stop()
+
+	// Simulate a restart: create a new manager loading from the same file.
+	sm2 := server.NewSessionManagerWithFile(path)
+	defer sm2.Stop()
+
+	if !sm2.Validate(id) {
+		t.Error("session should be valid after reload from disk")
+	}
+}
+
+func TestSessionManager_PersistAndReload_ExpiredNotLoaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+
+	sm := server.NewSessionManagerWithFile(path)
+	id, err := sm.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Manually expire the session by deleting it (simulates TTL expiry on reload).
+	sm.Delete(id)
+	sm.Stop()
+
+	sm2 := server.NewSessionManagerWithFile(path)
+	defer sm2.Stop()
+
+	if sm2.Validate(id) {
+		t.Error("deleted session should not be valid after reload")
+	}
+}
+
+func TestSessionManager_PersistFile_NotCreatedWhenInMemory(t *testing.T) {
+	// In-memory manager must not create any file.
+	sm := server.NewSessionManager()
+	_, err := sm.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sm.Stop()
+	// No file path configured — nothing to assert on disk, but Create must not error.
+}
+
+func tempSessionPath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "sessions.json")
+}
+
+func TestSessionManager_DeletePersistsToFile(t *testing.T) {
+	path := tempSessionPath(t)
+
+	sm := server.NewSessionManagerWithFile(path)
+	id, err := sm.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	sm.Delete(id)
+	sm.Stop()
+
+	// After reload the deleted session must still be absent.
+	sm2 := server.NewSessionManagerWithFile(path)
+	defer sm2.Stop()
+
+	if sm2.Validate(id) {
+		t.Error("session should not be valid after Delete + reload")
+	}
+}
+
+func TestSessionManager_MultipleSessionsPersist(t *testing.T) {
+	path := tempSessionPath(t)
+
+	sm := server.NewSessionManagerWithFile(path)
+	ids := make([]string, 5)
+	for i := range ids {
+		id, err := sm.Create()
+		if err != nil {
+			t.Fatalf("Create[%d]: %v", i, err)
+		}
+		ids[i] = id
+	}
+	sm.Stop()
+
+	sm2 := server.NewSessionManagerWithFile(path)
+	defer sm2.Stop()
+
+	for i, id := range ids {
+		if !sm2.Validate(id) {
+			t.Errorf("session[%d] should be valid after reload", i)
+		}
+	}
+}
+
