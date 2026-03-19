@@ -461,3 +461,32 @@ func TestChatNonTimeout_NotWrappedAsTimeout(t *testing.T) {
 		t.Error("expected IsRetryable=false for non-timeout error")
 	}
 }
+
+func TestOllamaUnavailable_IsRetryable(t *testing.T) {
+	// Point at a port with nothing listening to simulate connection refused.
+	c := New("http://127.0.0.1:1")
+
+	_, err := c.Chat(context.Background(), provider.ChatRequest{
+		Model: "qwen2.5-coder:14b",
+		Messages: []provider.Message{
+			{Role: provider.RoleUser, Content: "Hello"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for unreachable server, got nil")
+	}
+
+	// Verify the error is an ErrProviderUnavailable.
+	var unavail *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavail) {
+		t.Fatalf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+	if unavail.Provider != "ollama" {
+		t.Errorf("Provider = %q, want %q", unavail.Provider, "ollama")
+	}
+
+	// Verify it's retryable so the pool triggers failover.
+	if !provider.IsRetryable(err) {
+		t.Error("expected IsRetryable=true for connection refused error")
+	}
+}
