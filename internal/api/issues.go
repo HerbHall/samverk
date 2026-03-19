@@ -47,37 +47,87 @@ func toIssueResponse(iss *forge.Issue) issueResponse {
 	return r
 }
 
+const (
+	defaultLimit = 50
+	maxLimit     = 200
+)
+
+// issueListResponse wraps the issues array with pagination metadata.
+type issueListResponse struct {
+	Issues  []issueResponse `json:"issues"`
+	Total   int             `json:"total"`
+	Limit   int             `json:"limit"`
+	Offset  int             `json:"offset"`
+	Page    int             `json:"page"`
+	PerPage int             `json:"per_page"`
+}
+
 // handleListIssues handles GET /api/v1/issues.
-// Supports query params: state, labels, page, per_page.
+// Supports query params: state, labels, limit, offset, page, per_page.
+// limit/offset take precedence over page/per_page when provided.
 func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	if a.tracker == nil {
 		writeError(w, http.StatusServiceUnavailable, "issue tracker not available")
 		return
 	}
 
+	q := r.URL.Query()
 	opts := &forge.ListOptions{}
 
-	if state := r.URL.Query().Get("state"); state != "" {
+	if state := q.Get("state"); state != "" {
 		opts.State = forge.State(state)
 	} else {
 		opts.State = forge.StateOpen
 	}
 
-	if labels := r.URL.Query().Get("labels"); labels != "" {
+	if labels := q.Get("labels"); labels != "" {
 		opts.Labels = strings.Split(labels, ",")
 	}
 
-	if page := r.URL.Query().Get("page"); page != "" {
-		if n, err := strconv.Atoi(page); err == nil && n > 0 {
-			opts.Page = n
+	// Resolve limit/offset (new style) vs page/per_page (legacy style).
+	limit := defaultLimit
+	offset := 0
+
+	hasLimit := q.Has("limit")
+	hasOffset := q.Has("offset")
+
+	if hasLimit {
+		if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if hasOffset {
+		if n, err := strconv.Atoi(q.Get("offset")); err == nil && n >= 0 {
+			offset = n
 		}
 	}
 
-	if perPage := r.URL.Query().Get("per_page"); perPage != "" {
-		if n, err := strconv.Atoi(perPage); err == nil && n > 0 {
-			opts.PerPage = n
+	// Cap limit.
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+
+	// Legacy page/per_page: only used when limit/offset are not provided.
+	if !hasLimit && !hasOffset {
+		if perPage := q.Get("per_page"); perPage != "" {
+			if n, err := strconv.Atoi(perPage); err == nil && n > 0 {
+				limit = n
+				if limit > maxLimit {
+					limit = maxLimit
+				}
+			}
+		}
+		if page := q.Get("page"); page != "" {
+			if n, err := strconv.Atoi(page); err == nil && n > 0 {
+				offset = (n - 1) * limit
+			}
 		}
 	}
+
+	// Compute 1-based page from offset/limit for the forge call.
+	page := offset/limit + 1
+	opts.Page = page
+	opts.PerPage = limit
 
 	issues, err := a.tracker.ListIssues(r.Context(), opts)
 	if err != nil {
@@ -85,12 +135,19 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := make([]issueResponse, 0, len(issues))
+	issueList := make([]issueResponse, 0, len(issues))
 	for _, iss := range issues {
-		resp = append(resp, toIssueResponse(iss))
+		issueList = append(issueList, toIssueResponse(iss))
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, issueListResponse{
+		Issues:  issueList,
+		Total:   len(issues),
+		Limit:   limit,
+		Offset:  offset,
+		Page:    page,
+		PerPage: limit,
+	})
 }
 
 // handleGetIssue handles GET /api/v1/issues/{number}.

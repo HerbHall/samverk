@@ -11,6 +11,7 @@ import (
 	"github.com/herbhall/samverk/internal/hostmetrics"
 	"github.com/herbhall/samverk/internal/loganalyst"
 	"github.com/herbhall/samverk/internal/logstore"
+	internalmcp "github.com/herbhall/samverk/internal/mcp"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
@@ -42,14 +43,16 @@ type API struct {
 	hostMetrics    *hostmetrics.Collector   // may be nil if collector not started
 	capacity       *capacityDTO            // may be nil if no providers configured
 	logAnalyst     *loganalyst.Analyst      // may be nil if logstore not configured
-	healthMonitor  *provider.HealthMonitor  // may be nil if health monitor not started
-	workers        *workerRegistry         // in-memory registry of PC agent workers
+	healthMonitor    *provider.HealthMonitor  // may be nil if health monitor not started
+	providerRegistry *provider.Registry       // may be nil if no provider registry configured
+	workers          *workerRegistry          // in-memory registry of PC agent workers
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
 	scalingMax     int
-	synapsetProxy  *SynapsetProxy    // may be nil; proxies Synapset API requests
-	logStore       *logstore.LogStore // may be nil; for log query API
-	chatAPIKey     string            // Anthropic API key for chat proxy; empty = use env
+	projectRegistry *internalmcp.ProjectRegistry // may be nil; single-project mode
+	synapsetProxy   *SynapsetProxy               // may be nil; proxies Synapset API requests
+	logStore        *logstore.LogStore            // may be nil; for log query API
+	chatAPIKey      string                        // Anthropic API key for chat proxy; empty = use env
 	chatRateLimit  *chatRateLimit    // rate limiter for chat endpoint
 	history        []historyEntry    // ring buffer of recent snapshots; guarded by historyMu
 	logger         *zap.Logger
@@ -108,6 +111,18 @@ func (a *API) SetLogAnalyst(la *loganalyst.Analyst) {
 	a.logAnalyst = la
 }
 
+// SetProviderRegistry attaches the provider registry so the health endpoint
+// can include routing_chains in its response. Call before serving. May be nil.
+func (a *API) SetProviderRegistry(reg *provider.Registry) {
+	a.providerRegistry = reg
+}
+
+// SetProjectRegistry attaches the MCP project registry so the projects endpoint
+// can list registered projects. Call before serving. May be nil (single-project mode).
+func (a *API) SetProjectRegistry(reg *internalmcp.ProjectRegistry) {
+	a.projectRegistry = reg
+}
+
 // RegisterRoutes registers all API endpoints on the given mux.
 // Routes use Go 1.22+ method+path patterns.
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
@@ -133,6 +148,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/logs", a.handleListLogs)
 	mux.HandleFunc("GET /api/v1/logs/summary", a.handleLogSummary)
 	mux.HandleFunc("POST /api/v1/chat", a.handleChat)
+	mux.HandleFunc("GET /api/v1/projects", a.handleListProjects)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)
