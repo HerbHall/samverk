@@ -18,15 +18,23 @@ func BearerAuth(token string, keyStore *KeyStore) func(http.Handler) http.Handle
 				return
 			}
 
+			// bearerUnauthorized writes a 401 with WWW-Authenticate so that MCP
+			// clients (e.g. Claude.ai) recognise bearer-token auth and do not
+			// fall back to opening a browser-based login flow.
+			bearerUnauthorized := func(msg string) {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="Samverk"`)
+				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: msg})
+			}
+
 			auth := r.Header.Get("Authorization")
 			if auth == "" {
-				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "missing authorization header"})
+				bearerUnauthorized("missing authorization header")
 				return
 			}
 
 			const prefix = "Bearer "
 			if !strings.HasPrefix(auth, prefix) {
-				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "invalid authorization format"})
+				bearerUnauthorized("invalid authorization format")
 				return
 			}
 
@@ -46,7 +54,7 @@ func BearerAuth(token string, keyStore *KeyStore) func(http.Handler) http.Handle
 				}
 			}
 
-			writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "invalid token"})
+			bearerUnauthorized("invalid token")
 		})
 	}
 }
