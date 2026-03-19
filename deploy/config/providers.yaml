@@ -21,6 +21,22 @@ providers:
     allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
     max_turns: 25
 
+  claudecli-nzxt:
+    type: claude-cli
+    base_url: http://192.168.1.202:11434
+    default_model: qwen3-coder:30b
+    timeout_seconds: 600
+    allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
+    max_turns: 25
+
+  claudecli-vm300:
+    type: claude-cli
+    base_url: http://192.168.1.207:11434
+    default_model: qwen2.5-coder:32b
+    timeout_seconds: 600
+    allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
+    max_turns: 25
+
   ollama-nzxt:
     type: ollama
     base_url: http://192.168.1.202:11434
@@ -46,4 +62,5 @@ routing:
   default:  [ollama-nzxt, claude-sonnet]
   complex:  [claude-opus, claude-sonnet]
   local:    [ollama-nzxt, ollama-vm300, ollama-cmasus, claude-sonnet]
-  frontend: [claude-sonnet]
+  frontend:  [claude-sonnet]
+  local-cc:  [claudecli-nzxt, claudecli-vm300, claude-sonnet]
