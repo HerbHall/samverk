@@ -397,6 +397,71 @@ func TestGetDiff_Fallback(t *testing.T) {
 	}
 }
 
+func TestGetDiff_ExtractsPatches(t *testing.T) {
+	// Compare API returns JSON with a commit SHA; commit detail returns patch content.
+	compareJSON := `{"commits":[{"sha":"abc111"}]}`
+	commitJSON := `{"files":[{"filename":"main.go","patch":"diff --git a/main.go b/main.go\n@@ -1 +1,2 @@\n+// new line\n","additions":1,"deletions":0}]}`
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/compare/main...feature", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(compareJSON))
+	})
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/git/commits/abc111", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(commitJSON))
+	})
+
+	c, _ := newTestClient(t, handler)
+
+	diff, err := c.GetDiff(context.Background(), "main", "feature")
+	if err != nil {
+		t.Fatalf("GetDiff: %v", err)
+	}
+	if !strings.Contains(diff, "diff --git") {
+		t.Errorf("expected patch hunks in output, got %q", diff)
+	}
+	if !strings.Contains(diff, "// new line") {
+		t.Errorf("expected patch content in output, got %q", diff)
+	}
+}
+
+func TestGetDiff_FallbackToStats(t *testing.T) {
+	// Compare API returns a commit SHA but commit detail has empty patch fields.
+	compareJSON := `{"commits":[{"sha":"bbb222"}]}`
+	commitJSON := `{"files":[{"filename":"README.md","patch":"","additions":3,"deletions":1}]}`
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/compare/main...feature", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(compareJSON))
+	})
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/git/commits/bbb222", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(commitJSON))
+	})
+
+	c, _ := newTestClient(t, handler)
+
+	diff, err := c.GetDiff(context.Background(), "main", "feature")
+	if err != nil {
+		t.Fatalf("GetDiff: %v", err)
+	}
+	if strings.Contains(diff, "{") {
+		t.Errorf("output should not contain raw JSON, got %q", diff)
+	}
+	if !strings.Contains(diff, "README.md") {
+		t.Errorf("expected filename in stats fallback, got %q", diff)
+	}
+	if !strings.Contains(diff, "+3") {
+		t.Errorf("expected addition count in stats fallback, got %q", diff)
+	}
+}
+
 func TestSearchCode_NotImplemented(t *testing.T) {
 	handler := http.NewServeMux()
 	c, _ := newTestClient(t, handler)

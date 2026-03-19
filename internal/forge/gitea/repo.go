@@ -3,6 +3,7 @@ package gitea
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,21 +88,123 @@ func (c *Client) GetDiff(ctx context.Context, base, head string) (string, error)
 		}
 
 		// JSON response from the compare API — extract commit info and file list.
-		return c.formatCompareJSON(content, base, head), nil
+		return c.formatCompareJSON(ctx, content, base, head), nil
 	}
 
 	// Fallback: use the SDK's CompareCommits for a summary.
 	return c.getDiffFallback(base, head)
 }
 
-// formatCompareJSON builds a human-readable diff summary from the compare API JSON.
-func (c *Client) formatCompareJSON(body, base, head string) string {
+// compareResponse is a minimal struct for parsing the Gitea compare API JSON.
+type compareResponse struct {
+	Commits []struct {
+		SHA string `json:"sha"`
+	} `json:"commits"`
+}
+
+// commitFile holds patch information for a single file in a commit.
+type commitFile struct {
+	Filename  string `json:"filename"`
+	Patch     string `json:"patch"`
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+}
+
+// commitDetail is a minimal struct for the Gitea git/commits/{sha} response.
+type commitDetail struct {
+	Files []commitFile `json:"files"`
+}
+
+// formatCompareJSON extracts commit SHAs from the compare API JSON response,
+// fetches the patch content for each commit, and returns a unified diff string.
+// If no patches are available, it falls back to a human-readable file stats summary.
+func (c *Client) formatCompareJSON(ctx context.Context, body, base, head string) string {
+	var compare compareResponse
+	if err := json.Unmarshal([]byte(body), &compare); err != nil || len(compare.Commits) == 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "Comparing %s...%s\n", base, head)
+		fmt.Fprintf(&b, "(no commits found in range)\n")
+		return b.String()
+	}
+
+	var patches strings.Builder
+	var stats strings.Builder
+	hasPatch := false
+
+	for i := range compare.Commits {
+		sha := compare.Commits[i].SHA
+		if sha == "" {
+			continue
+		}
+
+		files, err := c.fetchCommitPatch(ctx, sha)
+		if err != nil {
+			continue
+		}
+
+		for j := range files {
+			if files[j].Patch != "" {
+				patches.WriteString(files[j].Patch)
+				if !strings.HasSuffix(files[j].Patch, "\n") {
+					patches.WriteByte('\n')
+				}
+				hasPatch = true
+			} else {
+				fmt.Fprintf(&stats, "%s (+%d -%d)\n",
+					files[j].Filename, files[j].Additions, files[j].Deletions)
+			}
+		}
+	}
+
+	if hasPatch {
+		return patches.String()
+	}
+
+	// Fallback: no patch content available — return file stats summary.
 	var b strings.Builder
 	fmt.Fprintf(&b, "Comparing %s...%s\n", base, head)
-	// The raw JSON includes commits and possibly file info; include it verbatim
-	// so callers get useful content even when the .diff suffix isn't supported.
-	b.WriteString(body)
+	if stats.Len() > 0 {
+		b.WriteString(stats.String())
+	} else {
+		fmt.Fprintf(&b, "(no file changes found)\n")
+	}
 	return b.String()
+}
+
+// fetchCommitPatch retrieves file patch content for a single commit SHA
+// using the Gitea git/commits/{sha} endpoint.
+func (c *Client) fetchCommitPatch(ctx context.Context, sha string) ([]commitFile, error) {
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/git/commits/%s",
+		c.baseURL, c.owner, c.repo, sha)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("gitea: create commit patch request: %w", err)
+	}
+	req.Header.Set("Authorization", "token "+c.token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is from trusted baseURL config
+	if err != nil {
+		return nil, fmt.Errorf("gitea: fetch commit patch: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitea: fetch commit patch %s: status %d", sha, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("gitea: read commit patch response: %w", err)
+	}
+
+	var detail commitDetail
+	if err := json.Unmarshal(body, &detail); err != nil {
+		return nil, fmt.Errorf("gitea: parse commit patch response: %w", err)
+	}
+
+	return detail.Files, nil
 }
 
 // getDiffFallback returns a summary when the raw diff endpoint is unavailable.
