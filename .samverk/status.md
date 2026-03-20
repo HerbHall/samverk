@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-20T16:00:00Z
+updated: 2026-03-20T21:00:00Z
 updated_by: claude-code
 ---
 
@@ -35,7 +35,7 @@ Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime vali
 
 ## Open Issues
 
-0 open issues. Waves 7 and 8 complete.
+0 open issues. Waves 7, 8, and 9 complete.
 
 ## Gaps to Full Autonomy
 
@@ -55,9 +55,27 @@ Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime vali
 
 ## Recommended Next Session
 
-1. Deploy to CT 202: `make redeploy` -- verify all Wave 7+8 features in production
-2. Validate qwen3-coder:30b code-gen quality: run a test issue through the `default` chain
-3. Address medium gaps (Synapset#62 parse error, DevKit dashboard native React) or file new sprint issues
+1. File Wave 10 issues or let the dispatcher find work autonomously
+2. Monitor dispatcher logs for successful qwen3-coder:30b code-gen runs
+3. Set `SAMVERK_DEVKIT_PATH` env var on CT 202 to activate native DevKit summary page
+
+## Session Summary (2026-03-20, session 3)
+
+Wave 9 complete. 3 issues resolved, 1 PR merged, deployed v0.1.22-15.
+
+### Work Done
+
+- #138 -- Multi-repo dispatch: already working, closed (dispatcher logs confirmed devkit + synapset polling)
+- #139 -- Synapset parse error: fixed by passing `format: "json"` to search_memory/search_all calls
+- #140 -- DevKit native React: new `/api/v1/devkit/summary` endpoint + two-column rules/skills/agents view
+
+### Infrastructure
+
+Discovered and documented dual-forge sync pattern: Gitea squash merges diverge from GitHub main. Procedure: fast-forward local main from Gitea, push to GitHub, force-push to Gitea (with admin bypass).
+
+### Deployed
+
+CT 202 running `v0.1.22-15-g2b9fe3b`. To activate DevKit page: set `SAMVERK_DEVKIT_PATH=/path/to/devkit` in samverk-serve environment.
 
 ## Session Summary (2026-03-20, session 2)
 
