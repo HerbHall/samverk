@@ -42,7 +42,7 @@ func AnalyzeHistory(snaps []Snapshot) []Recommendation {
 		return nil
 	}
 
-	var recs []Recommendation
+	recs := make([]Recommendation, 0, 4)
 	recs = append(recs, cpuRecommendations(cpuStats(snaps), snaps)...)
 	recs = append(recs, ramRecommendations(ramStats(snaps))...)
 	recs = append(recs, diskRecommendations(diskStats(snaps))...)
