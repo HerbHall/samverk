@@ -453,6 +453,15 @@ export interface DevkitSummary {
   agent_count?: number
 }
 
+export interface DataSource {
+  name: string
+  type: string
+  size_bytes: number
+  record_count: number
+  path?: string
+  healthy: boolean
+}
+
 export const api = {
   listIssues: async (params?: { state?: string; page?: number }) => {
     const data = await fetchJSON<{ issues: Issue[]; total: number }>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`)
@@ -573,4 +582,7 @@ export const api = {
 
   getDevkitSummary: () =>
     fetchJSON<DevkitSummary>('/devkit/summary'),
+
+  getDataSources: () =>
+    fetchJSON<DataSource[]>('/data/sources'),
 }

@@ -56,6 +56,8 @@ type API struct {
 	chatAPIKey      string                        // Anthropic API key for chat proxy; empty = use env
 	chatRateLimit  *chatRateLimit    // rate limiter for chat endpoint
 	history        []historyEntry    // ring buffer of recent snapshots; guarded by historyMu
+	primaryDBPath  string            // file-system path to the primary SQLite database
+	logsDBPath     string            // file-system path to the logs SQLite database
 	logger         *zap.Logger
 }
 
@@ -156,6 +158,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/projects", a.handleListProjects)
 	mux.HandleFunc("POST /api/v1/capacity/apply", a.handleCapacityApply)
 	mux.HandleFunc("GET /api/v1/devkit/summary", a.handleDevkitSummary)
+	mux.HandleFunc("GET /api/v1/data/sources", a.handleDataSources)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)

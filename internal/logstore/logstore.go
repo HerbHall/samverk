@@ -200,6 +200,16 @@ func (s *LogStore) Prune(ctx context.Context, olderThan time.Duration) (int64, e
 	return result.RowsAffected()
 }
 
+// Count returns the total number of log entries in the store.
+func (s *LogStore) Count(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM logs").Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count logs: %w", err)
+	}
+	return n, nil
+}
+
 // Close closes the underlying database connection.
 func (s *LogStore) Close() error {
 	return s.db.Close()
