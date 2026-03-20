@@ -8,6 +8,7 @@ import { Metrics } from './pages/Metrics'
 import { Logs } from './pages/Logs'
 import { Synapset } from './pages/Synapset'
 import { DevKit } from './pages/DevKit'
+import { Providers } from './pages/Providers'
 import { useWebSocket } from './hooks/useWebSocket'
 
 export function App() {
@@ -20,6 +21,7 @@ export function App() {
         <Route path="issues" element={<Issues />} />
         <Route path="my-queue" element={<MyQueue />} />
         <Route path="agents" element={<Agents />} />
+        <Route path="providers" element={<Providers />} />
         <Route path="metrics" element={<Metrics />} />
         <Route path="logs" element={<Logs />} />
         <Route path="synapset" element={<Synapset />} />
