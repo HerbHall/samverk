@@ -155,6 +155,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/chat", a.handleChat)
 	mux.HandleFunc("GET /api/v1/projects", a.handleListProjects)
 	mux.HandleFunc("POST /api/v1/capacity/apply", a.handleCapacityApply)
+	mux.HandleFunc("GET /api/v1/devkit/summary", a.handleDevkitSummary)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)

@@ -432,6 +432,27 @@ export interface ChatResponse {
   output_tokens: number
 }
 
+export interface DevkitRuleInfo {
+  name: string
+  size_bytes: number
+  entry_count?: number
+}
+
+export interface DevkitSkillInfo {
+  name: string
+  has_workflows: boolean
+}
+
+export interface DevkitSummary {
+  configured: boolean
+  path?: string
+  rules?: DevkitRuleInfo[]
+  skills?: DevkitSkillInfo[]
+  agents?: string[]
+  skill_count?: number
+  agent_count?: number
+}
+
 export const api = {
   listIssues: async (params?: { state?: string; page?: number }) => {
     const data = await fetchJSON<{ issues: Issue[]; total: number }>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`)
@@ -549,4 +570,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ action, issue_numbers: issueNumbers, value }),
     }),
+
+  getDevkitSummary: () =>
+    fetchJSON<DevkitSummary>('/devkit/summary'),
 }
