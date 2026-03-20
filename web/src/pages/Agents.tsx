@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { AgentInfo, AgentSession } from '../lib/api'
+import type { ActiveWorker, AgentInfo, AgentSession } from '../lib/api'
 
 function typeBadgeColor(type: string): string {
   switch (type) {
@@ -42,6 +42,12 @@ function formatDuration(secs: number): string {
   return `${hrs}h ${remMins}m`
 }
 
+function formatElapsed(s: number): string {
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`
+}
+
 // Sparkline renders an inline SVG sparkline chart from numeric values.
 function Sparkline({ data, color = '#3b82f6', height = 28 }: { data: number[]; color?: string; height?: number }) {
   if (data.length < 2) return null
@@ -65,7 +71,7 @@ function Sparkline({ data, color = '#3b82f6', height = 28 }: { data: number[]; c
   )
 }
 
-function RecentTaskRow({ session }: { session: AgentSession }) {
+function RecentTaskRow({ session, activeWorker }: { session: AgentSession; activeWorker?: ActiveWorker }) {
   return (
     <div className="flex items-center gap-2 py-1.5 border-b dark:border-gray-700 last:border-b-0 text-xs">
       <span className={`font-medium ${statusColor(session.status)}`}>
@@ -79,8 +85,18 @@ function RecentTaskRow({ session }: { session: AgentSession }) {
       >
         #{session.issue_number}
       </a>
+      {activeWorker != null && (
+        <span className="font-mono text-blue-500 dark:text-blue-400">
+          {formatElapsed(activeWorker.elapsed_s)}
+        </span>
+      )}
+      {activeWorker != null && activeWorker.model !== '' && (
+        <span className="truncate text-gray-500 dark:text-gray-400 max-w-32" title={activeWorker.model}>
+          {activeWorker.model}
+        </span>
+      )}
       <span className="flex-1" />
-      {session.duration_secs != null && (
+      {session.duration_secs != null && activeWorker == null && (
         <span className="font-mono text-gray-500 dark:text-gray-400">
           {formatDuration(session.duration_secs)}
         </span>
@@ -92,7 +108,7 @@ function RecentTaskRow({ session }: { session: AgentSession }) {
   )
 }
 
-function AgentCard({ agent }: { agent: AgentInfo }) {
+function AgentCard({ agent, activeByIssue }: { agent: AgentInfo; activeByIssue: Map<number, ActiveWorker> }) {
   const [expanded, setExpanded] = useState(false)
   const throughputValues = agent.throughput.map((t) => t.count)
   const totalThroughput = throughputValues.reduce((a, b) => a + b, 0)
@@ -214,7 +230,7 @@ function AgentCard({ agent }: { agent: AgentInfo }) {
           {expanded && (
             <div className="mt-1 px-1">
               {agent.recent_sessions.map((s) => (
-                <RecentTaskRow key={s.id} session={s} />
+                <RecentTaskRow key={s.id} session={s} activeWorker={activeByIssue.get(s.issue_number)} />
               ))}
             </div>
           )}
@@ -242,6 +258,20 @@ export function Agents() {
     refetchInterval: 10_000,
   })
 
+  const activeWorkers = useQuery({
+    queryKey: ['workers', 'active'],
+    queryFn: api.getActiveWorkers,
+    refetchInterval: 10_000,
+  })
+
+  const activeByIssue = useMemo(() => {
+    const m = new Map<number, ActiveWorker>()
+    for (const w of activeWorkers.data ?? []) {
+      m.set(w.issue_number, w)
+    }
+    return m
+  }, [activeWorkers.data])
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -267,7 +297,7 @@ export function Agents() {
       {agents.data != null && agents.data.agents.length > 0 && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {agents.data.agents.map((a) => (
-            <AgentCard key={a.name} agent={a} />
+            <AgentCard key={a.name} agent={a} activeByIssue={activeByIssue} />
           ))}
         </div>
       )}
