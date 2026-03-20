@@ -1,31 +1,10 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api, ActiveWorker } from '../lib/api'
+import { Link } from 'react-router'
+import { api, ActiveWorker, Issue, ProviderHealthEntry } from '../lib/api'
 import { useWSStore } from '../store/wsStore'
 
-function StatusIndicator({ connected, label }: { connected: boolean; label: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span
-        className={`inline-block h-2.5 w-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}
-      />
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
-      <span className={`text-xs ${connected ? 'text-green-600' : 'text-red-600'}`}>
-        {connected ? 'Connected' : 'Disconnected'}
-      </span>
-    </div>
-  )
-}
-
-function StatCard({ title, value, subtitle }: { title: string; value: string; subtitle?: string }) {
-  return (
-    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
-      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-      <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">{value}</p>
-      {subtitle != null && <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{subtitle}</p>}
-    </div>
-  )
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatElapsed(elapsedS: number): string {
   const m = Math.floor(elapsedS / 60)
@@ -38,14 +17,188 @@ function formatUSD(amount: number): string {
 }
 
 function formatTokens(count: number): string {
-  if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1)}M`
-  }
-  if (count >= 1_000) {
-    return `${(count / 1_000).toFixed(1)}K`
-  }
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`
   return count.toString()
 }
+
+// ── Row 1: System Health Banner ───────────────────────────────────────────────
+
+type BannerLevel = 'green' | 'yellow' | 'red'
+
+interface BannerInfo {
+  level: BannerLevel
+  reasons: string[]
+}
+
+function computeBanner(
+  statusHealthy: boolean,
+  forgeConnected: boolean,
+  dbConnected: boolean,
+  providers: ProviderHealthEntry[] | undefined,
+  providersError: boolean,
+): BannerInfo {
+  const reasons: string[] = []
+
+  if (!forgeConnected) reasons.push('Git forge disconnected')
+  if (!dbConnected) reasons.push('Database disconnected')
+  if (!statusHealthy) reasons.push('System health check failed')
+
+  if (!providersError && providers != null) {
+    const unhealthy = providers.filter((p) => !p.healthy).length
+    if (unhealthy > 0) reasons.push(`${unhealthy} provider${unhealthy === 1 ? '' : 's'} offline`)
+  }
+
+  let level: BannerLevel
+  if (!forgeConnected || !dbConnected || !statusHealthy) {
+    level = 'red'
+  } else if (reasons.length > 0) {
+    level = 'yellow'
+  } else {
+    level = 'green'
+  }
+
+  return { level, reasons }
+}
+
+function HealthBanner({
+  banner,
+  providersLoading,
+}: {
+  banner: BannerInfo
+  providersLoading: boolean
+}) {
+  const levelStyles: Record<BannerLevel, string> = {
+    green: 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800',
+    yellow: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800',
+    red: 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800',
+  }
+  const dotStyles: Record<BannerLevel, string> = {
+    green: 'bg-green-500',
+    yellow: 'bg-yellow-500',
+    red: 'bg-red-500',
+  }
+  const textStyles: Record<BannerLevel, string> = {
+    green: 'text-green-800 dark:text-green-300',
+    yellow: 'text-yellow-800 dark:text-yellow-300',
+    red: 'text-red-800 dark:text-red-300',
+  }
+
+  const { level, reasons } = banner
+  const label =
+    level === 'green'
+      ? 'All systems nominal'
+      : level === 'yellow'
+        ? `Degraded — ${reasons.join(', ')}`
+        : `Critical — ${reasons.join(', ')}`
+
+  return (
+    <div className={`rounded-lg border px-4 py-3 flex items-center gap-3 ${levelStyles[level]}`}>
+      <span className={`inline-block h-3 w-3 rounded-full shrink-0 ${dotStyles[level]}`} />
+      <span className={`text-sm font-medium ${textStyles[level]}`}>{label}</span>
+      {providersLoading && (
+        <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">
+          Checking providers…
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ── Row 2: Needs Attention ────────────────────────────────────────────────────
+
+function AttentionBadge({
+  label,
+  count,
+  color,
+}: {
+  label: string
+  count: number
+  color: string
+}) {
+  return (
+    <div className={`flex items-center gap-2 rounded-lg border px-4 py-3 ${color}`}>
+      <span className="text-xl font-bold">{count}</span>
+      <span className="text-sm font-medium">{label}</span>
+    </div>
+  )
+}
+
+function NeedsAttentionRow({ issues }: { issues: Issue[] }) {
+  const needsHuman = useMemo(
+    () => issues.filter((i) => i.labels.includes('status:needs-human')),
+    [issues],
+  )
+  const blocked = useMemo(
+    () => issues.filter((i) => i.labels.includes('status:blocked')),
+    [issues],
+  )
+
+  if (needsHuman.length === 0 && blocked.length === 0) return null
+
+  return (
+    <section className="mb-6">
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Needs Attention
+      </h3>
+      <div className="flex flex-wrap gap-3">
+        {needsHuman.length > 0 && (
+          <Link to="/issues" className="no-underline">
+            <AttentionBadge
+              label="need human review"
+              count={needsHuman.length}
+              color="border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-300 hover:border-orange-400 dark:hover:border-orange-600 transition-colors cursor-pointer"
+            />
+          </Link>
+        )}
+        {blocked.length > 0 && (
+          <Link to="/issues" className="no-underline">
+            <AttentionBadge
+              label="blocked"
+              count={blocked.length}
+              color="border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300 hover:border-red-400 dark:hover:border-red-600 transition-colors cursor-pointer"
+            />
+          </Link>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// ── Row 3: System Overview Stat Cards ─────────────────────────────────────────
+
+function OverviewCard({
+  title,
+  value,
+  subtitle,
+  to,
+}: {
+  title: string
+  value: string
+  subtitle?: string
+  to?: string
+}) {
+  const inner = (
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-5 hover:border-blue-300 dark:hover:border-blue-700 transition-colors h-full">
+      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
+      <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">{value}</p>
+      {subtitle != null && (
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{subtitle}</p>
+      )}
+    </div>
+  )
+
+  if (to != null) {
+    return (
+      <Link to={to} className="no-underline">
+        {inner}
+      </Link>
+    )
+  }
+  return inner
+}
+
+// ── Row 4: Active Worker Card ─────────────────────────────────────────────────
 
 function WorkerCard({ w, issueTitles }: { w: ActiveWorker; issueTitles: Map<number, string> }) {
   const issueTitle = issueTitles.get(w.issue_number)
@@ -72,7 +225,9 @@ function WorkerCard({ w, issueTitles }: { w: ActiveWorker; issueTitles: Map<numb
             >
               #{w.issue_number}
             </a>
-            <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${agentColor}`}>
+            <span
+              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${agentColor}`}
+            >
               {w.agent_type}
             </span>
           </div>
@@ -116,18 +271,14 @@ function WorkerCard({ w, issueTitles }: { w: ActiveWorker; issueTitles: Map<numb
   )
 }
 
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+
 export function Dashboard() {
   const wsConnected = useWSStore((s) => s.connected)
 
   const status = useQuery({
     queryKey: ['status'],
     queryFn: api.getStatus,
-    refetchInterval: wsConnected ? false : 30_000,
-  })
-
-  const sessions = useQuery({
-    queryKey: ['sessions'],
-    queryFn: api.listSessions,
     refetchInterval: wsConnected ? false : 30_000,
   })
 
@@ -150,6 +301,14 @@ export function Dashboard() {
     staleTime: 30_000,
   })
 
+  // Provider health may return 503 -- handle gracefully (show unknown, don't crash)
+  const providerHealth = useQuery({
+    queryKey: ['providers', 'health'],
+    queryFn: api.getProviderHealth,
+    refetchInterval: 30_000,
+    retry: 1,
+  })
+
   const issueTitles = useMemo(() => {
     const map = new Map<number, string>()
     issues.data?.forEach((i) => map.set(i.number, i.title))
@@ -157,7 +316,6 @@ export function Dashboard() {
   }, [issues.data])
 
   const isLoading = status.isLoading || costs.isLoading
-  const hasError = status.isError || costs.isError
 
   if (isLoading) {
     return (
@@ -167,94 +325,112 @@ export function Dashboard() {
     )
   }
 
-  if (hasError) {
-    const errorMsg = status.error?.message || costs.error?.message || 'Unknown error'
+  if (status.isError) {
     return (
       <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
         <p className="font-medium text-red-800 dark:text-red-300">Failed to load dashboard</p>
-        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errorMsg}</p>
+        <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+          {status.error?.message ?? 'Unknown error'}
+        </p>
       </div>
     )
   }
 
-  const activeSessions = sessions.data?.filter((s) => s.status === 'running') ?? []
-  const totalSessions = sessions.data?.length ?? 0
+  // Derived values
+  const activeWorkerList = activeWorkers.data ?? []
+  const openIssueCount = issues.data?.length ?? 0
+
+  const healthyProviders =
+    !providerHealth.isError && providerHealth.data != null
+      ? providerHealth.data.providers.filter((p) => p.healthy).length
+      : null
+  const totalProviders =
+    !providerHealth.isError && providerHealth.data != null ? providerHealth.data.count : null
+
+  const banner = computeBanner(
+    status.data?.healthy ?? false,
+    status.data?.forge_connected ?? false,
+    status.data?.database_connected ?? false,
+    providerHealth.isError ? undefined : providerHealth.data?.providers,
+    providerHealth.isError,
+  )
+
+  const providersValue =
+    healthyProviders != null && totalProviders != null
+      ? `${healthyProviders}/${totalProviders} healthy`
+      : providerHealth.isError
+        ? 'unknown'
+        : 'checking…'
+
+  const providersSubtitle = providerHealth.isError ? 'health check unavailable' : undefined
 
   return (
     <div>
+      {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h2>
         <span className="inline-flex items-center gap-1 text-xs">
-          <span className={`h-2 w-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-gray-400'}`} />
+          <span
+            className={`h-2 w-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-gray-400'}`}
+          />
           <span className="text-gray-500 dark:text-gray-400">
             {wsConnected ? 'Live' : 'Polling (30s)'}
           </span>
         </span>
       </div>
 
-      <section className="mb-8">
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          System Status
-        </h3>
-        <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-          <div className="flex items-center gap-3 mb-4">
-            <span
-              className={`inline-block h-3 w-3 rounded-full ${status.data?.healthy ? 'bg-green-500' : 'bg-yellow-500'}`}
-            />
-            <span className="font-medium text-gray-900 dark:text-gray-100">
-              {status.data?.healthy ? 'System Healthy' : 'System Degraded'}
-            </span>
-          </div>
-          <div className="space-y-2">
-            <StatusIndicator
-              connected={status.data?.forge_connected ?? false}
-              label="Git Forge"
-            />
-            <StatusIndicator
-              connected={status.data?.database_connected ?? false}
-              label="Database"
-            />
-          </div>
-          <div className="mt-3 border-t dark:border-gray-700 pt-3">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              MCP Tools:{' '}
-              <span className="font-medium text-gray-700 dark:text-gray-300">
-                {status.data?.tool_count ?? 0}
-              </span>
-            </p>
-          </div>
-        </div>
-      </section>
+      {/* Row 1: System Health Banner */}
+      <div className="mb-6">
+        <HealthBanner banner={banner} providersLoading={providerHealth.isLoading} />
+      </div>
 
-      <section className="mb-8">
+      {/* Row 2: Needs Attention (only shown when flagged issues exist) */}
+      {issues.data != null && <NeedsAttentionRow issues={issues.data} />}
+
+      {/* Row 3: System Overview */}
+      <section className="mb-6">
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          Activity
+          System Overview
         </h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <StatCard
-            title="Active Sessions"
-            value={activeSessions.length.toString()}
-            subtitle={`${totalSessions} total`}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <OverviewCard
+            title="Active Workers"
+            value={activeWorkerList.length.toString()}
+            subtitle="of pool capacity"
+            to="/metrics"
           />
-          <StatCard
-            title="Total Cost"
+          <OverviewCard
+            title="Open Issues"
+            value={openIssueCount.toString()}
+            subtitle={issues.isLoading ? 'loading…' : undefined}
+            to="/issues"
+          />
+          <OverviewCard
+            title="Cost Today"
             value={formatUSD(costs.data?.estimated_cost_usd ?? 0)}
             subtitle={`${formatTokens(costs.data?.tokens_used ?? 0)} tokens`}
           />
+          <OverviewCard
+            title="Providers"
+            value={providersValue}
+            subtitle={providersSubtitle}
+            to="/providers"
+          />
         </div>
       </section>
 
+      {/* Row 4: Active Worker Cards */}
       <section>
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           Active Workers
         </h3>
         {activeWorkers.isLoading ? (
           <p className="text-sm text-gray-400 dark:text-gray-500">Loading...</p>
-        ) : activeWorkers.data == null || activeWorkers.data.length === 0 ? (
+        ) : activeWorkerList.length === 0 ? (
           <p className="text-sm text-gray-400 dark:text-gray-500">No active workers</p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {activeWorkers.data.map((w) => (
+            {activeWorkerList.map((w) => (
               <WorkerCard key={w.session_id} w={w} issueTitles={issueTitles} />
             ))}
           </div>
