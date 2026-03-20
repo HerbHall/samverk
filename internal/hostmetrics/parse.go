@@ -7,6 +7,21 @@ import (
 	"strings"
 )
 
+// ParseCgroupCPUStat parses the contents of /sys/fs/cgroup/cpu.stat (cgroup v2)
+// and returns the cumulative CPU usage in microseconds.
+// Exported so tests can feed canned data without touching the filesystem.
+func ParseCgroupCPUStat(data []byte) (uint64, error) {
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("usage_usec ")) {
+			fields := bytes.Fields(line)
+			if len(fields) == 2 {
+				return strconv.ParseUint(string(fields[1]), 10, 64)
+			}
+		}
+	}
+	return 0, fmt.Errorf("hostmetrics: usage_usec not found in cpu.stat")
+}
+
 // ParseMemInfo parses the contents of /proc/meminfo and returns
 // MemTotal, MemAvailable, SwapTotal, and SwapFree in bytes.
 // Exported so tests can feed canned data without touching the filesystem.
