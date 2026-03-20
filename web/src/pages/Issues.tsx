@@ -1,8 +1,34 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { Issue } from '../lib/api'
 
 type StateFilter = 'open' | 'closed' | 'all'
+
+const STATUS_ORDER = ['claimed', 'needs-qc', 'needs-human', 'queued', 'blocked', 'other'] as const
+type StatusKey = typeof STATUS_ORDER[number]
+
+const DEFAULT_EXPANDED: Record<StatusKey, boolean> = {
+  'claimed': true,
+  'needs-qc': true,
+  'needs-human': true,
+  'queued': true,
+  'blocked': false,
+  'other': false,
+}
+
+function formatStatus(status: string): string {
+  switch (status) {
+    case 'needs-qc': return 'Needs QC'
+    case 'needs-human': return 'Needs Human'
+    default: return status.charAt(0).toUpperCase() + status.slice(1)
+  }
+}
+
+function getIssueStatus(labels: string[]): string {
+  const statusLabel = labels.find((l) => l.startsWith('status:'))
+  return statusLabel ? statusLabel.replace('status:', '') : 'other'
+}
 
 function LabelBadge({ label }: { label: string }) {
   return (
@@ -31,6 +57,9 @@ export function Issues() {
   const [stateFilter, setStateFilter] = useState<StateFilter>('open')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedIssue, setExpandedIssue] = useState<number | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(STATUS_ORDER.map((s) => [s, !DEFAULT_EXPANDED[s]]))
+  )
 
   const issues = useQuery({
     queryKey: ['issues', stateFilter],
@@ -49,9 +78,33 @@ export function Issues() {
     )
   }, [issues.data, searchQuery])
 
+  const grouped = useMemo(() => {
+    const groups: Record<StatusKey, Issue[]> = {
+      'claimed': [],
+      'needs-qc': [],
+      'needs-human': [],
+      'queued': [],
+      'blocked': [],
+      'other': [],
+    }
+    for (const issue of filteredIssues) {
+      const status = getIssueStatus(issue.labels ?? [])
+      const key = (status in groups ? status : 'other') as StatusKey
+      groups[key].push(issue)
+    }
+    return groups
+  }, [filteredIssues])
+
   const toggleExpand = (issueNumber: number) => {
     setExpandedIssue((prev) => (prev === issueNumber ? null : issueNumber))
   }
+
+  const toggleGroup = (status: string) => {
+    setCollapsedGroups((prev) => ({ ...prev, [status]: !prev[status] }))
+  }
+
+  const totalFiltered = filteredIssues.length
+  const totalLoaded = issues.data?.length ?? 0
 
   return (
     <div>
@@ -85,7 +138,7 @@ export function Issues() {
         />
         {issues.data != null && (
           <span className="text-sm text-gray-500 dark:text-gray-400">
-            {filteredIssues.length} of {issues.data.length} issues
+            {totalFiltered} of {totalLoaded} issues
           </span>
         )}
       </div>
@@ -103,7 +156,7 @@ export function Issues() {
         </div>
       )}
 
-      {issues.isSuccess && filteredIssues.length === 0 && (
+      {issues.isSuccess && totalFiltered === 0 && (
         <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
           <p className="text-gray-500 dark:text-gray-400">
             {searchQuery.trim() !== '' ? 'No issues match your search.' : 'No issues found.'}
@@ -111,30 +164,57 @@ export function Issues() {
         </div>
       )}
 
-      {issues.isSuccess && filteredIssues.length > 0 && (
-        <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                <th className="px-4 py-2 w-16">#</th>
-                <th className="px-4 py-2">Title</th>
-                <th className="px-4 py-2 w-20">State</th>
-                <th className="px-4 py-2">Labels</th>
-                <th className="px-4 py-2">Assignees</th>
-                <th className="px-4 py-2 w-28">Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredIssues.map((issue) => (
-                <IssueRow
-                  key={issue.number}
-                  issue={issue}
-                  expanded={expandedIssue === issue.number}
-                  onToggle={() => toggleExpand(issue.number)}
-                />
-              ))}
-            </tbody>
-          </table>
+      {issues.isSuccess && totalFiltered > 0 && (
+        <div className="flex flex-col gap-4">
+          {STATUS_ORDER.map((status) => {
+            const group = grouped[status]
+            if (group.length === 0) return null
+            const isCollapsed = collapsedGroups[status]
+            return (
+              <div key={status} className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
+                <div
+                  className="flex items-center justify-between cursor-pointer px-4 py-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-700 select-none"
+                  onClick={() => toggleGroup(status)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs inline-block transition-transform dark:text-gray-400 ${isCollapsed ? '' : 'rotate-90'}`}>
+                      &#9654;
+                    </span>
+                    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      {formatStatus(status)}
+                    </h2>
+                  </div>
+                  <span className="rounded-full bg-gray-200 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300">
+                    {group.length}
+                  </span>
+                </div>
+                {!isCollapsed && (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        <th className="px-4 py-2 w-16">#</th>
+                        <th className="px-4 py-2">Title</th>
+                        <th className="px-4 py-2 w-20">State</th>
+                        <th className="px-4 py-2">Labels</th>
+                        <th className="px-4 py-2">Assignees</th>
+                        <th className="px-4 py-2 w-28">Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.map((issue) => (
+                        <IssueRow
+                          key={issue.number}
+                          issue={issue}
+                          expanded={expandedIssue === issue.number}
+                          onToggle={() => toggleExpand(issue.number)}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -146,7 +226,7 @@ function IssueRow({
   expanded,
   onToggle,
 }: {
-  issue: { number: number; title: string; body: string; state: string; labels: string[]; assignees: string[]; updated_at: string }
+  issue: Issue
   expanded: boolean
   onToggle: () => void
 }) {
@@ -156,7 +236,17 @@ function IssueRow({
         onClick={onToggle}
         className="cursor-pointer border-b dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700"
       >
-        <td className="px-4 py-2.5 font-medium"><a href={`https://github.com/HerbHall/samverk/issues/${issue.number}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400" onClick={(e) => e.stopPropagation()}>#{issue.number}</a></td>
+        <td className="px-4 py-2.5 font-medium">
+          <a
+            href={`https://github.com/HerbHall/samverk/issues/${issue.number}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline dark:text-blue-400"
+            onClick={(e) => e.stopPropagation()}
+          >
+            #{issue.number}
+          </a>
+        </td>
         <td className="px-4 py-2.5">
           <div className="flex items-center gap-2">
             <span
