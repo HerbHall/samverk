@@ -1,6 +1,7 @@
-import { useState, Fragment } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, LogEntry } from '../lib/api'
+import { useWSStore } from '../store/wsStore'
 
 function relativeTime(ts: string): string {
   const diff = Date.now() - new Date(ts).getTime()
@@ -35,6 +36,7 @@ function LevelBadge({ level }: { level: string }) {
 }
 
 const PAGE_SIZE = 100
+const LIVE_CAP = 500
 
 export function Logs() {
   const [level, setLevel] = useState('')
@@ -42,6 +44,8 @@ export function Logs() {
   const [sessionId, setSessionId] = useState('')
   const [issueNum, setIssueNum] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(false)
+  const [live, setLive] = useState(false)
+  const [liveEntries, setLiveEntries] = useState<LogEntry[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [offset, setOffset] = useState(0)
   const [allEntries, setAllEntries] = useState<LogEntry[]>([])
@@ -53,6 +57,37 @@ export function Logs() {
     sessionId: '',
     issueNum: '',
   })
+
+  const setOnLogEntry = useWSStore((s) => s.setOnLogEntry)
+
+  // Register/unregister the WS log.entry callback when live mode toggles.
+  const handleLiveEntry = useCallback(
+    (entry: LogEntry) => {
+      // Client-side filter: apply active level and search filters.
+      if (activeFilters.level && entry.level !== activeFilters.level) return
+      if (
+        activeFilters.search &&
+        !entry.msg.toLowerCase().includes(activeFilters.search.toLowerCase())
+      )
+        return
+      if (activeFilters.sessionId && entry.session_id !== activeFilters.sessionId) return
+      if (activeFilters.issueNum && entry.issue_number !== Number(activeFilters.issueNum)) return
+
+      setLiveEntries((prev) => [entry, ...prev].slice(0, LIVE_CAP))
+    },
+    [activeFilters],
+  )
+
+  useEffect(() => {
+    if (live) {
+      setOnLogEntry(handleLiveEntry)
+    } else {
+      setOnLogEntry(null)
+    }
+    return () => {
+      setOnLogEntry(null)
+    }
+  }, [live, handleLiveEntry, setOnLogEntry])
 
   const logs = useQuery({
     queryKey: [
@@ -80,11 +115,13 @@ export function Logs() {
       return data
     },
     refetchInterval: autoRefresh ? 5_000 : false,
+    enabled: !live,
   })
 
   function handleSearch() {
     setOffset(0)
     setAllEntries([])
+    setLiveEntries([])
     setActiveFilters({
       level,
       search,
@@ -97,7 +134,14 @@ export function Logs() {
     setOffset((prev) => prev + PAGE_SIZE)
   }
 
-  const displayEntries = allEntries
+  function handleLiveToggle(enabled: boolean) {
+    setLive(enabled)
+    if (enabled) {
+      setLiveEntries([])
+    }
+  }
+
+  const displayEntries = live ? liveEntries : allEntries
 
   return (
     <div>
@@ -155,17 +199,35 @@ export function Logs() {
           <input
             type="checkbox"
             checked={autoRefresh}
+            disabled={live}
             onChange={(e) => setAutoRefresh(e.target.checked)}
           />
           Auto-refresh
         </label>
+
+        <button
+          onClick={() => handleLiveToggle(!live)}
+          className={`rounded px-3 py-1 text-sm font-medium transition-colors ${
+            live
+              ? 'bg-green-600 text-white hover:bg-green-700'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+          }`}
+        >
+          {live ? 'Live \u25cf' : 'Live'}
+        </button>
+
+        {live && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {liveEntries.length}/{LIVE_CAP} entries
+          </span>
+        )}
       </div>
 
       {/* Log table */}
-      {logs.isLoading && offset === 0 && (
+      {!live && logs.isLoading && offset === 0 && (
         <div className="text-sm text-gray-500 dark:text-gray-400">Loading...</div>
       )}
-      {logs.error && (
+      {!live && logs.error && (
         <div className="text-sm text-red-600 dark:text-red-400">Error: {String(logs.error)}</div>
       )}
       {displayEntries.length > 0 && (
@@ -217,7 +279,7 @@ export function Logs() {
               ))}
             </tbody>
           </table>
-          {displayEntries.length > 0 &&
+          {!live && displayEntries.length > 0 &&
             logs.data &&
             logs.data.length === PAGE_SIZE && (
               <div className="border-t dark:border-gray-700 px-3 py-2 text-center">
@@ -231,9 +293,14 @@ export function Logs() {
             )}
         </div>
       )}
-      {logs.data && displayEntries.length === 0 && (
+      {!live && logs.data && displayEntries.length === 0 && (
         <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
           No log entries found
+        </div>
+      )}
+      {live && liveEntries.length === 0 && (
+        <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          Waiting for log entries...
         </div>
       )}
     </div>

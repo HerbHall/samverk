@@ -33,7 +33,10 @@ func New() (*zap.Logger, error) {
 // log store. In production mode, a single JSON core tees through the
 // logstore syncer. In dev mode, a console core writes to stdout and a
 // separate JSON core writes to the logstore syncer.
-func NewWithTee(ls *logstore.LogStore) (*zap.Logger, error) {
+//
+// The returned *logstore.Syncer can be used to attach a WebSocket
+// broadcaster via SetBroadcaster after the server is constructed.
+func NewWithTee(ls *logstore.LogStore) (*zap.Logger, *logstore.Syncer, error) {
 	env := os.Getenv("SAMVERK_ENV")
 
 	switch env {
@@ -54,7 +57,7 @@ func NewWithTee(ls *logstore.LogStore) (*zap.Logger, error) {
 		syncer := logstore.NewSyncer(devNull{}, ls)
 		jsonCore := zapcore.NewCore(jsonEnc, zapcore.AddSync(syncer), zapcore.DebugLevel)
 
-		return zap.New(zapcore.NewTee(stdoutCore, jsonCore)), nil
+		return zap.New(zapcore.NewTee(stdoutCore, jsonCore)), syncer, nil
 
 	default:
 		// Production: single JSON core through the tee syncer.
@@ -64,7 +67,7 @@ func NewWithTee(ls *logstore.LogStore) (*zap.Logger, error) {
 		enc := zapcore.NewJSONEncoder(prodCfg.EncoderConfig)
 		syncer := logstore.NewSyncer(os.Stdout, ls)
 		core := zapcore.NewCore(enc, zapcore.AddSync(syncer), zapcore.InfoLevel)
-		return zap.New(core), nil
+		return zap.New(core), syncer, nil
 	}
 }
 

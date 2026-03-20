@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useWSStore } from '../store/wsStore'
+import type { LogEntry } from '../lib/api'
 
 const STORAGE_KEY = 'samverk_api_key'
 const BASE_DELAY_MS = 1000
@@ -10,6 +11,7 @@ const MAX_FAILURES = 10
 export function useWebSocket(): void {
   const queryClient = useQueryClient()
   const setConnected = useWSStore((s) => s.setConnected)
+  const onLogEntry = useWSStore((s) => s.onLogEntry)
   const wsRef = useRef<WebSocket | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const failuresRef = useRef(0)
@@ -54,6 +56,11 @@ export function useWebSocket(): void {
             case 'queue.depth':
               void queryClient.invalidateQueries({ queryKey: ['metrics'] })
               break
+            case 'log.entry':
+              if (onLogEntry != null) {
+                onLogEntry(msg.data as LogEntry)
+              }
+              break
             default:
               break
           }
@@ -94,5 +101,5 @@ export function useWebSocket(): void {
       }
       setConnected(false)
     }
-  }, [queryClient, setConnected])
+  }, [queryClient, setConnected, onLogEntry])
 }

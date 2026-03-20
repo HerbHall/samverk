@@ -9,12 +9,19 @@ import (
 	"time"
 )
 
+// Broadcaster is a minimal interface satisfied by the WebSocket hub.
+// Implementations must be safe for concurrent use.
+type Broadcaster interface {
+	Broadcast(data []byte)
+}
+
 // Syncer is a zap-compatible WriteSyncer that tees log output to both
 // stdout and a SQLite LogStore. SQLite errors are swallowed (logged to
 // stderr) to ensure logging never crashes the application.
 type Syncer struct {
-	stdout io.Writer
-	store  *LogStore
+	stdout      io.Writer
+	store       *LogStore
+	broadcaster Broadcaster
 }
 
 // NewSyncer creates a WriteSyncer that writes to stdout and persists
@@ -24,6 +31,12 @@ func NewSyncer(stdout io.Writer, store *LogStore) *Syncer {
 		stdout: stdout,
 		store:  store,
 	}
+}
+
+// SetBroadcaster attaches a WebSocket broadcaster. When set, each
+// successfully persisted log entry is broadcast as a log.entry event.
+func (s *Syncer) SetBroadcaster(b Broadcaster) {
+	s.broadcaster = b
 }
 
 // zapLogLine represents the JSON structure produced by zap's JSON encoder.
