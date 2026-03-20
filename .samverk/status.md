@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-20T21:00:00Z
+updated: 2026-03-20T22:00:00Z
 updated_by: claude-code
 ---
 
@@ -35,7 +35,7 @@ Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime vali
 
 ## Open Issues
 
-0 open issues. Waves 7, 8, and 9 complete.
+5 open issues (agent:human: #57, #70, #72, #74; agent:docs: #121, #127). Waves 7-10 complete.
 
 ## Gaps to Full Autonomy
 
@@ -55,9 +55,30 @@ Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime vali
 
 ## Recommended Next Session
 
-1. File Wave 10 issues or let the dispatcher find work autonomously
-2. Monitor dispatcher logs for successful qwen3-coder:30b code-gen runs
-3. Set `SAMVERK_DEVKIT_PATH` env var on CT 202 to activate native DevKit summary page
+1. File Wave 11 issues -- remaining code-gen work: #117 (schema), #118 (quality page), #119 (issue templates), #120 (advisory engine), #128 (Tauri scaffolding)
+2. Address design blockers: complete #115 (RCA standard) and #116 (KPI framework) to unblock #117-#120
+3. Set `SAMVERK_DEVKIT_PATH` on CT 202 to activate DevKit native page
+4. Monitor provider health page -- should show real data 30s after dispatch starts
+
+## Session Summary (2026-03-20, session 4)
+
+Wave 10 complete. 5 parallel agents, 5 PRs merged, 3 new pages added to dashboard. Deployed v0.1.22-22.
+
+### Dashboard Pages Added
+
+- #122 -- MCP page: server health cards (Samverk + Synapset), tool count via in-process ping
+- #123 -- Projects page: forge health cards + per-project issue counts (open, needs-human, in-progress)
+- #124 -- Provider health fixed: store-backed snapshots bridge dispatch→serve process gap; 503 resolved
+- #125 -- Data page: SQLite + Synapset data source cards with size/record counts
+- #126 -- Dashboard redesign: health banner, needs-attention badges, stat cards replacing old 4-item layout
+
+### Architecture Decision
+
+Provider health API was broken because serve and dispatch are separate OS processes. Fixed using SQLite store as bridge (same pattern as metrics snapshots). Dispatch writes 30s snapshots; serve reads them.
+
+### Merge Complexity
+
+Two PRs (#122, #123) required manual rebase after sequential Gitea squash merges diverged them. Auto-resolved "add both sides" conflicts in api.go and api.ts. api.ts had malformed interfaces after auto-resolve (missing closing braces) -- fixed manually.
 
 ## Session Summary (2026-03-20, session 3)
 
