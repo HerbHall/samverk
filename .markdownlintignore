@@ -1,3 +1,5 @@
 # Auto-generated files exempt from markdownlint
 .claude/
 **/node_modules
+# Gitea issue templates use front-matter that markdownlint misparses
+.gitea/
