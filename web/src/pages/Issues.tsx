@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Issue } from '../lib/api'
@@ -56,27 +56,38 @@ function formatDate(dateStr: string): string {
 export function Issues() {
   const [stateFilter, setStateFilter] = useState<StateFilter>('open')
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [expandedIssue, setExpandedIssue] = useState<number | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(
     () => Object.fromEntries(STATUS_ORDER.map((s) => [s, !DEFAULT_EXPANDED[s]]))
   )
 
+  // Debounce the search query by 300ms.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  const isSearching = debouncedQuery.trim() !== ''
+
   const issues = useQuery({
     queryKey: ['issues', stateFilter],
     queryFn: () => api.listIssues({ state: stateFilter }),
     refetchInterval: 30_000,
+    enabled: !isSearching,
   })
 
+  const searchResults = useQuery({
+    queryKey: ['issues', 'search', debouncedQuery, stateFilter],
+    queryFn: () => api.searchIssues(debouncedQuery, stateFilter !== 'all' ? stateFilter : undefined),
+    enabled: isSearching,
+  })
+
+  const activeQuery = isSearching ? searchResults : issues
+
   const filteredIssues = useMemo(() => {
-    if (!issues.data) return []
-    if (searchQuery.trim() === '') return issues.data
-    const query = searchQuery.toLowerCase()
-    return issues.data.filter(
-      (issue) =>
-        issue.title.toLowerCase().includes(query) ||
-        issue.number.toString().includes(query)
-    )
-  }, [issues.data, searchQuery])
+    return activeQuery.data ?? []
+  }, [activeQuery.data])
 
   const grouped = useMemo(() => {
     const groups: Record<StatusKey, Issue[]> = {
@@ -104,7 +115,6 @@ export function Issues() {
   }
 
   const totalFiltered = filteredIssues.length
-  const totalLoaded = issues.data?.length ?? 0
 
   return (
     <div>
@@ -131,40 +141,42 @@ export function Issues() {
         </div>
         <input
           type="text"
-          placeholder="Search by title or number..."
+          placeholder="Search issues..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-64"
         />
-        {issues.data != null && (
+        {activeQuery.data != null && (
           <span className="text-sm text-gray-500 dark:text-gray-400">
-            {totalFiltered} of {totalLoaded} issues
+            {totalFiltered} issue{totalFiltered !== 1 ? 's' : ''}
           </span>
         )}
       </div>
 
-      {issues.isLoading && (
+      {activeQuery.isLoading && (
         <div className="flex items-center justify-center py-20">
-          <p className="text-gray-500 dark:text-gray-400">Loading issues...</p>
-        </div>
-      )}
-
-      {issues.isError && (
-        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
-          <p className="font-medium text-red-800 dark:text-red-300">Failed to load issues</p>
-          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{issues.error?.message}</p>
-        </div>
-      )}
-
-      {issues.isSuccess && totalFiltered === 0 && (
-        <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
           <p className="text-gray-500 dark:text-gray-400">
-            {searchQuery.trim() !== '' ? 'No issues match your search.' : 'No issues found.'}
+            {isSearching ? 'Searching...' : 'Loading issues...'}
           </p>
         </div>
       )}
 
-      {issues.isSuccess && totalFiltered > 0 && (
+      {activeQuery.isError && (
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
+          <p className="font-medium text-red-800 dark:text-red-300">Failed to load issues</p>
+          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{activeQuery.error?.message}</p>
+        </div>
+      )}
+
+      {activeQuery.isSuccess && totalFiltered === 0 && (
+        <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
+          <p className="text-gray-500 dark:text-gray-400">
+            {isSearching ? 'No issues match your search.' : 'No issues found.'}
+          </p>
+        </div>
+      )}
+
+      {activeQuery.isSuccess && totalFiltered > 0 && (
         <div className="flex flex-col gap-4">
           {STATUS_ORDER.map((status) => {
             const group = grouped[status]

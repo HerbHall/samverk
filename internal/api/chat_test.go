@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -21,7 +22,7 @@ func TestHandleChat_NoAPIKey(t *testing.T) {
 		Messages: []chatMessage{{Role: "user", Content: "hello"}},
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -43,7 +44,7 @@ func TestHandleChat_EmptyMessages(t *testing.T) {
 		Messages: []chatMessage{},
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -61,7 +62,7 @@ func TestHandleChat_InvalidJSON(t *testing.T) {
 	a := New(nil, nil, nil, zap.NewNop())
 	a.SetChatAPIKey("test-key")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader([]byte("not json")))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/chat", bytes.NewReader([]byte("not json")))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -79,7 +80,7 @@ func TestHandleChat_MethodNotAllowed(t *testing.T) {
 	a := New(nil, nil, nil, zap.NewNop())
 	a.SetChatAPIKey("test-key")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/chat", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/chat", http.NoBody)
 	w := httptest.NewRecorder()
 
 	a.handleChat(w, req)
@@ -153,7 +154,7 @@ func TestHandleChat_ProxiesToUpstream(t *testing.T) {
 		System:   "You are a test assistant.",
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 

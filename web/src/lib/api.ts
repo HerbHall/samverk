@@ -438,6 +438,13 @@ export const api = {
     return data.issues
   },
 
+  searchIssues: async (q: string, state?: string) => {
+    const params = new URLSearchParams({ q })
+    if (state) params.set('state', state)
+    const data = await fetchJSON<{ issues: Issue[]; total: number }>(`/issues/search?${params.toString()}`)
+    return data.issues
+  },
+
   getIssue: (number: number) =>
     fetchJSON<Issue>(`/issues/${number}`),
 

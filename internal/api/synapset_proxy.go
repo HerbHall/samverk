@@ -55,7 +55,7 @@ func (p *SynapsetProxy) handle(upstreamPath string) http.HandlerFunc {
 			targetURL += "?" + q
 		}
 
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, targetURL, http.NoBody)
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, targetURL, http.NoBody) //nolint:gosec // G704: URL is from trusted baseURL config
 		if err != nil {
 			p.logger.Error("synapset proxy: build request", zap.Error(err))
 			writeError(w, http.StatusInternalServerError, "failed to build upstream request")

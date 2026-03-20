@@ -150,6 +150,44 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleSearchIssues handles GET /api/v1/issues/search.
+// Supports query params: q (search term), state (open|closed; default open).
+func (a *API) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
+	if a.tracker == nil {
+		writeError(w, http.StatusServiceUnavailable, "issue tracker not available")
+		return
+	}
+
+	q := r.URL.Query()
+	opts := &forge.SearchOptions{
+		Query: q.Get("q"),
+	}
+
+	if state := q.Get("state"); state != "" {
+		opts.State = forge.State(state)
+	}
+
+	issues, err := a.tracker.SearchIssues(r.Context(), opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to search issues")
+		return
+	}
+
+	issueList := make([]issueResponse, 0, len(issues))
+	for _, iss := range issues {
+		issueList = append(issueList, toIssueResponse(iss))
+	}
+
+	writeJSON(w, http.StatusOK, issueListResponse{
+		Issues:  issueList,
+		Total:   len(issueList),
+		Limit:   len(issueList),
+		Offset:  0,
+		Page:    1,
+		PerPage: len(issueList),
+	})
+}
+
 // handleGetIssue handles GET /api/v1/issues/{number}.
 func (a *API) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	if a.tracker == nil {

@@ -128,6 +128,7 @@ func (a *API) SetProjectRegistry(reg *internalmcp.ProjectRegistry) {
 // Routes use Go 1.22+ method+path patterns.
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/issues", a.handleListIssues)
+	mux.HandleFunc("GET /api/v1/issues/search", a.handleSearchIssues)
 	mux.HandleFunc("GET /api/v1/issues/{number}", a.handleGetIssue)
 	mux.HandleFunc("GET /api/v1/issues/{number}/cost", a.handleGetIssueCost)
 	mux.HandleFunc("GET /api/v1/sessions", a.handleListSessions)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,7 @@ import (
 
 func TestListProjects_NoRegistry(t *testing.T) {
 	a := &API{}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/projects", http.NoBody)
 	w := httptest.NewRecorder()
 
 	a.handleListProjects(w, req)
@@ -36,7 +37,7 @@ func TestListProjects_MultiProject(t *testing.T) {
 	_ = reg.Register(&internalmcp.Project{Name: "gamma", Owner: "org", Repo: "gamma", Phase: "deployed", Tags: []string{"frontend", "oss"}})
 
 	a := &API{projectRegistry: reg}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/projects", http.NoBody)
 	w := httptest.NewRecorder()
 
 	a.handleListProjects(w, req)
@@ -72,7 +73,7 @@ func TestListProjects_ActiveFlag(t *testing.T) {
 	_ = reg.SetActive("second")
 
 	a := &API{projectRegistry: reg}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/projects", http.NoBody)
 	w := httptest.NewRecorder()
 
 	a.handleListProjects(w, req)
