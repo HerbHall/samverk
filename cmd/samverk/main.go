@@ -695,6 +695,12 @@ func dispatchCmd() *cobra.Command {
 			disp := dispatcher.New(trackerEntries, policy, st, pool, nil, logger)
 			disp.SetProjectResolver(registry)
 
+			// Wire WebSocket hub for real-time event broadcasting.
+			// The hub runs independently; a future serve+dispatch combined mode
+			// or a dedicated WebSocket endpoint can attach clients to it.
+			hub := server.NewHub(logger)
+			disp.SetBroadcaster(hub)
+
 			// Start health monitor for pre-flight provider health gating.
 			if providerRegistry != nil {
 				hm := provider.NewHealthMonitor(providerRegistry, provider.DefaultHealthCheckInterval, logger)
@@ -725,6 +731,11 @@ func dispatchCmd() *cobra.Command {
 			logger.Info("starting dispatcher", zap.Int("projects", len(trackerEntries)))
 
 			g, gctx := errgroup.WithContext(ctx)
+
+			g.Go(func() error {
+				hub.Run(gctx)
+				return nil
+			})
 
 			g.Go(func() error {
 				return disp.Run(gctx)
