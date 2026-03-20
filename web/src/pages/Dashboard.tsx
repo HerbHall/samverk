@@ -1,5 +1,6 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../lib/api'
+import { api, ActiveWorker } from '../lib/api'
 import { useWSStore } from '../store/wsStore'
 
 function StatusIndicator({ connected, label }: { connected: boolean; label: string }) {
@@ -46,6 +47,75 @@ function formatTokens(count: number): string {
   return count.toString()
 }
 
+function WorkerCard({ w, issueTitles }: { w: ActiveWorker; issueTitles: Map<number, string> }) {
+  const issueTitle = issueTitles.get(w.issue_number)
+  const startedAt = new Date(w.started_at)
+  const elapsed = formatElapsed(w.elapsed_s)
+
+  const agentColor =
+    w.agent_type === 'code-gen'
+      ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+      : w.agent_type === 'docs'
+        ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
+        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+
+  return (
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4 flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <a
+              href={`https://github.com/HerbHall/samverk/issues/${w.issue_number}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400 shrink-0"
+            >
+              #{w.issue_number}
+            </a>
+            <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${agentColor}`}>
+              {w.agent_type}
+            </span>
+          </div>
+          {issueTitle != null && (
+            <p className="text-sm text-gray-900 dark:text-gray-100 leading-snug line-clamp-2">
+              {issueTitle}
+            </p>
+          )}
+        </div>
+        <span
+          className="shrink-0 inline-block h-2 w-2 rounded-full bg-green-400 animate-pulse mt-1"
+          title="Running"
+        />
+      </div>
+
+      <div className="border-t dark:border-gray-700 pt-2 space-y-1">
+        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+          <span>Provider</span>
+          <span className="font-medium text-gray-700 dark:text-gray-300 truncate max-w-[60%] text-right">
+            {w.provider}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+          <span>Model</span>
+          <span className="font-mono text-gray-600 dark:text-gray-400 truncate max-w-[60%] text-right">
+            {w.model}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+          <span>Started</span>
+          <span className="text-gray-600 dark:text-gray-400">
+            {startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+          <span>Elapsed</span>
+          <span className="font-medium text-gray-700 dark:text-gray-300">{elapsed}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Dashboard() {
   const wsConnected = useWSStore((s) => s.connected)
 
@@ -70,11 +140,24 @@ export function Dashboard() {
   const activeWorkers = useQuery({
     queryKey: ['workers', 'active'],
     queryFn: api.getActiveWorkers,
-    refetchInterval: wsConnected ? false : 15_000,
+    refetchInterval: 15_000,
   })
 
-  const isLoading = status.isLoading || sessions.isLoading || costs.isLoading
-  const hasError = status.isError || sessions.isError || costs.isError
+  const issues = useQuery({
+    queryKey: ['issues', 'open'],
+    queryFn: () => api.listIssues({ state: 'open' }),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+
+  const issueTitles = useMemo(() => {
+    const map = new Map<number, string>()
+    issues.data?.forEach((i) => map.set(i.number, i.title))
+    return map
+  }, [issues.data])
+
+  const isLoading = status.isLoading || costs.isLoading
+  const hasError = status.isError || costs.isError
 
   if (isLoading) {
     return (
@@ -85,8 +168,7 @@ export function Dashboard() {
   }
 
   if (hasError) {
-    const errorMsg =
-      status.error?.message || sessions.error?.message || costs.error?.message || 'Unknown error'
+    const errorMsg = status.error?.message || costs.error?.message || 'Unknown error'
     return (
       <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4">
         <p className="font-medium text-red-800 dark:text-red-300">Failed to load dashboard</p>
@@ -135,7 +217,10 @@ export function Dashboard() {
           </div>
           <div className="mt-3 border-t dark:border-gray-700 pt-3">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              MCP Tools: <span className="font-medium text-gray-700 dark:text-gray-300">{status.data?.tool_count ?? 0}</span>
+              MCP Tools:{' '}
+              <span className="font-medium text-gray-700 dark:text-gray-300">
+                {status.data?.tool_count ?? 0}
+              </span>
             </p>
           </div>
         </div>
@@ -159,7 +244,7 @@ export function Dashboard() {
           <StatCard
             title="Tokens Used"
             value={formatTokens(
-              (costs.data?.total_input_tokens ?? 0) + (costs.data?.total_output_tokens ?? 0)
+              (costs.data?.total_input_tokens ?? 0) + (costs.data?.total_output_tokens ?? 0),
             )}
             subtitle={`${formatTokens(costs.data?.total_input_tokens ?? 0)} in / ${formatTokens(costs.data?.total_output_tokens ?? 0)} out`}
           />
@@ -177,27 +262,7 @@ export function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {activeWorkers.data.map((w) => (
-              <div
-                key={w.session_id}
-                className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <a
-                    href={`#${w.issue_number}`}
-                    className="text-base font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    #{w.issue_number}
-                  </a>
-                  <span className="inline-block rounded-full bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-                    {w.agent_type}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-700 dark:text-gray-300">{w.provider}</p>
-                <p className="text-xs font-mono text-gray-500 dark:text-gray-400 truncate">{w.model}</p>
-                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
-                  Elapsed: {formatElapsed(w.elapsed_s)}
-                </p>
-              </div>
+              <WorkerCard key={w.session_id} w={w} issueTitles={issueTitles} />
             ))}
           </div>
         )}

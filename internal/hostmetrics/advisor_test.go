@@ -6,10 +6,10 @@ import (
 )
 
 func TestAnalyzeHistoryEmpty(t *testing.T) {
-	if recs := AnalyzeHistory(nil); recs != nil {
+	if recs := AnalyzeHistory(nil, InfraContext{}); recs != nil {
 		t.Fatalf("expected nil for empty history, got %v", recs)
 	}
-	if recs := AnalyzeHistory([]Snapshot{{}}); recs != nil {
+	if recs := AnalyzeHistory([]Snapshot{{}}, InfraContext{}); recs != nil {
 		t.Fatalf("expected nil for single-snapshot history, got %v", recs)
 	}
 }
@@ -59,7 +59,7 @@ func TestCPURecommendations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			recs := AnalyzeHistory(tt.snaps)
+			recs := AnalyzeHistory(tt.snaps, InfraContext{})
 			found := findRec(recs, tt.wantRes)
 			if found == nil {
 				t.Fatalf("no recommendation for resource %q; got %+v", tt.wantRes, recs)
@@ -91,7 +91,7 @@ func TestDiskGrowthProjection(t *testing.T) {
 		})
 	}
 
-	recs := AnalyzeHistory(snaps)
+	recs := AnalyzeHistory(snaps, InfraContext{})
 	found := findRec(recs, "disk")
 	if found == nil {
 		t.Fatal("no disk recommendation produced")

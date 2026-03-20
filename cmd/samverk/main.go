@@ -362,6 +362,20 @@ func serveCmd() *cobra.Command {
 			// Start host metrics collector.
 			hm := hostmetrics.NewCollector("/")
 			apiHandler.SetHostMetrics(hm)
+
+			// Configure Proxmox infra context for capacity action generation.
+			containerID := os.Getenv("SAMVERK_CONTAINER_ID")
+			if containerID == "" {
+				containerID = "202"
+			}
+			proxmoxHost := os.Getenv("SAMVERK_PROXMOX_HOST")
+			if proxmoxHost == "" {
+				proxmoxHost = "192.168.1.203"
+			}
+			apiHandler.SetInfraContext(hostmetrics.InfraContext{
+				ContainerID: containerID,
+				ProxmoxHost: proxmoxHost,
+			})
 			go func() {
 				if hmErr := hm.Run(ctx); hmErr != nil && hmErr != context.Canceled {
 					logger.Warn("host metrics collector stopped", zap.Error(hmErr))

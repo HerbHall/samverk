@@ -12,6 +12,11 @@ func (a *API) SetHostMetrics(hm *hostmetrics.Collector) {
 	a.hostMetrics = hm
 }
 
+// SetInfraContext configures the Proxmox infrastructure context used for action generation.
+func (a *API) SetInfraContext(infra hostmetrics.InfraContext) {
+	a.infra = infra
+}
+
 // hostMetricsResponse is the JSON body returned by GET /api/v1/metrics/host.
 type hostMetricsResponse struct {
 	Current         hostMetricsDTO          `json:"current"`
@@ -51,12 +56,38 @@ type alertDTO struct {
 	Threshold float64 `json:"threshold"`
 }
 
+// actionDetailDTO is the JSON-serializable form of hostmetrics.RecommendedAction.
+type actionDetailDTO struct {
+	Description      string `json:"description"`
+	SSHTarget        string `json:"ssh_target"`
+	Command          string `json:"command"`
+	CurrentValue     string `json:"current_value"`
+	RecommendedValue string `json:"recommended_value"`
+	CostTier         string `json:"cost_tier"`
+	CostNote         string `json:"cost_note"`
+}
+
+// resourceStatsDTO is the JSON-serializable form of hostmetrics.ResourceStats.
+type resourceStatsDTO struct {
+	Avg           float64 `json:"avg"`
+	P95           float64 `json:"p95"`
+	Peak          float64 `json:"peak"`
+	TimeAboveWarn float64 `json:"time_above_warn"`
+	TimeAboveCrit float64 `json:"time_above_crit"`
+	DaysToWarn    float64 `json:"days_to_warn"`
+	DaysToCrit    float64 `json:"days_to_crit"`
+	SampleCount   int     `json:"sample_count"`
+}
+
 // recommendationDTO is the JSON-serializable form of hostmetrics.Recommendation.
 type recommendationDTO struct {
-	Resource string `json:"resource"`
-	Level    string `json:"level"`
-	Title    string `json:"title"`
-	Detail   string `json:"detail"`
+	Resource   string           `json:"resource"`
+	Level      string           `json:"level"`
+	Title      string           `json:"title"`
+	Detail     string           `json:"detail"`
+	ActionType string           `json:"action_type"`
+	Action     *actionDetailDTO `json:"action,omitempty"`
+	Stats      resourceStatsDTO `json:"stats"`
 }
 
 // handleHostMetrics serves GET /api/v1/metrics/host.
@@ -87,15 +118,38 @@ func (a *API) handleHostMetrics(w http.ResponseWriter, r *http.Request) {
 
 	// Run recommendation engine against the full 24h window regardless of ?since=.
 	analysisWindow := a.hostMetrics.History(time.Now().Add(-24 * time.Hour))
-	if recs := hostmetrics.AnalyzeHistory(analysisWindow); len(recs) > 0 {
+	if recs := hostmetrics.AnalyzeHistory(analysisWindow, a.infra); len(recs) > 0 {
 		resp.Recommendations = make([]recommendationDTO, 0, len(recs))
 		for i := range recs {
-			resp.Recommendations = append(resp.Recommendations, recommendationDTO{
-				Resource: recs[i].Resource,
-				Level:    string(recs[i].Level),
-				Title:    recs[i].Title,
-				Detail:   recs[i].Detail,
-			})
+			dto := recommendationDTO{
+				Resource:   recs[i].Resource,
+				Level:      string(recs[i].Level),
+				Title:      recs[i].Title,
+				Detail:     recs[i].Detail,
+				ActionType: string(recs[i].ActionType),
+				Stats: resourceStatsDTO{
+					Avg:           recs[i].Stats.Avg,
+					P95:           recs[i].Stats.P95,
+					Peak:          recs[i].Stats.Peak,
+					TimeAboveWarn: recs[i].Stats.TimeAboveWarn,
+					TimeAboveCrit: recs[i].Stats.TimeAboveCrit,
+					DaysToWarn:    recs[i].Stats.DaysToWarn,
+					DaysToCrit:    recs[i].Stats.DaysToCrit,
+					SampleCount:   recs[i].Stats.SampleCount,
+				},
+			}
+			if recs[i].Action != nil {
+				dto.Action = &actionDetailDTO{
+					Description:      recs[i].Action.Description,
+					SSHTarget:        recs[i].Action.SSHTarget,
+					Command:          recs[i].Action.Command,
+					CurrentValue:     recs[i].Action.CurrentValue,
+					RecommendedValue: recs[i].Action.RecommendedValue,
+					CostTier:         recs[i].Action.CostTier,
+					CostNote:         recs[i].Action.CostNote,
+				}
+			}
+			resp.Recommendations = append(resp.Recommendations, dto)
 		}
 	}
 

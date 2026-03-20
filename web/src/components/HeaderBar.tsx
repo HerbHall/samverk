@@ -1,8 +1,60 @@
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../hooks/useTheme'
+import { api } from '../lib/api'
+import { CapacityModal } from './CapacityModal'
 
 interface HeaderBarProps {
   onChatToggle?: () => void
   chatOpen?: boolean
+}
+
+function CapacityIndicator() {
+  const [open, setOpen] = useState(false)
+
+  const hostMetrics = useQuery({
+    queryKey: ['host-metrics'],
+    queryFn: api.getHostMetrics,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+
+  const recs = hostMetrics.data?.recommendations ?? []
+  const hasCritical = recs.some((r) => r.level === 'critical')
+  const hasWarn = recs.some((r) => r.level === 'warn')
+
+  const { dotColor, label } = hasCritical
+    ? { dotColor: 'bg-red-500', label: 'Critical capacity issue' }
+    : hasWarn
+    ? { dotColor: 'bg-amber-500', label: 'Capacity warning' }
+    : { dotColor: 'bg-green-500', label: 'All resources healthy' }
+
+  const critCount = recs.filter((r) => r.level === 'critical').length
+  const warnCount = recs.filter((r) => r.level === 'warn').length
+  const tooltip = recs.length === 0
+    ? 'Capacity data loading...'
+    : hasCritical || hasWarn
+    ? `${critCount > 0 ? critCount + ' critical' : ''}${critCount > 0 && warnCount > 0 ? ', ' : ''}${warnCount > 0 ? warnCount + ' warning' : ''} — click for details`
+    : 'All resources healthy — click for details'
+
+  return (
+    <>
+      <div className="relative group">
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          aria-label={label}
+        >
+          <span className={`h-2 w-2 rounded-full ${dotColor}`} />
+          <span className="hidden sm:inline">Capacity</span>
+        </button>
+        <div className="pointer-events-none absolute right-0 top-full mt-1 z-50 hidden w-52 rounded bg-gray-900 dark:bg-gray-700 px-3 py-2 text-xs text-gray-100 shadow-lg group-hover:block">
+          {tooltip}
+        </div>
+      </div>
+      {open && <CapacityModal onClose={() => setOpen(false)} />}
+    </>
+  )
 }
 
 export function HeaderBar({ onChatToggle, chatOpen }: HeaderBarProps) {
@@ -24,6 +76,7 @@ export function HeaderBar({ onChatToggle, chatOpen }: HeaderBarProps) {
         </span>
       </div>
       <div className="flex items-center gap-2">
+        <CapacityIndicator />
         {onChatToggle != null && (
           <button
             onClick={onChatToggle}

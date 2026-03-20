@@ -223,11 +223,35 @@ export interface HostMetricsDTO {
   alerts?: HostAlert[]
 }
 
+export interface HostRecommendationAction {
+  description: string
+  ssh_target: string
+  command: string
+  current_value: string
+  recommended_value: string
+  cost_tier: string   // "free" | "hardware"
+  cost_note: string
+}
+
+export interface HostRecommendationStats {
+  avg: number
+  p95: number
+  peak: number
+  time_above_warn: number
+  time_above_crit: number
+  days_to_warn: number
+  days_to_crit: number
+  sample_count: number
+}
+
 export interface HostRecommendation {
   resource: string
   level: 'info' | 'warn' | 'critical'
   title: string
   detail: string
+  action_type: string    // "proxmox_config" | "hardware_upgrade" | "none"
+  action?: HostRecommendationAction
+  stats: HostRecommendationStats
 }
 
 export interface HostMetricsResponse {
@@ -504,5 +528,11 @@ export const api = {
     fetchJSON<ChatResponse>('/chat', {
       method: 'POST',
       body: JSON.stringify(req),
+    }),
+
+  applyCapacityRecommendation: (resource: string) =>
+    fetchJSON<{ issue_number: number; issue_url: string }>('/capacity/apply', {
+      method: 'POST',
+      body: JSON.stringify({ resource }),
     }),
 }
