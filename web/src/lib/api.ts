@@ -434,8 +434,10 @@ export interface ChatResponse {
 }
 
 export const api = {
-  listIssues: (params?: { state?: string; page?: number }) =>
-    fetchJSON<Issue[]>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
+  listIssues: async (params?: { state?: string; page?: number }) => {
+    const data = await fetchJSON<{ issues: Issue[]; total: number }>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`)
+    return data.issues
+  },
 
   getIssue: (number: number) =>
     fetchJSON<Issue>(`/issues/${number}`),
