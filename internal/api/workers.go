@@ -179,3 +179,41 @@ func (a *API) handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleListWorkers(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, a.workers.list())
 }
+
+// activeWorkerResponse represents a currently running agent session.
+type activeWorkerResponse struct {
+	SessionID   string  `json:"session_id"`
+	IssueNumber int     `json:"issue_number"`
+	AgentType   string  `json:"agent_type"`
+	Provider    string  `json:"provider"`
+	Model       string  `json:"model"`
+	StartedAt   string  `json:"started_at"`
+	ElapsedS    float64 `json:"elapsed_s"`
+}
+
+// handleListActiveWorkers handles GET /api/v1/workers/active.
+// Returns sessions with status="active", computed elapsed_s.
+func (a *API) handleListActiveWorkers(w http.ResponseWriter, r *http.Request) {
+	if a.store == nil {
+		writeJSON(w, http.StatusOK, []activeWorkerResponse{})
+		return
+	}
+	sessions, err := a.store.ListSessions(r.Context(), "active")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list active sessions")
+		return
+	}
+	result := make([]activeWorkerResponse, 0, len(sessions))
+	for _, s := range sessions {
+		result = append(result, activeWorkerResponse{
+			SessionID:   s.ID,
+			IssueNumber: s.IssueNumber,
+			AgentType:   s.AgentType,
+			Provider:    s.Provider,
+			Model:       s.Model,
+			StartedAt:   s.StartedAt.Format(time.RFC3339),
+			ElapsedS:    time.Since(s.StartedAt).Seconds(),
+		})
+	}
+	writeJSON(w, http.StatusOK, result)
+}

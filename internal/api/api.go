@@ -139,6 +139,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/scaling/pause", a.handleScalingPause)
 	mux.HandleFunc("POST /api/v1/scaling/resume", a.handleScalingResume)
 	mux.HandleFunc("POST /api/v1/scaling/set", a.handleScalingSet)
+	mux.HandleFunc("GET /api/v1/workers/active", a.handleListActiveWorkers)
 	mux.HandleFunc("GET /api/v1/workers", a.handleListWorkers)
 	mux.HandleFunc("POST /api/v1/workers/register", a.handleRegisterWorker)
 	mux.HandleFunc("POST /api/v1/workers/heartbeat", a.handleWorkerHeartbeat)
