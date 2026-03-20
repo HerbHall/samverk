@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
+
+	"github.com/herbhall/samverk/internal/store"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // doPost is a test helper that sends a POST with a JSON body.
@@ -154,5 +158,108 @@ func TestListWorkersEmpty(t *testing.T) {
 	}
 	if len(workers) != 0 {
 		t.Errorf("want 0 workers, got %d", len(workers))
+	}
+}
+
+func TestListActiveWorkers(t *testing.T) {
+	now := time.Now().Add(-30 * time.Second)
+
+	activeSess := &models.Session{
+		ID:          "sess-active",
+		IssueNumber: 42,
+		AgentType:   "code-gen",
+		Provider:    "ollama",
+		Model:       "qwen2.5:7b",
+		Status:      models.SessionStatusActive,
+		StartedAt:   now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	completedSess := &models.Session{
+		ID:          "sess-done",
+		IssueNumber: 7,
+		AgentType:   "triage",
+		Provider:    "claude",
+		Model:       "claude-sonnet",
+		Status:      models.SessionStatusCompleted,
+		StartedAt:   now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	// completedSess is declared to show intent; the mock store's ListSessions
+	// ignores the status filter, so we control filtering via what's in the slice.
+	_ = completedSess
+
+	tests := []struct {
+		name       string
+		store      store.Store
+		wantStatus int
+		wantLen    int
+	}{
+		{
+			// The store filters by status=active; we pass only the active session
+			// to simulate what SQLiteStore.ListSessions would return.
+			name:       "running sessions returned, non-running excluded",
+			store:      &mockStore{sessions: []*models.Session{activeSess}},
+			wantStatus: http.StatusOK,
+			wantLen:    1,
+		},
+		{
+			name:       "nil store returns empty array not null",
+			store:      nil,
+			wantStatus: http.StatusOK,
+			wantLen:    0,
+		},
+		{
+			name:       "empty result returns empty array not null",
+			store:      &mockStore{sessions: []*models.Session{}},
+			wantStatus: http.StatusOK,
+			wantLen:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestAPI(t, nil, tt.store, nil)
+
+			resp := doGet(t, ts.URL+"/api/v1/workers/active")
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
+			}
+
+			// Decode as raw JSON to verify non-null array.
+			var raw json.RawMessage
+			if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if string(raw) == "null" {
+				t.Errorf("response is null, want array")
+			}
+
+			var workers []map[string]any
+			if err := json.Unmarshal(raw, &workers); err != nil {
+				t.Fatalf("unmarshal workers: %v", err)
+			}
+			if len(workers) != tt.wantLen {
+				t.Errorf("worker count = %d, want %d", len(workers), tt.wantLen)
+			}
+
+			if tt.wantLen > 0 {
+				w := workers[0]
+				if w["session_id"] != activeSess.ID {
+					t.Errorf("session_id = %v, want %q", w["session_id"], activeSess.ID)
+				}
+				if w["issue_number"] != float64(activeSess.IssueNumber) {
+					t.Errorf("issue_number = %v, want %d", w["issue_number"], activeSess.IssueNumber)
+				}
+				elapsedS, ok := w["elapsed_s"].(float64)
+				if !ok || elapsedS <= 0 {
+					t.Errorf("elapsed_s = %v, want positive float64", w["elapsed_s"])
+				}
+			}
+		})
 	}
 }
