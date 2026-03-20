@@ -55,6 +55,7 @@ type Dispatcher struct {
 	issueFailures  map[string]int            // key: issueKey(owner, repo, number)
 	circuitBreaker *CircuitBreaker
 	metrics        *metrics.DispatcherMetrics
+	broadcaster    EventBroadcaster
 	wakeup         chan struct{}
 	lastEventTime  time.Time // updated by watcher callbacks; read by stale detection
 	mu             sync.Mutex
@@ -140,6 +141,11 @@ func (d *Dispatcher) SetProjectResolver(pr ProjectResolver) {
 	d.projects = pr
 }
 
+// SetBroadcaster configures an optional event broadcaster for real-time WebSocket updates.
+func (d *Dispatcher) SetBroadcaster(b EventBroadcaster) {
+	d.broadcaster = b
+}
+
 // Snapshot returns a point-in-time snapshot of dispatcher metrics.
 func (d *Dispatcher) Snapshot() metrics.DispatcherSnapshot {
 	return d.metrics.Snapshot()
@@ -184,6 +190,10 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "needs-qc"), zap.String("error", err.Error()))
 		}
 		d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
+		broadcastEvent(d.broadcaster, "worker.complete", map[string]any{
+			"issue_number": result.IssueNumber,
+			"outcome":      "pr_opened",
+		})
 	} else {
 		// Record failure event with classification.
 		d.recordFailure(ctx, result.IssueNumber, result.SessionID,
@@ -194,6 +204,10 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		attempt := d.getPersistedFailureCount(ctx, result.IssueNumber)
 		decision := decideCorrection(fc, result.IssueNumber, attempt, 0)
 		d.applyCorrection(ctx, result, decision)
+		broadcastEvent(d.broadcaster, "worker.failed", map[string]any{
+			"issue_number": result.IssueNumber,
+			"error":        result.Error,
+		})
 	}
 
 	// Signal the run loop to immediately check for queued work
@@ -383,6 +397,10 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
 			}
 			d.metrics.PollCompleted(time.Since(pollStart))
+			d.mu.Lock()
+			depth := len(d.claimed)
+			d.mu.Unlock()
+			broadcastEvent(d.broadcaster, "queue.depth", map[string]any{"depth": depth})
 
 		case <-ticker.C:
 			pollStart := time.Now()
@@ -394,6 +412,10 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
 			}
 			d.metrics.PollCompleted(time.Since(pollStart))
+			d.mu.Lock()
+			depth := len(d.claimed)
+			d.mu.Unlock()
+			broadcastEvent(d.broadcaster, "queue.depth", map[string]any{"depth": depth})
 
 			// Stale watcher detection: warn if no events for a long time.
 			// After maxStalePeriodsBeforeReconnect consecutive stale periods,
