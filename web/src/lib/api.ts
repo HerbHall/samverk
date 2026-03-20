@@ -223,9 +223,17 @@ export interface HostMetricsDTO {
   alerts?: HostAlert[]
 }
 
+export interface HostRecommendation {
+  resource: string
+  level: 'info' | 'warn' | 'critical'
+  title: string
+  detail: string
+}
+
 export interface HostMetricsResponse {
   current: HostMetricsDTO
   history: HostMetricsDTO[]
+  recommendations?: HostRecommendation[]
 }
 
 export interface LogEntry {
