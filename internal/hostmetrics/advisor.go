@@ -325,7 +325,7 @@ func ramRecommendations(s ResourceStats, snaps []Snapshot, infra InfraContext) [
 
 	id := containerID(infra)
 	target := proxmoxTarget(infra)
-	currentRAMMB := int(latestRAMBytes(snaps) / 1024 / 1024)
+	currentRAMMB := int(latestRAMBytes(snaps) / 1024 / 1024) //nolint:gosec // G115: RAM bytes divided to MB fits in int
 
 	switch {
 	case s.TimeAboveCrit >= 0.20:
@@ -504,7 +504,7 @@ func swapRecommendations(s ResourceStats, snaps []Snapshot, infra InfraContext) 
 
 	id := containerID(infra)
 	target := proxmoxTarget(infra)
-	currentRAMMB := int(latestRAMBytes(snaps) / 1024 / 1024)
+	currentRAMMB := int(latestRAMBytes(snaps) / 1024 / 1024) //nolint:gosec // G115: RAM bytes divided to MB fits in int
 
 	var ramAction *RecommendedAction
 	if currentRAMMB > 0 {
