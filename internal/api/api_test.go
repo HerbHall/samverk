@@ -213,6 +213,12 @@ func (m *mockStore) LoadProviderHealthSnapshot(_ context.Context) ([]provider.Pr
 func (m *mockStore) LatestSuccessByProvider(_ context.Context) (map[string]time.Time, error) {
 	return nil, nil
 }
+func (m *mockStore) GetKPIReport(_ context.Context) (*models.KPIReport, error) {
+	return &models.KPIReport{
+		WindowDays:         30,
+		RootCauseBreakdown: []models.RootCauseBreakdownEntry{},
+	}, nil
+}
 func (m *mockStore) Close() error { return nil }
 
 // Compile-time check: mockStore implements store.Store.

@@ -471,6 +471,26 @@ export interface MCPServerInfo {
   description: string
 }
 
+export interface RootCauseBreakdownEntry {
+  category: string
+  count: number
+  pct: number
+}
+
+export interface KPIReport {
+  window_days: number
+  first_time_fix_rate: number | null
+  fix_success_rate: number | null
+  recurrence_rate: number | null
+  workaround_rate: number | null
+  mean_time_to_fix_hours: number | null
+  planning_gap_rate: number | null
+  unknown_root_cause_rate: number | null
+  prevention_coverage: number | null
+  root_cause_breakdown: RootCauseBreakdownEntry[]
+  sample_size: number
+}
+
 export interface ForgeInfo {
   name: string
   type: string
@@ -622,4 +642,7 @@ export const api = {
 
   getProjects: () =>
     fetchJSON<ProjectInfo[]>('/projects'),
+
+  getKPIs: () =>
+    fetchJSON<KPIReport>('/kpis'),
 }

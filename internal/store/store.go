@@ -56,6 +56,7 @@ type Store interface {
 	ListFailureEvents(ctx context.Context, since time.Time, limit int) ([]*models.FailureEvent, error)
 	CountFailuresByIssue(ctx context.Context, issueNumber int) (int, error)
 	GetFailureSummary(ctx context.Context, since time.Time) (*models.FailureSummary, error)
+	GetKPIReport(ctx context.Context) (*models.KPIReport, error)
 
 	// Persisted issue failure counter (survives restarts, unlike in-memory map)
 	GetIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
@@ -276,6 +277,17 @@ CREATE TABLE IF NOT EXISTS provider_health_snapshots (
 		`ALTER TABLE sessions ADD COLUMN partial_output TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN checkpoint_hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN estimated_timeout_ms INTEGER NOT NULL DEFAULT 0`,
+		// RCA fields for failure_events (issue #117).
+		`ALTER TABLE failure_events ADD COLUMN root_cause_category TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE failure_events ADD COLUMN fix_classification TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE failure_events ADD COLUMN prevention_measure TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE failure_events ADD COLUMN recurrence_risk TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE failure_events ADD COLUMN detection_method TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE failure_events ADD COLUMN time_to_detect_min INTEGER`,
+		`ALTER TABLE failure_events ADD COLUMN linked_issues TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE failure_events ADD COLUMN component TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE failure_events ADD COLUMN resolved_at TEXT`,
+		`ALTER TABLE failure_events ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		if _, err := s.db.ExecContext(context.Background(), m); err != nil {

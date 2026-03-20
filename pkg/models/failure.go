@@ -71,6 +71,19 @@ type FailureEvent struct {
 	AttemptNumber int           `json:"attempt_number"` // which attempt (1st, 2nd, 3rd, etc.)
 	Duration      time.Duration `json:"duration_ms,omitempty"`
 	Timestamp     time.Time     `json:"timestamp"`
+
+	// RCA fields — populated when a fix is recorded.
+	RootCauseCategory string     `json:"root_cause_category,omitempty"`
+	FixClassification string     `json:"fix_classification,omitempty"`
+	PreventionMeasure string     `json:"prevention_measure,omitempty"`
+	RecurrenceRisk    string     `json:"recurrence_risk,omitempty"`
+	DetectionMethod   string     `json:"detection_method,omitempty"`
+	TimeToDetectMin   *int       `json:"time_to_detect_min,omitempty"`
+	LinkedIssues      string     `json:"linked_issues,omitempty"`
+	Component         string     `json:"component,omitempty"`
+	ResolvedAt        *time.Time `json:"resolved_at,omitempty"`
+	// Status mirrors the session status for KPI queries (e.g. "resolved").
+	Status string `json:"status,omitempty"`
 }
 
 // FailureSummary aggregates failure data for dashboards and digests.
@@ -87,6 +100,29 @@ type FailureSummary struct {
 type IssueFailureCount struct {
 	IssueNumber int `json:"issue_number"`
 	Count       int `json:"count"`
+}
+
+// RootCauseBreakdownEntry holds one row of the root-cause breakdown.
+type RootCauseBreakdownEntry struct {
+	Category string  `json:"category"`
+	Count    int     `json:"count"`
+	Pct      float64 `json:"pct"`
+}
+
+// KPIReport is the response payload for GET /api/v1/kpis.
+// Rates are nil when sample_size < 5 (insufficient data).
+type KPIReport struct {
+	WindowDays           int                       `json:"window_days"`
+	FirstTimeFixRate     *float64                  `json:"first_time_fix_rate"`
+	FixSuccessRate       *float64                  `json:"fix_success_rate"`
+	RecurrenceRate       *float64                  `json:"recurrence_rate"`
+	WorkaroundRate       *float64                  `json:"workaround_rate"`
+	MeanTimeToFixHours   *float64                  `json:"mean_time_to_fix_hours"`
+	PlanningGapRate      *float64                  `json:"planning_gap_rate"`
+	UnknownRootCauseRate *float64                  `json:"unknown_root_cause_rate"`
+	PreventionCoverage   *float64                  `json:"prevention_coverage"`
+	RootCauseBreakdown   []RootCauseBreakdownEntry `json:"root_cause_breakdown"`
+	SampleSize           int                       `json:"sample_size"`
 }
 
 // CorrectionEvent records a correction decision made by the failure response engine.
