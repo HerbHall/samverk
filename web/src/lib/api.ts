@@ -460,6 +460,8 @@ export interface DataSource {
   record_count: number
   path?: string
   healthy: boolean
+}
+
 export interface MCPServerInfo {
   name: string
   type: 'hosted' | 'consumed'
@@ -467,6 +469,27 @@ export interface MCPServerInfo {
   healthy: boolean
   tool_count: number
   description: string
+}
+
+export interface ForgeInfo {
+  name: string
+  type: string
+  url: string
+  healthy: boolean
+}
+
+export interface ProjectInfo {
+  name: string
+  owner: string
+  repo: string
+  phase: string
+  tags: string[]
+  active: boolean
+  forge?: string
+  forge_url?: string
+  open_issues: number
+  needs_human: number
+  in_progress: number
 }
 
 export const api = {
@@ -594,4 +617,9 @@ export const api = {
     fetchJSON<DataSource[]>('/data/sources'),
   getMCPServers: () =>
     fetchJSON<MCPServerInfo[]>('/mcp/servers'),
+  getForges: () =>
+    fetchJSON<ForgeInfo[]>('/forges'),
+
+  getProjects: () =>
+    fetchJSON<ProjectInfo[]>('/projects'),
 }

@@ -28,6 +28,8 @@ type Project struct {
 	Repo      string                   `json:"repo" yaml:"repo"`
 	Phase     string                   `json:"phase" yaml:"phase"`
 	Tags      []string                 `json:"tags,omitempty" yaml:"tags"`
+	ForgeType string                   `json:"forge_type,omitempty" yaml:"-"` // "github" or "gitea"
+	ForgeURL  string                   `json:"forge_url,omitempty" yaml:"-"`  // base URL of the forge
 	Tracker   forge.IssueTracker       `json:"-" yaml:"-"`
 	Reader    forge.RepoReader         `json:"-" yaml:"-"`
 	Writer    forge.RepoWriter         `json:"-" yaml:"-"`

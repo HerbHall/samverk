@@ -202,6 +202,8 @@ func serveCmd() *cobra.Command {
 					Owner:     owner,
 					Repo:      repo,
 					Phase:     "development",
+					ForgeType: "github",
+					ForgeURL:  "https://github.com",
 					Tracker:   tracker,
 					Reader:    repoReader,
 					PRManager: ghDefaultClient,
@@ -244,6 +246,8 @@ func serveCmd() *cobra.Command {
 								Repo:      pc.Repo,
 								Phase:     pc.Phase,
 								Tags:      pc.Tags,
+								ForgeType: "gitea",
+								ForgeURL:  pc.GiteaURL,
 								Tracker:   gtClient,
 								Reader:    gtClient,
 								PRManager: gtClient,
@@ -265,6 +269,8 @@ func serveCmd() *cobra.Command {
 								Repo:      pc.Repo,
 								Phase:     pc.Phase,
 								Tags:      pc.Tags,
+								ForgeType: "github",
+								ForgeURL:  "https://github.com",
 								Tracker:   ghExtra,
 								Reader:    ghExtra,
 								PRManager: ghExtra,
@@ -542,6 +548,8 @@ func dispatchCmd() *cobra.Command {
 								Repo:      pc.Repo,
 								Phase:     pc.Phase,
 								Tags:      pc.Tags,
+								ForgeType: "gitea",
+								ForgeURL:  pc.GiteaURL,
 								Tracker:   gtClient,
 								PRManager: gtClient,
 							}
@@ -567,6 +575,8 @@ func dispatchCmd() *cobra.Command {
 								Repo:      pc.Repo,
 								Phase:     pc.Phase,
 								Tags:      pc.Tags,
+								ForgeType: "github",
+								ForgeURL:  "https://github.com",
 								Tracker:   ghClient,
 								PRManager: ghClient,
 							}
@@ -594,6 +604,7 @@ func dispatchCmd() *cobra.Command {
 				if _, exists := registry.Get(repo); !exists {
 					var legacyTracker forge.IssueTracker
 					var legacyPRMgr forge.PullRequestManager
+					var legacyForgeType, legacyForgeURL string
 					switch forgeName {
 					case "gitea":
 						giteaToken := os.Getenv("GITEA_TOKEN")
@@ -612,6 +623,8 @@ func dispatchCmd() *cobra.Command {
 						}
 						legacyTracker = gtClient
 						legacyPRMgr = gtClient
+						legacyForgeType = "gitea"
+						legacyForgeURL = giteaURL
 					default: // "github" or empty
 						token := os.Getenv("GITHUB_TOKEN")
 						if token == "" {
@@ -625,12 +638,16 @@ func dispatchCmd() *cobra.Command {
 						}
 						legacyTracker = ghClient
 						legacyPRMgr = ghClient
+						legacyForgeType = "github"
+						legacyForgeURL = "https://github.com"
 					}
 					legacyProject := &internalmcp.Project{
 						Name:      repo,
 						Owner:     owner,
 						Repo:      repo,
 						Phase:     "development",
+						ForgeType: legacyForgeType,
+						ForgeURL:  legacyForgeURL,
 						Tracker:   legacyTracker,
 						PRManager: legacyPRMgr,
 					}
