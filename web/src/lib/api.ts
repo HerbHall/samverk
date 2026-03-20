@@ -363,6 +363,24 @@ export interface SynapsetLogEntry {
   CreatedAt: string
 }
 
+export interface ProviderHealthEntry {
+  name: string
+  healthy: boolean
+  last_checked?: string
+  last_healthy?: string
+  last_success_at?: string
+  error?: string
+  model_loaded?: boolean
+  vram_free_bytes?: number
+  vram_total_bytes?: number
+}
+
+export interface ProviderHealthResponse {
+  providers: ProviderHealthEntry[]
+  count: number
+  routing_chains?: Record<string, string[]>
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
@@ -467,6 +485,9 @@ export const api = {
 
   synapsetLogs: (limit?: number) =>
     fetchJSON<SynapsetLogEntry[]>(`/synapset/logs${limit ? '?limit=' + limit : ''}`),
+
+  getProviderHealth: () =>
+    fetchJSON<ProviderHealthResponse>('/providers/health'),
 
   sendChat: (req: ChatRequest) =>
     fetchJSON<ChatResponse>('/chat', {
