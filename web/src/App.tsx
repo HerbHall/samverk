@@ -12,7 +12,7 @@ import { DevKit } from './pages/DevKit'
 import { Providers } from './pages/Providers'
 import { useWebSocket } from './hooks/useWebSocket'
 
-class ErrorBoundary extends React.Component<
+export class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { error: Error | null }
 > {

@@ -248,8 +248,9 @@ function IssueSummary({ issues }: { issues: Issue[] }) {
     i.state === 'open' && i.labels.some((l) => ['agent:human', 'status:needs-human', 'status:human-pending'].includes(l))
   ).length
 
-  // Closed in last 24h / 7d
-  const now = Date.now()
+  // Closed in last 24h / 7d (stable snapshot per render cycle)
+  // eslint-disable-next-line react-hooks/purity -- Date.now() in a memoized time-window calculation is intentional
+  const now = useMemo(() => Date.now(), [])
   const closed24h = issues.filter((i) => i.closed_at && now - new Date(i.closed_at).getTime() < 86_400_000).length
   const closed7d = issues.filter((i) => i.closed_at && now - new Date(i.closed_at).getTime() < 7 * 86_400_000).length
 
