@@ -81,6 +81,14 @@ export function Layout() {
               Logs
             </NavLink>
             <NavLink
+              to="/quality"
+              className={({ isActive }) =>
+                `block rounded px-3 py-2 text-sm ${isActive ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
+              }
+            >
+              Quality
+            </NavLink>
+            <NavLink
               to="/mcp"
               className={({ isActive }) =>
                 `block rounded px-3 py-2 text-sm ${isActive ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
