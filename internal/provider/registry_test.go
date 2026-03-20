@@ -468,6 +468,8 @@ func TestNameOf_NotFound(t *testing.T) {
 func TestValidateRoutingConfig_OllamaInCodeGenChain(t *testing.T) {
 	t.Parallel()
 
+	// "default" was removed from codeGenChainNames in #113 -- ollama is now
+	// allowed there. "complex" remains blocked.
 	cfg := &RegistryConfig{
 		Providers: map[string]ProviderConfig{
 			"claude-sonnet": {Type: "claude-cli", DefaultModel: "claude-sonnet-4-6"},
@@ -475,6 +477,7 @@ func TestValidateRoutingConfig_OllamaInCodeGenChain(t *testing.T) {
 		},
 		Routing: map[string][]string{
 			"default": {"ollama-coder", "claude-sonnet"},
+			"complex": {"ollama-coder", "claude-sonnet"},
 			"triage":  {"ollama-coder", "claude-sonnet"},
 		},
 	}
@@ -482,12 +485,12 @@ func TestValidateRoutingConfig_OllamaInCodeGenChain(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	warnings := ValidateRoutingConfig(cfg, logger)
 
-	// Should warn about ollama in "default" but not in "triage".
+	// Should warn about ollama in "complex" but not in "default" or "triage".
 	if len(warnings) != 1 {
 		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
 	}
-	if !strings.Contains(warnings[0], "default") {
-		t.Errorf("warning should mention 'default' chain, got: %s", warnings[0])
+	if !strings.Contains(warnings[0], "complex") {
+		t.Errorf("warning should mention 'complex' chain, got: %s", warnings[0])
 	}
 	if !strings.Contains(warnings[0], "ollama-coder") {
 		t.Errorf("warning should mention 'ollama-coder', got: %s", warnings[0])

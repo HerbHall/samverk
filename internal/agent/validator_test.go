@@ -370,6 +370,42 @@ func TestValidateWorkspaceOutput_NilForNoWorkDir(t *testing.T) {
 	}
 }
 
+func TestValidateWorkspaceOutput_CLAUDEMDOnlyIsNonRetryable(t *testing.T) {
+	t.Parallel()
+
+	// Build a git repo where the latest commit only touches CLAUDE.md.
+	// This simulates an Ollama model overwriting project config instead of
+	// implementing the assigned feature -- the runtime guard that allows
+	// qwen3-coder:30b in the "default" routing chain.
+	dir := setupTestRepo(t)
+
+	// Second commit: only modify CLAUDE.md (config-only output).
+	claudeMD := filepath.Join(dir, "CLAUDE.md")
+	if err := os.WriteFile(claudeMD, []byte("# overwritten by agent\n"), 0o644); err != nil {
+		t.Fatalf("write CLAUDE.md: %v", err)
+	}
+	mustGit(t, dir, "add", "CLAUDE.md")
+	mustGit(t, dir, "commit", "-m", "bad: overwrite CLAUDE.md only")
+
+	result := ValidateWorkspaceOutput(dir, zap.NewNop())
+
+	if result == nil {
+		t.Fatal("expected non-nil result for CLAUDE.md-only output, got nil")
+	}
+	if result.Pass {
+		t.Error("Pass = true, want false")
+	}
+	if result.Retryable {
+		t.Error("Retryable = true, want false (CLAUDE.md-only is a non-retryable failure)")
+	}
+	if len(result.Errors) == 0 {
+		t.Fatal("expected at least one error, got none")
+	}
+	if result.Errors[0].Phase != "output-quality" {
+		t.Errorf("error phase = %q, want %q", result.Errors[0].Phase, "output-quality")
+	}
+}
+
 // writeGoFiles creates a minimal Go module in dir with go.mod, main.go, and
 // optionally main_test.go (when testContent is non-empty).
 func writeGoFiles(t *testing.T, dir, goMod, mainContent, testContent string) {

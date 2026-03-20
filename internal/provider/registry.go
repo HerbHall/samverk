@@ -224,8 +224,9 @@ func (r *Registry) List(ctx context.Context) []ProviderInfo {
 // codeGenChainNames lists routing chain names that should never contain
 // Ollama providers. Ollama models produce bad output on tool-use formatted
 // prompts -- they overwrite CLAUDE.md instead of implementing features.
+// Note: "default" was removed in #113 after ValidateWorkspaceOutput runtime
+// protection was verified sufficient (qwen3-coder:30b promoted to code-gen).
 var codeGenChainNames = map[string]bool{
-	"default":  true,
 	"complex":  true,
 	"frontend": true,
 	"local":    true,
