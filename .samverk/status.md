@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-20T22:00:00Z
+updated: 2026-03-20T23:45:00Z
 updated_by: claude-code
 ---
 
@@ -35,7 +35,7 @@ Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime vali
 
 ## Open Issues
 
-5 open issues (agent:human: #57, #70, #72, #74; agent:docs: #121, #127). Waves 7-10 complete.
+Remaining: agent:human (#57, #70, #72, #74), agent:docs (#121, #127), blocked on design (#120). Waves 7-11 complete.
 
 ## Gaps to Full Autonomy
 
@@ -55,10 +55,27 @@ Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime vali
 
 ## Recommended Next Session
 
-1. File Wave 11 issues -- remaining code-gen work: #117 (schema), #118 (quality page), #119 (issue templates), #120 (advisory engine), #128 (Tauri scaffolding)
-2. Address design blockers: complete #115 (RCA standard) and #116 (KPI framework) to unblock #117-#120
-3. Set `SAMVERK_DEVKIT_PATH` on CT 202 to activate DevKit native page
-4. Monitor provider health page -- should show real data 30s after dispatch starts
+1. Launch #120 (advisory engine -- blocked on #117+#118, now unblocked)
+2. Set `SAMVERK_DEVKIT_PATH` on CT 202 to activate DevKit native page
+3. Address agent:human issues (#57 Ollama code-gen validation, #70 MCP parity, #72 full dashboard)
+4. Observe Quality page after failure events accumulate (need 5+ events for KPIs to compute)
+
+## Session Summary (2026-03-20, session 5)
+
+Wave 11 complete. 5 issues resolved (design + code-gen). Deployed v0.1.22-28.
+
+### Work Done
+
+- #115 -- RCA documentation standard (docs/rca-standard.md): 7 structured fields, enum values
+- #116 -- KPI framework (docs/kpi-framework.md): 10 KPIs with SQL queries and targets
+- #119 -- Gitea issue templates: bug-report.md with RCA fields, task.md schema template
+- #117 -- failure_events schema: 10 RCA columns, incremental ALTER TABLE migration, GET /api/v1/kpis
+- #118 -- Quality page: 4 KPI stat cards, root cause PieChart donut, advisory placeholder
+
+### Architecture
+
+Self-healing feedback loop now complete: agents file failures → RCA fields captured →
+KPIs computed from failure_events → Quality page surfaces trends → advisory engine (#120) next.
 
 ## Session Summary (2026-03-20, session 4)
 
