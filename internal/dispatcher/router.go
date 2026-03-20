@@ -265,6 +265,11 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	}
 	d.mu.Unlock()
 
+	broadcastEvent(d.broadcaster, "worker.claimed", map[string]any{
+		"issue_number": issue.Number,
+		"agent_type":   string(agentType),
+	})
+
 	d.metrics.IssueClaimed()
 	d.metrics.IssueRouted()
 
