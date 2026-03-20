@@ -28,10 +28,13 @@ jobs:
         with:
           version: 9
 
-      - name: Install and build
+      - name: Install, validate, and build
         working-directory: web
         run: |
           pnpm install --frozen-lockfile
+          npx tsc --noEmit
+          pnpm lint
+          pnpm test:ci
           pnpm build
 
       - name: Copy dist to static
