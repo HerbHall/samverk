@@ -8,8 +8,11 @@ import { Metrics } from './pages/Metrics'
 import { Logs } from './pages/Logs'
 import { Synapset } from './pages/Synapset'
 import { DevKit } from './pages/DevKit'
+import { useWebSocket } from './hooks/useWebSocket'
 
 export function App() {
+  useWebSocket()
+
   return (
     <Routes>
       <Route element={<Layout />}>
