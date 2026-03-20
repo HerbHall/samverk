@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-17T23:50:00Z
+updated: 2026-03-20T00:00:00Z
 updated_by: claude-code
 ---
 
@@ -35,7 +35,16 @@ Note: Ollama restricted to triage-only (PR #613). Code-gen routes to Claude CLI/
 
 ## Open Issues
 
-0 open issues. All resolved or closed.
+**Wave 8 -- Backend + Infra (4 parallel, agent:code-gen)**
+
+| # | Title | Complexity |
+|---|-------|------------|
+| #110 | Issue search REST endpoint and frontend search bar on Issues page | medium |
+| #111 | Bulk issue operations API and multi-select toolbar on Issues page | medium |
+| #112 | Schedule nightly infra probe from serve command at 3am | low |
+| #113 | Promote qwen3-coder:30b to code-gen routing (remove soft block) | low |
+
+Wave 8: #112 and #113 in parallel; #110 then #111 sequentially (share forge.go interface).
 
 ## Gaps to Full Autonomy
 
@@ -55,9 +64,26 @@ Note: Ollama restricted to triage-only (PR #613). Code-gen routes to Claude CLI/
 
 ## Recommended Next Session
 
-1. Run dispatcher on real issues to validate autonomy end-to-end
-2. Address medium gaps (Synapset#62 parse error, DevKit dashboard native React)
-3. Consider filing new issues as needed
+1. Launch Wave 8 agents: #112 and #113 in parallel first; then #110, then #111 sequentially (forge.go interface shared)
+2. After Wave 8 merges: validate Ollama code-gen quality after #113 (run test issue through default chain)
+3. Deploy to CT 202 and verify dashboard features (worker detail, mobile nav, live logs, chat, sparkline)
+
+## Session Summary (2026-03-20)
+
+Wave 7 complete. 5 parallel agents, 5 PRs merged to both forges.
+
+### Dashboard Features Added
+
+- #105 -- WorkerDetailPanel: slide-over with session log + token usage on worker card click
+- #106 -- Mobile bottom tab bar (< 768px): Dashboard, Issues, Agents, Metrics, Logs
+- #107 -- Queue depth sparkline on Dashboard (30-min history, Recharts AreaChart, 30s refresh)
+- #108 -- Live log stream: backend broadcasts `log.entry` WS events; Logs page Live toggle + 500-entry cap
+- #109 -- Chat drawer complete: multi-turn state, typing indicator, Escape/click-outside dismiss
+
+### Infrastructure Note
+
+Gitea main was 139 commits behind GitHub main (dual-forge drift). Force-synced GitHub → Gitea before
+Wave 7 merges. Branch protection temporarily disabled during sync, restored after.
 
 ## Session Summary (2026-03-17, session 3)
 
