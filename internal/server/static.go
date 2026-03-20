@@ -57,8 +57,19 @@ func spaHandler() http.Handler {
 		// Serve injected index directly so runtime config is included.
 		if servingIndex {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// index.html must never be cached: it references hashed asset filenames
+			// that change on every build. A stale index.html causes 404s on assets
+			// and a blank page until the user force-refreshes.
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			_, _ = w.Write(injectedIndex)
 			return
+		}
+
+		// Vite embeds a content-hash in every asset filename (e.g. index-BulwOWDY.js).
+		// These are safe to cache indefinitely: the filename changes whenever the
+		// content changes, so there is no risk of a stale asset being served.
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
 
 		fileServer.ServeHTTP(w, r)
