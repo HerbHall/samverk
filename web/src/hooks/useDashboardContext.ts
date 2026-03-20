@@ -70,10 +70,8 @@ export function buildSystemPrompt(ctx: DashboardContext): string {
   lines.push('')
 
   if (ctx.recentCosts != null) {
-    lines.push(`Cost Today: $${ctx.recentCosts.total_cost_usd.toFixed(4)}`)
-    lines.push(
-      `Tokens: ${ctx.recentCosts.total_input_tokens} in / ${ctx.recentCosts.total_output_tokens} out`,
-    )
+    lines.push(`Cost Today: $${ctx.recentCosts.estimated_cost_usd.toFixed(4)}`)
+    lines.push(`Tokens: ${ctx.recentCosts.tokens_used}`)
   }
 
   return lines.join('\n')

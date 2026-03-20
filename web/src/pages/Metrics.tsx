@@ -563,7 +563,7 @@ export function Metrics() {
   const closedCount = issues.data?.filter((i) => i.state === 'closed').length ?? 0
   const totalSessions = sessions.data?.length ?? 0
   const completedSessions = sessions.data?.filter((s) => s.status === 'completed').length ?? 0
-  const costUsd = costs.data?.total_cost_usd ?? 0
+  const costUsd = costs.data?.estimated_cost_usd ?? 0
 
   return (
     <div>
@@ -604,7 +604,7 @@ export function Metrics() {
             <StatCard
               label="Total Cost"
               value={`$${costUsd.toFixed(2)}`}
-              sub={`${(costs.data?.total_input_tokens ?? 0).toLocaleString()} tokens`}
+              sub={`${(costs.data?.tokens_used ?? 0).toLocaleString()} tokens`}
             />
           </div>
 
