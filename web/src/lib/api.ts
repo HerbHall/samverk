@@ -512,6 +512,26 @@ export interface ProjectInfo {
   in_progress: number
 }
 
+export interface RootCauseBreakdownEntry {
+  category: string
+  count: number
+  pct: number
+}
+
+export interface KPIReport {
+  window_days: number
+  first_time_fix_rate: number | null
+  fix_success_rate: number | null
+  recurrence_rate: number | null
+  workaround_rate: number | null
+  mean_time_to_fix_hours: number | null
+  planning_gap_rate: number | null
+  unknown_root_cause_rate: number | null
+  prevention_coverage: number | null
+  root_cause_breakdown: RootCauseBreakdownEntry[]
+  sample_size: number
+}
+
 export const api = {
   listIssues: async (params?: { state?: string; page?: number }) => {
     const data = await fetchJSON<{ issues: Issue[]; total: number }>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`)
