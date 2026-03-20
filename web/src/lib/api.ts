@@ -679,4 +679,7 @@ export const api = {
 
   getRecommendations: () =>
     fetchJSON<QualityRecommendation[]>('/quality/recommendations'),
+
+  getSessionLog: (sessionId: string) =>
+    fetchJSON<{ session_id: string; entries: LogEntry[] }>(`/sessions/${sessionId}/log`),
 }
