@@ -217,12 +217,23 @@ export interface HostMetricsDTO {
   load_avg_5: number
   load_avg_15: number
   num_cpu: number
+  cpu_percent: number
+  cpu_source?: string
+  in_lxc: boolean
   alerts?: HostAlert[]
+}
+
+export interface HostRecommendation {
+  resource: string
+  level: 'info' | 'warn' | 'critical'
+  title: string
+  detail: string
 }
 
 export interface HostMetricsResponse {
   current: HostMetricsDTO
   history: HostMetricsDTO[]
+  recommendations?: HostRecommendation[]
 }
 
 export interface LogEntry {

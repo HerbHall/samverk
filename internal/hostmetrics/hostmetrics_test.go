@@ -88,7 +88,8 @@ func TestEvaluateAlerts(t *testing.T) {
 			snap: Snapshot{
 				DiskTotalBytes: 100_000, DiskPercent: 50.0,
 				RAMTotalBytes: 100_000, RAMPercent: 50.0,
-				NumCPU: 4, LoadAvg1: 3.2, // ratio 0.8 exceeds warn threshold 0.7
+				NumCPU: 4, LoadAvg1: 3.2,
+				CPUPercent: 80.0, CPUSource: cpuSourceLoadAvg, // 80% > warn threshold 70%
 			},
 			wantCount: 1,
 			wantAlerts: []Alert{
@@ -100,7 +101,8 @@ func TestEvaluateAlerts(t *testing.T) {
 			snap: Snapshot{
 				DiskTotalBytes: 100_000, DiskPercent: 50.0,
 				RAMTotalBytes: 100_000, RAMPercent: 50.0,
-				NumCPU: 4, LoadAvg1: 3.8, // ratio 0.95 exceeds critical threshold 0.9
+				NumCPU: 4, LoadAvg1: 3.8,
+				CPUPercent: 95.0, CPUSource: cpuSourceLoadAvg, // 95% > critical threshold 90%
 			},
 			wantCount: 1,
 			wantAlerts: []Alert{
@@ -114,6 +116,7 @@ func TestEvaluateAlerts(t *testing.T) {
 				RAMTotalBytes: 100_000, RAMPercent: 95.0,
 				SwapTotalBytes: 100_000, SwapPercent: 60.0,
 				NumCPU: 4, LoadAvg1: 4.0,
+				CPUPercent: 100.0, CPUSource: cpuSourceLoadAvg,
 			},
 			wantCount: 4,
 		},
@@ -400,5 +403,53 @@ func TestSnapshotReturnsLatest(t *testing.T) {
 	}
 	if snap.NumCPU != 8 {
 		t.Errorf("Snapshot().NumCPU = %d, want 8", snap.NumCPU)
+	}
+}
+
+func TestParseCgroupCPUStat(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    string
+		want    uint64
+		wantErr bool
+	}{
+		{
+			name: "typical",
+			data: "usage_usec 123456789\nnr_periods 1000\nnr_throttled 5\n",
+			want: 123456789,
+		},
+		{
+			name: "single line",
+			data: "usage_usec 42\n",
+			want: 42,
+		},
+		{
+			name:    "missing field",
+			data:    "nr_periods 1000\nnr_throttled 5\n",
+			wantErr: true,
+		},
+		{
+			name:    "empty",
+			data:    "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseCgroupCPUStat([]byte(tt.data))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseCgroupCPUStat = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

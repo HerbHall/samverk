@@ -4,7 +4,7 @@ import { api } from '../lib/api'
 import type {
   PoolMetrics, DispatcherMetrics, SystemMetrics, PressureMetrics,
   ScalingEvent, ScalingConfig, CapacityInfo, Issue, Session, HistoryEntry,
-  HostMetricsDTO,
+  HostMetricsDTO, HostRecommendation,
 } from '../lib/api'
 
 function formatBytes(bytes: number): string {
@@ -83,7 +83,7 @@ function GaugeCard({ label, percent, usedLabel, totalLabel, warnPct, critPct }: 
 }
 
 function HostSection({ current, history }: { current: HostMetricsDTO; history: HostMetricsDTO[] }) {
-  const cpuPercent = current.num_cpu > 0 ? (current.load_avg_1 / current.num_cpu) * 100 : 0
+  const cpuPercent = current.cpu_percent ?? (current.num_cpu > 0 ? (current.load_avg_1 / current.num_cpu) * 100 : 0)
   const diskTrend = estimateDaysToThreshold(history, current.disk_percent, 70)
 
   return (
@@ -115,9 +115,9 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
           critPct={50}
         />
         <GaugeCard
-          label="CPU Load"
+          label={current.in_lxc ? 'CPU (cgroup)' : 'CPU Load'}
           percent={cpuPercent}
-          usedLabel={current.load_avg_1.toFixed(2)}
+          usedLabel={`${cpuPercent.toFixed(1)}%`}
           totalLabel={`${current.num_cpu} cores`}
           warnPct={70}
           critPct={90}
@@ -139,6 +139,78 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
         <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           Disk trend: {diskTrend || 'stable'}
         </div>
+      )}
+    </div>
+  )
+}
+
+const RESOURCE_LABEL: Record<string, string> = {
+  cpu: 'CPU',
+  ram: 'RAM',
+  disk: 'Disk',
+  swap: 'Swap',
+}
+
+function CapacityAdvisor({ recommendations }: { recommendations: HostRecommendation[] }) {
+  const critical = recommendations.filter(r => r.level === 'critical')
+  const warn = recommendations.filter(r => r.level === 'warn')
+  const info = recommendations.filter(r => r.level === 'info')
+  const ordered = [...critical, ...warn, ...info]
+
+  const levelStyle = (level: HostRecommendation['level']) => {
+    if (level === 'critical') return 'border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20'
+    if (level === 'warn')     return 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'
+    return 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
+  }
+
+  const badgeStyle = (level: HostRecommendation['level']) => {
+    if (level === 'critical') return 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+    if (level === 'warn')     return 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+    return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+  }
+
+  const icon = (level: HostRecommendation['level']) => {
+    if (level === 'critical') return '▲'
+    if (level === 'warn')     return '◆'
+    return '●'
+  }
+
+  const overallLevel = critical.length > 0 ? 'critical' : warn.length > 0 ? 'warn' : 'info'
+  const headerStyle = overallLevel === 'critical'
+    ? 'text-red-700 dark:text-red-400'
+    : overallLevel === 'warn'
+    ? 'text-amber-700 dark:text-amber-400'
+    : 'text-gray-900 dark:text-gray-100'
+
+  return (
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className={`text-sm font-semibold ${headerStyle}`}>Capacity Advisor</h3>
+        <span className="text-xs text-gray-500 dark:text-gray-400">24h analysis</span>
+      </div>
+      <div className="space-y-2">
+        {ordered.map((rec, i) => (
+          <div key={i} className={`rounded border-l-4 px-3 py-2 ${levelStyle(rec.level)}`}>
+            <div className="flex items-start gap-2">
+              <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${badgeStyle(rec.level)}`}>
+                {icon(rec.level)} {RESOURCE_LABEL[rec.resource] ?? rec.resource}
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-snug">
+                  {rec.title}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
+                  {rec.detail}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {critical.length === 0 && warn.length === 0 && (
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          All resources within normal operating range.
+        </p>
       )}
     </div>
   )
@@ -614,6 +686,11 @@ export function Metrics() {
               current={hostMetrics.data.current}
               history={hostMetrics.data.history}
             />
+          )}
+
+          {/* Capacity Advisor */}
+          {hostMetrics.data?.recommendations != null && hostMetrics.data.recommendations.length > 0 && (
+            <CapacityAdvisor recommendations={hostMetrics.data.recommendations} />
           )}
 
           {/* Scaling + Capacity */}

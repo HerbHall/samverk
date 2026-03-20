@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.1.22](https://github.com/HerbHall/samverk/compare/v0.1.21...v0.1.22) (2026-03-20)
+
+
+### Features
+
+* **api:** add GET /api/v1/sessions/{id}/log endpoint ([#691](https://github.com/HerbHall/samverk/issues/691)) ([8b3f31d](https://github.com/HerbHall/samverk/commit/8b3f31d2969f64e392b0f295caebefb322beff9d)), closes [#98](https://github.com/HerbHall/samverk/issues/98)
+* **api:** add GET /api/v1/workers/active endpoint for running sessions ([#694](https://github.com/HerbHall/samverk/issues/694)) ([f7a41c7](https://github.com/HerbHall/samverk/commit/f7a41c712dca3a0dc8ad8e7e7dde687366b2321a)), closes [#101](https://github.com/HerbHall/samverk/issues/101)
+* **api:** enrich /api/v1/providers/health with last_success_at and routing_chains ([#686](https://github.com/HerbHall/samverk/issues/686)) ([eff3fa3](https://github.com/HerbHall/samverk/commit/eff3fa30b283128c971991877777b186119ea8b0))
+* **api:** GET /api/v1/projects endpoint for project registry ([#688](https://github.com/HerbHall/samverk/issues/688)) ([f0d08ac](https://github.com/HerbHall/samverk/commit/f0d08ac553316789bc77709011456081e9594104))
+* **api:** wrap /api/v1/issues response with pagination metadata ([#687](https://github.com/HerbHall/samverk/issues/687)) ([acf4c53](https://github.com/HerbHall/samverk/commit/acf4c537f3efced5be52c1ff88c29295bee4d3d3)), closes [#94](https://github.com/HerbHall/samverk/issues/94)
+* **config:** add claudecli-nzxt, claudecli-vm300 providers and local-cc routing chain ([#684](https://github.com/HerbHall/samverk/issues/684)) ([0cbe4b3](https://github.com/HerbHall/samverk/commit/0cbe4b3861b2adb754df69ca7628baa6103cc4f0)), closes [#62](https://github.com/HerbHall/samverk/issues/62)
+* **dispatcher:** wire WebSocket hub event emission for real-time updates ([#689](https://github.com/HerbHall/samverk/issues/689)) ([52ce3b5](https://github.com/HerbHall/samverk/commit/52ce3b5974d4f94ac166d2892ff1cd33814cc023)), closes [#96](https://github.com/HerbHall/samverk/issues/96)
+* **dispatch:** multi-repo dispatch from server.yaml projects config ([#669](https://github.com/HerbHall/samverk/issues/669)) ([c7bce5b](https://github.com/HerbHall/samverk/commit/c7bce5bbbd75567eb47ff50f898b5a728e8caf64))
+* **frontend:** add Providers page with health status and routing chains ([#692](https://github.com/HerbHall/samverk/issues/692)) ([ea7c4e0](https://github.com/HerbHall/samverk/commit/ea7c4e053083ec281e3e053201adec565a90df0e)), closes [#99](https://github.com/HerbHall/samverk/issues/99)
+* **frontend:** add useWebSocket hook with auto-reconnect and query cache updates ([#690](https://github.com/HerbHall/samverk/issues/690)) ([bb4237b](https://github.com/HerbHall/samverk/commit/bb4237b6b0264359c9e4cec94c0c2a968d4463ce)), closes [#97](https://github.com/HerbHall/samverk/issues/97)
+* **frontend:** group Issues page by status with count badges and collapse ([#697](https://github.com/HerbHall/samverk/issues/697)) ([ab44c2b](https://github.com/HerbHall/samverk/commit/ab44c2b186488b5af3eeef0ab364633017c65245)), closes [#103](https://github.com/HerbHall/samverk/issues/103)
+* **frontend:** live worker cards on Dashboard using /api/v1/workers/active ([#696](https://github.com/HerbHall/samverk/issues/696)) ([95b3a04](https://github.com/HerbHall/samverk/commit/95b3a0425145638ad6af32a5fa8439f7e5d6b5a0)), closes [#102](https://github.com/HerbHall/samverk/issues/102)
+* **frontend:** show elapsed time and model for active sessions in Agents page ([#698](https://github.com/HerbHall/samverk/issues/698)) ([aa12687](https://github.com/HerbHall/samverk/commit/aa126877358275ea70ba7dcfa2d7c4c06ddceda4)), closes [#104](https://github.com/HerbHall/samverk/issues/104)
+* **frontend:** WebSocket status store and adaptive polling in Dashboard ([#693](https://github.com/HerbHall/samverk/issues/693)) ([bf9d543](https://github.com/HerbHall/samverk/commit/bf9d5434fb02bf106619c344645e00f1257342bb)), closes [#100](https://github.com/HerbHall/samverk/issues/100)
+* **mcp:** add optional project param to list_issues, search_issues, list_open_prs ([#682](https://github.com/HerbHall/samverk/issues/682)) ([19dc4cb](https://github.com/HerbHall/samverk/commit/19dc4cb959e79c6acdaee88b680b96ff7183fb56))
+* **mcp:** enrich get_provider_health with last-success timestamps and routing chains ([#683](https://github.com/HerbHall/samverk/issues/683)) ([9c94159](https://github.com/HerbHall/samverk/commit/9c94159b49323770e8f828964fb973184bdacd75))
+* **prwatcher:** close linked issues on PR auto-merge ([#681](https://github.com/HerbHall/samverk/issues/681)) ([adf8d90](https://github.com/HerbHall/samverk/commit/adf8d904a05820958ab134cabb971f2e0547368b))
+* **server:** WebSocket event hub for real-time dashboard ([#685](https://github.com/HerbHall/samverk/issues/685)) ([f12cc2c](https://github.com/HerbHall/samverk/commit/f12cc2cc82816e43984bcde82f9e10222fe77ff1))
+* **wave2:** session persistence tests and auth model docs ([#84](https://github.com/HerbHall/samverk/issues/84), [#85](https://github.com/HerbHall/samverk/issues/85)) ([#675](https://github.com/HerbHall/samverk/issues/675)) ([9bdc275](https://github.com/HerbHall/samverk/commit/9bdc275fe66584ca8ad5899c1b99f50be1bd2ffc))
+
+
+### Bug Fixes
+
+* **auth:** add WWW-Authenticate header to BearerAuth 401 responses ([#676](https://github.com/HerbHall/samverk/issues/676)) ([2d8b8b3](https://github.com/HerbHall/samverk/commit/2d8b8b3551c326bb26a9abc4d2ae5cb6d889260a))
+* **auth:** add WWW-Authenticate header to BearerAuth 401 responses ([#677](https://github.com/HerbHall/samverk/issues/677)) ([001f6bc](https://github.com/HerbHall/samverk/commit/001f6bc7c49530666c5f9cc945f19da285e9f79a))
+* **config:** move samverk and add synapset to Gitea in server.yaml ([#671](https://github.com/HerbHall/samverk/issues/671)) ([a419c91](https://github.com/HerbHall/samverk/commit/a419c918cbc74f04659ada775eea5cdd02d7f330))
+* **deploy:** kill orphaned processes holding binary before scp ([#678](https://github.com/HerbHall/samverk/issues/678)) ([74429b0](https://github.com/HerbHall/samverk/commit/74429b073533c3140e329b068e153678ce64a436))
+* **dispatcher:** eliminate data race in watcher restart via restartCh ([#699](https://github.com/HerbHall/samverk/issues/699)) ([f45883e](https://github.com/HerbHall/samverk/commit/f45883e2999886b51bd072c144e2e65b3cd8f894))
+* **dispatcher:** handleLabeled routing, escalate labels, stale watcher reconnect ([#78](https://github.com/HerbHall/samverk/issues/78), [#79](https://github.com/HerbHall/samverk/issues/79), [#80](https://github.com/HerbHall/samverk/issues/80), [#83](https://github.com/HerbHall/samverk/issues/83)) ([#674](https://github.com/HerbHall/samverk/issues/674)) ([e24c441](https://github.com/HerbHall/samverk/commit/e24c441b6170478424f3d1e71d3c44c802e4cf40))
+* **forge:** get_diff returns actual patch content instead of JSON dump ([#679](https://github.com/HerbHall/samverk/issues/679)) ([5c618c9](https://github.com/HerbHall/samverk/commit/5c618c962a7dc8fac65a3a663865e8b2b8cb819e))
+* **provider:** increase claude-cli startup timeout 30s → 120s ([#672](https://github.com/HerbHall/samverk/issues/672)) ([b304b5b](https://github.com/HerbHall/samverk/commit/b304b5baa59ac1ebfa30729073775d91fe08e81a))
+* **provider:** wrap Ollama connection errors as retryable for failover ([#680](https://github.com/HerbHall/samverk/issues/680)) ([392017f](https://github.com/HerbHall/samverk/commit/392017f3ab4a0e1e283d6abeab1f34ee3dee047e)), closes [#65](https://github.com/HerbHall/samverk/issues/65)
+* **server:** persist browser sessions across restarts with 30-day TTL ([#673](https://github.com/HerbHall/samverk/issues/673)) ([474d396](https://github.com/HerbHall/samverk/commit/474d39623560d5acadba4e8314fddd9c9f783fc2))
+
 ## [0.1.21](https://github.com/HerbHall/samverk/compare/v0.1.20...v0.1.21) (2026-03-18)
 
 
