@@ -262,6 +262,9 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		err error
 	}
 	errCh := make(chan watcherError, len(d.trackerEntries))
+	// restartCh carries watcher indices from backoff timer goroutines back to
+	// the main select loop, ensuring all access to watchers[] is single-threaded.
+	restartCh := make(chan int, len(d.trackerEntries))
 
 	// stalePeriods counts consecutive heartbeat intervals with no events,
 	// used to trigger forced watcher reconnects.
@@ -377,15 +380,25 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 				ws.currentBackoff = maxWatcherBackoff
 			}
 
-			// Restart after backoff delay in a goroutine.
+			// Restart after backoff delay in a goroutine. Send the index back on
+			// restartCh so the main loop calls startWatcher — keeping all watchers[]
+			// access single-threaded and avoiding data races.
 			go func(idx int, delay time.Duration) {
 				select {
 				case <-ctx.Done():
 					return
 				case <-time.After(delay):
-					startWatcher(idx)
+					select {
+					case restartCh <- idx:
+					case <-ctx.Done():
+					}
 				}
 			}(we.idx, backoff)
+
+		case idx := <-restartCh:
+			// Backoff timer expired; restart the watcher in the main goroutine
+			// so all watchers[] access remains single-threaded.
+			startWatcher(idx)
 
 		case <-d.wakeup:
 			d.logger.Debug("wakeup: task completed, checking for queued work")
