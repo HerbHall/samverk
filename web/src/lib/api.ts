@@ -52,6 +52,16 @@ export interface Session {
   finished_at: string | null
 }
 
+export interface ActiveWorker {
+  session_id: string
+  issue_number: number
+  agent_type: string
+  provider: string
+  model: string
+  started_at: string
+  elapsed_s: number
+}
+
 export interface CostSummary {
   total_cost_usd: number
   total_input_tokens: number
@@ -397,6 +407,9 @@ export const api = {
 
   listSessions: () =>
     fetchJSON<Session[]>('/sessions'),
+
+  getActiveWorkers: () =>
+    fetchJSON<ActiveWorker[]>('/workers/active'),
 
   getCosts: () =>
     fetchJSON<CostSummary>('/costs'),
