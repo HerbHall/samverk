@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-20T00:00:00Z
+updated: 2026-03-20T16:00:00Z
 updated_by: claude-code
 ---
 
@@ -31,20 +31,11 @@ All critical and high autonomy gaps now have fixes in PRs or merged.
 | VM 300 | RTX 3090 Ti 24GB | qwen2.5-coder:14b | triage, docs, research |
 | CM-ASUS | RTX 2080 Ti 11GB | qwen2.5-coder:7b | triage |
 
-Note: Ollama restricted to triage-only (PR #613). Code-gen routes to Claude CLI/API.
+Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime validator is the protection.
 
 ## Open Issues
 
-**Wave 8 -- Backend + Infra (4 parallel, agent:code-gen)**
-
-| # | Title | Complexity |
-|---|-------|------------|
-| #110 | Issue search REST endpoint and frontend search bar on Issues page | medium |
-| #111 | Bulk issue operations API and multi-select toolbar on Issues page | medium |
-| #112 | Schedule nightly infra probe from serve command at 3am | low |
-| #113 | Promote qwen3-coder:30b to code-gen routing (remove soft block) | low |
-
-Wave 8: #112 and #113 in parallel; #110 then #111 sequentially (share forge.go interface).
+0 open issues. Waves 7 and 8 complete.
 
 ## Gaps to Full Autonomy
 
@@ -64,11 +55,22 @@ Wave 8: #112 and #113 in parallel; #110 then #111 sequentially (share forge.go i
 
 ## Recommended Next Session
 
-1. Launch Wave 8 agents: #112 and #113 in parallel first; then #110, then #111 sequentially (forge.go interface shared)
-2. After Wave 8 merges: validate Ollama code-gen quality after #113 (run test issue through default chain)
-3. Deploy to CT 202 and verify dashboard features (worker detail, mobile nav, live logs, chat, sparkline)
+1. Deploy to CT 202: `make redeploy` -- verify all Wave 7+8 features in production
+2. Validate qwen3-coder:30b code-gen quality: run a test issue through the `default` chain
+3. Address medium gaps (Synapset#62 parse error, DevKit dashboard native React) or file new sprint issues
 
-## Session Summary (2026-03-20)
+## Session Summary (2026-03-20, session 2)
+
+Wave 8 complete. 4 agents, 4 PRs merged to Gitea. GitHub synced via cherry-pick.
+
+### Features Added
+
+- #110 -- Issue search: `GET /api/v1/issues/search`, debounced frontend search bar in Issues page
+- #111 -- Bulk operations: `POST /api/v1/issues/bulk`, checkbox multi-select, floating toolbar, toasts
+- #112 -- Nightly infra probe at 3am goroutine wired into serve command (nil-safe synapset client)
+- #113 -- qwen3-coder:30b promoted to code-gen routing; CLAUDE.md-only validator test added
+
+## Session Summary (2026-03-20, session 1)
 
 Wave 7 complete. 5 parallel agents, 5 PRs merged to both forges.
 
