@@ -130,6 +130,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/issues/{number}", a.handleGetIssue)
 	mux.HandleFunc("GET /api/v1/issues/{number}/cost", a.handleGetIssueCost)
 	mux.HandleFunc("GET /api/v1/sessions", a.handleListSessions)
+	mux.HandleFunc("GET /api/v1/sessions/{id}/log", a.handleGetSessionLog)
 	mux.HandleFunc("GET /api/v1/costs", a.handleGetCosts)
 	mux.HandleFunc("GET /api/v1/status", a.handleStatus)
 	mux.HandleFunc("GET /api/v1/metrics", a.handleMetrics)
