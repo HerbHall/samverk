@@ -4,7 +4,7 @@ import { api } from '../lib/api'
 import type {
   PoolMetrics, DispatcherMetrics, SystemMetrics, PressureMetrics,
   ScalingEvent, ScalingConfig, CapacityInfo, Issue, Session, HistoryEntry,
-  HostMetricsDTO, HostRecommendation,
+  HostMetricsDTO,
 } from '../lib/api'
 
 function formatBytes(bytes: number): string {
@@ -144,78 +144,6 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
   )
 }
 
-const RESOURCE_LABEL: Record<string, string> = {
-  cpu: 'CPU',
-  ram: 'RAM',
-  disk: 'Disk',
-  swap: 'Swap',
-}
-
-function CapacityAdvisor({ recommendations }: { recommendations: HostRecommendation[] }) {
-  const critical = recommendations.filter(r => r.level === 'critical')
-  const warn = recommendations.filter(r => r.level === 'warn')
-  const info = recommendations.filter(r => r.level === 'info')
-  const ordered = [...critical, ...warn, ...info]
-
-  const levelStyle = (level: HostRecommendation['level']) => {
-    if (level === 'critical') return 'border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20'
-    if (level === 'warn')     return 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'
-    return 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
-  }
-
-  const badgeStyle = (level: HostRecommendation['level']) => {
-    if (level === 'critical') return 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
-    if (level === 'warn')     return 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
-    return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-  }
-
-  const icon = (level: HostRecommendation['level']) => {
-    if (level === 'critical') return '▲'
-    if (level === 'warn')     return '◆'
-    return '●'
-  }
-
-  const overallLevel = critical.length > 0 ? 'critical' : warn.length > 0 ? 'warn' : 'info'
-  const headerStyle = overallLevel === 'critical'
-    ? 'text-red-700 dark:text-red-400'
-    : overallLevel === 'warn'
-    ? 'text-amber-700 dark:text-amber-400'
-    : 'text-gray-900 dark:text-gray-100'
-
-  return (
-    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className={`text-sm font-semibold ${headerStyle}`}>Capacity Advisor</h3>
-        <span className="text-xs text-gray-500 dark:text-gray-400">24h analysis</span>
-      </div>
-      <div className="space-y-2">
-        {ordered.map((rec, i) => (
-          <div key={i} className={`rounded border-l-4 px-3 py-2 ${levelStyle(rec.level)}`}>
-            <div className="flex items-start gap-2">
-              <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${badgeStyle(rec.level)}`}>
-                {icon(rec.level)} {RESOURCE_LABEL[rec.resource] ?? rec.resource}
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-snug">
-                  {rec.title}
-                </p>
-                <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
-                  {rec.detail}
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      {critical.length === 0 && warn.length === 0 && (
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          All resources within normal operating range.
-        </p>
-      )}
-    </div>
-  )
-}
-
 function MetricRow({ label, value, tooltip, sparkline }: { label: string; value: string; tooltip?: string; sparkline?: number[] }) {
   return (
     <div className="flex items-center gap-2 py-2 border-b dark:border-gray-700 last:border-b-0">
@@ -268,26 +196,41 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
   )
 }
 
-// Sparkline renders an inline SVG sparkline chart from numeric values.
-// Uses viewBox for responsive scaling -- fills available width.
-function Sparkline({ data, color = '#3b82f6', height = 24 }: { data: number[]; color?: string; height?: number }) {
+function Sparkline({ data, color = '#4ade80' }: { data: number[]; color?: string }) {
   if (data.length < 2) return null
-  const vw = 200
-  const vh = 40
-  const max = Math.max(...data)
+  const w = 80
+  const h = 24
   const min = Math.min(...data)
+  const max = Math.max(...data)
   const range = max - min || 1
-  const points = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * vw
-      const y = vh - ((v - min) / range) * (vh - 4) - 2
-      return `${x},${y}`
-    })
-    .join(' ')
+
+  const pts = data.map((v, i) => ({
+    x: (i / (data.length - 1)) * w,
+    y: h - ((v - min) / range) * (h - 4) - 2,
+  }))
+
+  // Build smooth SVG path using cubic bezier curves (GitHub style)
+  let d = `M ${pts[0].x} ${pts[0].y}`
+  for (let i = 1; i < pts.length; i++) {
+    const prev = pts[i - 1]
+    const curr = pts[i]
+    const cpx = (prev.x + curr.x) / 2
+    d += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`
+  }
+
+  // Area fill path (close back along bottom)
+  const fill = `${d} L ${pts[pts.length - 1].x} ${h} L ${pts[0].x} ${h} Z`
 
   return (
-    <svg viewBox={`0 0 ${vw} ${vh}`} height={height} className="flex-1 min-w-0" preserveAspectRatio="none">
-      <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
+    <svg width={w} height={h} className="shrink-0 overflow-visible">
+      <defs>
+        <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <path d={fill} fill="url(#spark-fill)" stroke="none" />
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -686,11 +629,6 @@ export function Metrics() {
               current={hostMetrics.data.current}
               history={hostMetrics.data.history}
             />
-          )}
-
-          {/* Capacity Advisor */}
-          {hostMetrics.data?.recommendations != null && hostMetrics.data.recommendations.length > 0 && (
-            <CapacityAdvisor recommendations={hostMetrics.data.recommendations} />
           )}
 
           {/* Scaling + Capacity */}

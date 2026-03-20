@@ -41,6 +41,7 @@ type API struct {
 	dispatcher     dispatcherMetricsSource // may be nil if dispatcher not started
 	system         systemMetricsSource     // may be nil; created via SetMetrics
 	hostMetrics    *hostmetrics.Collector   // may be nil if collector not started
+	infra          hostmetrics.InfraContext // Proxmox context for action generation
 	capacity       *capacityDTO            // may be nil if no providers configured
 	logAnalyst     *loganalyst.Analyst      // may be nil if logstore not configured
 	healthMonitor    *provider.HealthMonitor  // may be nil if health monitor not started
@@ -151,6 +152,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/logs/summary", a.handleLogSummary)
 	mux.HandleFunc("POST /api/v1/chat", a.handleChat)
 	mux.HandleFunc("GET /api/v1/projects", a.handleListProjects)
+	mux.HandleFunc("POST /api/v1/capacity/apply", a.handleCapacityApply)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)
