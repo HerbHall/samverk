@@ -383,9 +383,10 @@ func (c *Client) SearchMemory(ctx context.Context, pool, query string, limit int
 		limit = 5
 	}
 	args := map[string]interface{}{
-		"pool": pool,
-		"query":     query,
-		"limit":     limit,
+		"pool":   pool,
+		"query":  query,
+		"limit":  limit,
+		"format": "json",
 	}
 	result, err := c.callTool(ctx, "search_memory", args)
 	if err != nil {
@@ -400,8 +401,9 @@ func (c *Client) SearchAll(ctx context.Context, query string, limit int) (memori
 		limit = 5
 	}
 	args := map[string]interface{}{
-		"query": query,
-		"limit": limit,
+		"query":  query,
+		"limit":  limit,
+		"format": "json",
 	}
 	result, err := c.callTool(ctx, "search_all", args)
 	if err != nil {
