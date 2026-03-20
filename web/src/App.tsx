@@ -1,3 +1,4 @@
+import React from 'react'
 import { Routes, Route } from 'react-router'
 import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
@@ -11,22 +12,59 @@ import { DevKit } from './pages/DevKit'
 import { Providers } from './pages/Providers'
 import { useWebSocket } from './hooks/useWebSocket'
 
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('App crashed:', error)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-gray-950">
+          <div className="max-w-md rounded border border-red-800 bg-gray-900 p-6 text-sm">
+            <p className="mb-2 font-semibold text-red-400">Dashboard Error</p>
+            <p className="font-mono text-gray-400">{(this.state.error as Error).message}</p>
+            <button
+              className="mt-4 rounded bg-gray-700 px-3 py-1 text-gray-200 hover:bg-gray-600"
+              onClick={() => window.location.reload()}
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 export function App() {
   useWebSocket()
 
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="issues" element={<Issues />} />
-        <Route path="my-queue" element={<MyQueue />} />
-        <Route path="agents" element={<Agents />} />
-        <Route path="providers" element={<Providers />} />
-        <Route path="metrics" element={<Metrics />} />
-        <Route path="logs" element={<Logs />} />
-        <Route path="synapset" element={<Synapset />} />
-        <Route path="devkit" element={<DevKit />} />
-      </Route>
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="issues" element={<Issues />} />
+          <Route path="my-queue" element={<MyQueue />} />
+          <Route path="agents" element={<Agents />} />
+          <Route path="providers" element={<Providers />} />
+          <Route path="metrics" element={<Metrics />} />
+          <Route path="logs" element={<Logs />} />
+          <Route path="synapset" element={<Synapset />} />
+          <Route path="devkit" element={<DevKit />} />
+        </Route>
+      </Routes>
+    </ErrorBoundary>
   )
 }

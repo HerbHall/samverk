@@ -238,15 +238,8 @@ export function Dashboard() {
           />
           <StatCard
             title="Total Cost"
-            value={formatUSD(costs.data?.total_cost_usd ?? 0)}
-            subtitle={`${costs.data?.record_count ?? 0} records`}
-          />
-          <StatCard
-            title="Tokens Used"
-            value={formatTokens(
-              (costs.data?.total_input_tokens ?? 0) + (costs.data?.total_output_tokens ?? 0),
-            )}
-            subtitle={`${formatTokens(costs.data?.total_input_tokens ?? 0)} in / ${formatTokens(costs.data?.total_output_tokens ?? 0)} out`}
+            value={formatUSD(costs.data?.estimated_cost_usd ?? 0)}
+            subtitle={`${formatTokens(costs.data?.tokens_used ?? 0)} tokens`}
           />
         </div>
       </section>

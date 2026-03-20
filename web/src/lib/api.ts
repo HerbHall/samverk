@@ -63,10 +63,9 @@ export interface ActiveWorker {
 }
 
 export interface CostSummary {
-  total_cost_usd: number
-  total_input_tokens: number
-  total_output_tokens: number
-  record_count: number
+  tokens_used: number
+  estimated_cost_usd: number
+  budget_remaining_usd: number
 }
 
 export interface SystemStatus {
