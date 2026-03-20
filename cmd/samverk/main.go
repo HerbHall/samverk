@@ -446,6 +446,39 @@ func serveCmd() *cobra.Command {
 				}()
 			}
 
+			// Wire Synapset client for infra probe (optional, best-effort).
+			var infraSynapsetClient *synapset.Client
+			synCfg := synapset.ConfigFromEnv(synapset.Config{})
+			if synCfg.URL != "" {
+				infraSynapsetClient = synapset.New(synCfg, logger)
+				logger.Info("synapset client wired for infra probe", zap.String("url", synCfg.URL))
+			}
+
+			// Start nightly infra probe goroutine — fires daily at 3am local time.
+			go func() {
+				prober := infra.NewProber(infraSynapsetClient, logger, infra.DefaultEndpoints())
+
+				now := time.Now()
+				next3am := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, now.Location())
+				if !next3am.After(now) {
+					next3am = next3am.Add(24 * time.Hour)
+				}
+				timer := time.NewTimer(time.Until(next3am))
+				defer timer.Stop()
+				logger.Info("nightly infra probe scheduled", zap.Time("next_run", next3am))
+
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-timer.C:
+						prober.Run(ctx)
+						logger.Info("infra probe complete")
+						timer.Reset(24 * time.Hour)
+					}
+				}
+			}()
+
 			if err := s.Start(ctx); err != nil {
 				return fmt.Errorf("server error: %w", err)
 			}
