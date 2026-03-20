@@ -543,4 +543,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ resource }),
     }),
+
+  bulkIssues: (action: 'close' | 'label' | 'assign', issueNumbers: number[], value?: string) =>
+    fetchJSON<{ succeeded: number[]; failed: { number: number; error: string }[] }>('/issues/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ action, issue_numbers: issueNumbers, value }),
+    }),
 }

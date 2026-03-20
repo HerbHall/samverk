@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Issue } from '../lib/api'
 
@@ -53,6 +53,14 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString()
 }
 
+interface Toast {
+  id: number
+  message: string
+  isError: boolean
+}
+
+let toastCounter = 0
+
 export function Issues() {
   const [stateFilter, setStateFilter] = useState<StateFilter>('open')
   const [searchQuery, setSearchQuery] = useState('')
@@ -61,6 +69,11 @@ export function Issues() {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(
     () => Object.fromEntries(STATUS_ORDER.map((s) => [s, !DEFAULT_EXPANDED[s]]))
   )
+  const [selectedIssues, setSelectedIssues] = useState<Set<number>>(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  const queryClient = useQueryClient()
 
   // Debounce the search query by 300ms.
   useEffect(() => {
@@ -106,6 +119,13 @@ export function Issues() {
     return groups
   }, [filteredIssues])
 
+  const allVisibleNumbers = useMemo(
+    () => filteredIssues.map((i) => i.number),
+    [filteredIssues]
+  )
+
+  const allSelected = allVisibleNumbers.length > 0 && allVisibleNumbers.every((n) => selectedIssues.has(n))
+
   const toggleExpand = (issueNumber: number) => {
     setExpandedIssue((prev) => (prev === issueNumber ? null : issueNumber))
   }
@@ -113,6 +133,74 @@ export function Issues() {
   const toggleGroup = (status: string) => {
     setCollapsedGroups((prev) => ({ ...prev, [status]: !prev[status] }))
   }
+
+  const toggleSelectIssue = useCallback((num: number) => {
+    setSelectedIssues((prev) => {
+      const next = new Set(prev)
+      if (next.has(num)) {
+        next.delete(num)
+      } else {
+        next.add(num)
+      }
+      return next
+    })
+  }, [])
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIssues((prev) => {
+      if (allVisibleNumbers.every((n) => prev.has(n))) {
+        return new Set()
+      }
+      return new Set(allVisibleNumbers)
+    })
+  }, [allVisibleNumbers])
+
+  const addToast = useCallback((message: string, isError = false) => {
+    const id = ++toastCounter
+    setToasts((prev) => [...prev, { id, message, isError }])
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000)
+  }, [])
+
+  const runBulkAction = useCallback(async (action: 'close' | 'label' | 'assign', value?: string) => {
+    const numbers = Array.from(selectedIssues)
+    setBulkLoading(true)
+    try {
+      const result = await api.bulkIssues(action, numbers, value)
+      const parts: string[] = []
+      if (result.succeeded.length > 0) {
+        parts.push(`${result.succeeded.length} succeeded`)
+      }
+      if (result.failed.length > 0) {
+        const nums = result.failed.map((f) => `#${f.number}`).join(', ')
+        parts.push(`${result.failed.length} failed (${nums})`)
+      }
+      addToast(parts.join(', '), result.failed.length > 0)
+      setSelectedIssues(new Set())
+      await queryClient.invalidateQueries({ queryKey: ['issues'] })
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Bulk action failed', true)
+    } finally {
+      setBulkLoading(false)
+    }
+  }, [selectedIssues, addToast, queryClient])
+
+  const handleClose = useCallback(() => {
+    void runBulkAction('close')
+  }, [runBulkAction])
+
+  const handleLabel = useCallback(() => {
+    const value = window.prompt('Label name to add:')
+    if (value != null && value.trim() !== '') {
+      void runBulkAction('label', value.trim())
+    }
+  }, [runBulkAction])
+
+  const handleAssign = useCallback(() => {
+    const value = window.prompt('Assignee username:')
+    if (value != null && value.trim() !== '') {
+      void runBulkAction('assign', value.trim())
+    }
+  }, [runBulkAction])
 
   const totalFiltered = filteredIssues.length
 
@@ -182,6 +270,9 @@ export function Issues() {
             const group = grouped[status]
             if (group.length === 0) return null
             const isCollapsed = collapsedGroups[status]
+            const groupNumbers = group.map((i) => i.number)
+            const groupAllSelected = groupNumbers.every((n) => selectedIssues.has(n))
+            const groupSomeSelected = groupNumbers.some((n) => selectedIssues.has(n))
             return (
               <div key={status} className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
                 <div
@@ -204,6 +295,30 @@ export function Issues() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        <th className="px-4 py-2 w-10">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select all ${formatStatus(status)} issues`}
+                            checked={groupAllSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = groupSomeSelected && !groupAllSelected
+                            }}
+                            onChange={(e) => {
+                              e.stopPropagation()
+                              setSelectedIssues((prev) => {
+                                const next = new Set(prev)
+                                if (groupAllSelected) {
+                                  groupNumbers.forEach((n) => next.delete(n))
+                                } else {
+                                  groupNumbers.forEach((n) => next.add(n))
+                                }
+                                return next
+                              })
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="cursor-pointer"
+                          />
+                        </th>
                         <th className="px-4 py-2 w-16">#</th>
                         <th className="px-4 py-2">Title</th>
                         <th className="px-4 py-2 w-20">State</th>
@@ -218,7 +333,9 @@ export function Issues() {
                           key={issue.number}
                           issue={issue}
                           expanded={expandedIssue === issue.number}
+                          selected={selectedIssues.has(issue.number)}
                           onToggle={() => toggleExpand(issue.number)}
+                          onSelect={() => toggleSelectIssue(issue.number)}
                         />
                       ))}
                     </tbody>
@@ -229,6 +346,81 @@ export function Issues() {
           })}
         </div>
       )}
+
+      {/* Global select-all bar — visible when issues are loaded */}
+      {activeQuery.isSuccess && totalFiltered > 0 && (
+        <div className="mt-3 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <input
+            type="checkbox"
+            aria-label="Select all visible issues"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) {
+                const someSelected = allVisibleNumbers.some((n) => selectedIssues.has(n))
+                el.indeterminate = someSelected && !allSelected
+              }
+            }}
+            onChange={toggleSelectAll}
+            className="cursor-pointer"
+          />
+          <span>
+            {selectedIssues.size > 0
+              ? `${selectedIssues.size} of ${totalFiltered} selected`
+              : 'Select all'}
+          </span>
+        </div>
+      )}
+
+      {/* Floating bulk action toolbar */}
+      {selectedIssues.size > 0 && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl border dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-3 shadow-xl">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">
+            {selectedIssues.size} selected
+          </span>
+          <button
+            onClick={handleClose}
+            disabled={bulkLoading}
+            className="rounded-lg bg-red-100 dark:bg-red-900/30 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-800/40 disabled:opacity-50"
+          >
+            Close
+          </button>
+          <button
+            onClick={handleLabel}
+            disabled={bulkLoading}
+            className="rounded-lg bg-blue-100 dark:bg-blue-900/30 px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800/40 disabled:opacity-50"
+          >
+            Label
+          </button>
+          <button
+            onClick={handleAssign}
+            disabled={bulkLoading}
+            className="rounded-lg bg-green-100 dark:bg-green-900/30 px-3 py-1.5 text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800/40 disabled:opacity-50"
+          >
+            Assign
+          </button>
+          <button
+            onClick={() => setSelectedIssues(new Set())}
+            disabled={bulkLoading}
+            className="ml-2 rounded-lg px-2 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Toast notifications */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`rounded-lg px-4 py-2.5 text-sm text-white shadow-lg transition-all ${
+              toast.isError ? 'bg-red-600' : 'bg-gray-800 dark:bg-gray-700'
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -236,18 +428,34 @@ export function Issues() {
 function IssueRow({
   issue,
   expanded,
+  selected,
   onToggle,
+  onSelect,
 }: {
   issue: Issue
   expanded: boolean
+  selected: boolean
   onToggle: () => void
+  onSelect: () => void
 }) {
   return (
     <>
       <tr
         onClick={onToggle}
-        className="cursor-pointer border-b dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700"
+        className={`cursor-pointer border-b dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700 ${
+          selected ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+        }`}
       >
+        <td className="px-4 py-2.5">
+          <input
+            type="checkbox"
+            aria-label={`Select issue #${issue.number}`}
+            checked={selected}
+            onChange={onSelect}
+            onClick={(e) => e.stopPropagation()}
+            className="cursor-pointer"
+          />
+        </td>
         <td className="px-4 py-2.5 font-medium">
           <a
             href={`https://github.com/HerbHall/samverk/issues/${issue.number}`}
@@ -294,7 +502,7 @@ function IssueRow({
       </tr>
       {expanded && (
         <tr className="bg-gray-50 dark:bg-gray-900">
-          <td colSpan={6} className="px-4 py-4">
+          <td colSpan={7} className="px-4 py-4">
             <div className="ml-6 max-w-3xl">
               {issue.body.trim() !== '' ? (
                 <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-sans leading-relaxed">

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -186,6 +188,84 @@ func (a *API) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		Page:    1,
 		PerPage: len(issueList),
 	})
+}
+
+// bulkRequest is the request body for POST /api/v1/issues/bulk.
+type bulkRequest struct {
+	Action       string `json:"action"`        // "close" | "label" | "assign"
+	IssueNumbers []int  `json:"issue_numbers"`
+	Value        string `json:"value,omitempty"` // label name or assignee login
+}
+
+// bulkFailure records a single issue that failed in a bulk operation.
+type bulkFailure struct {
+	Number int    `json:"number"`
+	Error  string `json:"error"`
+}
+
+// bulkResult is the response body for POST /api/v1/issues/bulk.
+type bulkResult struct {
+	Succeeded []int         `json:"succeeded"`
+	Failed    []bulkFailure `json:"failed"`
+}
+
+// handleBulkIssues handles POST /api/v1/issues/bulk.
+// Supported actions: "close", "label", "assign".
+func (a *API) handleBulkIssues(w http.ResponseWriter, r *http.Request) {
+	if a.tracker == nil {
+		writeError(w, http.StatusServiceUnavailable, "issue tracker not available")
+		return
+	}
+
+	var req bulkRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	switch req.Action {
+	case "close", "label", "assign":
+		// valid
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown action %q; must be close, label, or assign", req.Action))
+		return
+	}
+
+	if len(req.IssueNumbers) == 0 {
+		writeError(w, http.StatusBadRequest, "issue_numbers must not be empty")
+		return
+	}
+
+	if (req.Action == "label" || req.Action == "assign") && req.Value == "" {
+		writeError(w, http.StatusBadRequest, "value is required for action "+req.Action)
+		return
+	}
+
+	result := bulkResult{
+		Succeeded: []int{},
+		Failed:    []bulkFailure{},
+	}
+
+	ctx := r.Context()
+	for _, num := range req.IssueNumbers {
+		var opErr error
+		switch req.Action {
+		case "close":
+			closed := forge.StateClosed
+			_, opErr = a.tracker.UpdateIssue(ctx, num, &forge.UpdateIssueRequest{State: &closed})
+		case "label":
+			opErr = a.tracker.AddLabel(ctx, num, req.Value)
+		case "assign":
+			opErr = a.tracker.Assign(ctx, num, req.Value)
+		}
+		if opErr != nil {
+			result.Failed = append(result.Failed, bulkFailure{Number: num, Error: opErr.Error()})
+		} else {
+			result.Succeeded = append(result.Succeeded, num)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // handleGetIssue handles GET /api/v1/issues/{number}.
