@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { useWSStore } from '../store/wsStore'
 
 function StatusIndicator({ connected, label }: { connected: boolean; label: string }) {
   return (
@@ -40,22 +41,24 @@ function formatTokens(count: number): string {
 }
 
 export function Dashboard() {
+  const wsConnected = useWSStore((s) => s.connected)
+
   const status = useQuery({
     queryKey: ['status'],
     queryFn: api.getStatus,
-    refetchInterval: 30_000,
+    refetchInterval: wsConnected ? false : 30_000,
   })
 
   const sessions = useQuery({
     queryKey: ['sessions'],
     queryFn: api.listSessions,
-    refetchInterval: 30_000,
+    refetchInterval: wsConnected ? false : 30_000,
   })
 
   const costs = useQuery({
     queryKey: ['costs'],
     queryFn: api.getCosts,
-    refetchInterval: 30_000,
+    refetchInterval: wsConnected ? false : 30_000,
   })
 
   const isLoading = status.isLoading || sessions.isLoading || costs.isLoading
@@ -87,7 +90,12 @@ export function Dashboard() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h2>
-        <span className="text-xs text-gray-400 dark:text-gray-500">Auto-refreshes every 30s</span>
+        <span className="inline-flex items-center gap-1 text-xs">
+          <span className={`h-2 w-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-gray-400'}`} />
+          <span className="text-gray-500 dark:text-gray-400">
+            {wsConnected ? 'Live' : 'Polling (30s)'}
+          </span>
+        </span>
       </div>
 
       <section className="mb-8">

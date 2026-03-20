@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useWSStore } from '../store/wsStore'
 
 const STORAGE_KEY = 'samverk_api_key'
 const BASE_DELAY_MS = 1000
@@ -8,6 +9,7 @@ const MAX_FAILURES = 10
 
 export function useWebSocket(): void {
   const queryClient = useQueryClient()
+  const setConnected = useWSStore((s) => s.setConnected)
   const wsRef = useRef<WebSocket | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const failuresRef = useRef(0)
@@ -29,6 +31,7 @@ export function useWebSocket(): void {
       ws.onopen = () => {
         failuresRef.current = 0
         delayRef.current = BASE_DELAY_MS
+        setConnected(true)
       }
 
       ws.onmessage = (event: MessageEvent) => {
@@ -61,6 +64,7 @@ export function useWebSocket(): void {
 
       ws.onclose = () => {
         wsRef.current = null
+        setConnected(false)
         failuresRef.current += 1
         if (failuresRef.current >= MAX_FAILURES) {
           return
@@ -88,6 +92,7 @@ export function useWebSocket(): void {
         wsRef.current.close()
         wsRef.current = null
       }
+      setConnected(false)
     }
-  }, [queryClient])
+  }, [queryClient, setConnected])
 }
