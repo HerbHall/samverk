@@ -773,6 +773,28 @@ func dispatchCmd() *cobra.Command {
 				hm.Start(ctx)
 				disp.SetHealthMonitor(hm)
 				logger.Info("provider health monitor started")
+
+				// Periodically persist health snapshot to SQLite so the serve
+				// process (separate OS process) can serve it via the API.
+				if st != nil {
+					go func() {
+						ticker := time.NewTicker(30 * time.Second)
+						defer ticker.Stop()
+						for {
+							select {
+							case <-ctx.Done():
+								return
+							case <-ticker.C:
+								if snap := hm.AllHealth(); len(snap) > 0 {
+									if saveErr := st.SaveProviderHealthSnapshot(ctx, snap); saveErr != nil {
+										logger.Warn("could not save provider health snapshot", zap.Error(saveErr))
+									}
+								}
+							}
+						}
+					}()
+					logger.Info("provider health snapshot writer started")
+				}
 			}
 
 			logger.Info("starting dispatcher", zap.Int("projects", len(trackerEntries)))

@@ -1,10 +1,12 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/herbhall/samverk/internal/provider"
+	"github.com/herbhall/samverk/internal/store"
 )
 
 // SetHealthMonitor attaches the provider health monitor for the
@@ -37,13 +39,30 @@ type providerHealthResponse struct {
 // handleProviderHealth returns the cached health status for all providers,
 // enriched with last_success_at timestamps from the store and routing chains
 // from the provider registry.
+//
+// When the health monitor is nil (serve process, cross-process deployment), the
+// handler falls back to the last snapshot persisted to the store by the dispatch
+// process. If no snapshot exists yet it returns an empty provider list rather
+// than a 503.
 func (a *API) handleProviderHealth(w http.ResponseWriter, r *http.Request) {
-	if a.healthMonitor == nil {
-		writeError(w, http.StatusServiceUnavailable, "health monitor not configured")
-		return
+	var allHealth []provider.ProviderHealth
+
+	if a.healthMonitor != nil {
+		allHealth = a.healthMonitor.AllHealth()
+	} else if a.store != nil {
+		snap, _, snapErr := a.store.LoadProviderHealthSnapshot(r.Context())
+		if snapErr != nil && !errors.Is(snapErr, store.ErrNotFound) {
+			writeError(w, http.StatusInternalServerError, "could not load provider health snapshot")
+			return
+		}
+		if snap != nil {
+			allHealth = snap
+		}
 	}
 
-	allHealth := a.healthMonitor.AllHealth()
+	if allHealth == nil {
+		allHealth = []provider.ProviderHealth{}
+	}
 
 	// Fetch last-success timestamps per provider if store is available.
 	var lastSuccess map[string]time.Time

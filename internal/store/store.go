@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/audit"
+	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/pkg/models"
 
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
@@ -75,6 +76,10 @@ type Store interface {
 
 	// Provider success timestamps (read by MCP get_provider_health for enriched status)
 	LatestSuccessByProvider(ctx context.Context) (map[string]time.Time, error)
+
+	// Provider health snapshots (written by dispatch, read by serve for cross-process health)
+	SaveProviderHealthSnapshot(ctx context.Context, entries []provider.ProviderHealth) error
+	LoadProviderHealthSnapshot(ctx context.Context) ([]provider.ProviderHealth, time.Time, error)
 
 	Close() error
 }
@@ -252,6 +257,12 @@ CREATE INDEX IF NOT EXISTS idx_provider_audits_at ON provider_audits(audited_at 
 CREATE TABLE IF NOT EXISTS check_in_state (
 	id            INTEGER PRIMARY KEY CHECK (id = 1),
 	checked_in_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS provider_health_snapshots (
+	id          INTEGER PRIMARY KEY CHECK (id = 1),
+	snapshot_at TEXT NOT NULL,
+	data        TEXT NOT NULL DEFAULT '[]'
 );
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/herbhall/samverk/internal/audit"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
 )
@@ -203,6 +204,12 @@ func (m *mockStore) GetLastAudit(_ context.Context) ([]audit.AuditResult, error)
 
 func (m *mockStore) GetLastCheckIn(_ context.Context) (time.Time, error) { return time.Time{}, nil }
 func (m *mockStore) SetLastCheckIn(_ context.Context, _ time.Time) error { return nil }
+func (m *mockStore) SaveProviderHealthSnapshot(_ context.Context, _ []provider.ProviderHealth) error {
+	return nil
+}
+func (m *mockStore) LoadProviderHealthSnapshot(_ context.Context) ([]provider.ProviderHealth, time.Time, error) {
+	return nil, time.Time{}, store.ErrNotFound
+}
 func (m *mockStore) LatestSuccessByProvider(_ context.Context) (map[string]time.Time, error) {
 	return nil, nil
 }

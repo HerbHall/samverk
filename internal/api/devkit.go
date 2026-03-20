@@ -63,7 +63,7 @@ func readDevkitRules(rulesPath string) []devkitRuleInfo {
 		return nil
 	}
 
-	var rules []devkitRuleInfo
+	rules := make([]devkitRuleInfo, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
@@ -107,7 +107,7 @@ func readDevkitSkills(skillsPath string) []devkitSkillInfo {
 		return nil
 	}
 
-	var skills []devkitSkillInfo
+	skills := make([]devkitSkillInfo, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -129,7 +129,7 @@ func readDevkitAgents(agentsPath string) []string {
 		return nil
 	}
 
-	var agents []string
+	agents := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
