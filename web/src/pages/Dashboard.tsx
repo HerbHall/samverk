@@ -26,6 +26,12 @@ function StatCard({ title, value, subtitle }: { title: string; value: string; su
   )
 }
 
+function formatElapsed(elapsedS: number): string {
+  const m = Math.floor(elapsedS / 60)
+  const s = Math.floor(elapsedS % 60)
+  return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+
 function formatUSD(amount: number): string {
   return `$${amount.toFixed(4)}`
 }
@@ -59,6 +65,12 @@ export function Dashboard() {
     queryKey: ['costs'],
     queryFn: api.getCosts,
     refetchInterval: wsConnected ? false : 30_000,
+  })
+
+  const activeWorkers = useQuery({
+    queryKey: ['workers', 'active'],
+    queryFn: api.getActiveWorkers,
+    refetchInterval: wsConnected ? false : 15_000,
   })
 
   const isLoading = status.isLoading || sessions.isLoading || costs.isLoading
@@ -154,39 +166,42 @@ export function Dashboard() {
         </div>
       </section>
 
-      {activeSessions.length > 0 && (
-        <section>
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            Running Sessions
-          </h3>
-          <div className="overflow-hidden rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  <th className="px-4 py-2">Issue</th>
-                  <th className="px-4 py-2">Agent</th>
-                  <th className="px-4 py-2">Provider</th>
-                  <th className="px-4 py-2">Model</th>
-                  <th className="px-4 py-2">Started</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeSessions.map((s) => (
-                  <tr key={s.id} className="border-b dark:border-gray-700 last:border-b-0">
-                    <td className="px-4 py-2 font-medium"><a href={`https://github.com/HerbHall/samverk/issues/${s.issue_number}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">#{s.issue_number}</a></td>
-                    <td className="px-4 py-2 dark:text-gray-300">{s.agent_type}</td>
-                    <td className="px-4 py-2 dark:text-gray-300">{s.provider}</td>
-                    <td className="px-4 py-2 font-mono text-xs dark:text-gray-300">{s.model}</td>
-                    <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
-                      {new Date(s.started_at).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <section>
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Active Workers
+        </h3>
+        {activeWorkers.isLoading ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500">Loading...</p>
+        ) : activeWorkers.data == null || activeWorkers.data.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500">No active workers</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {activeWorkers.data.map((w) => (
+              <div
+                key={w.session_id}
+                className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <a
+                    href={`#${w.issue_number}`}
+                    className="text-base font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    #{w.issue_number}
+                  </a>
+                  <span className="inline-block rounded-full bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+                    {w.agent_type}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-700 dark:text-gray-300">{w.provider}</p>
+                <p className="text-xs font-mono text-gray-500 dark:text-gray-400 truncate">{w.model}</p>
+                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                  Elapsed: {formatElapsed(w.elapsed_s)}
+                </p>
+              </div>
+            ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   )
 }
