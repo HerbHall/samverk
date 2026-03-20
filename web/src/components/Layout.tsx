@@ -80,6 +80,30 @@ export function Layout() {
             >
               Logs
             </NavLink>
+            <NavLink
+              to="/mcp"
+              className={({ isActive }) =>
+                `block rounded px-3 py-2 text-sm ${isActive ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
+              }
+            >
+              MCP
+            </NavLink>
+            <NavLink
+              to="/projects"
+              className={({ isActive }) =>
+                `block rounded px-3 py-2 text-sm ${isActive ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
+              }
+            >
+              Projects
+            </NavLink>
+            <NavLink
+              to="/data"
+              className={({ isActive }) =>
+                `block rounded px-3 py-2 text-sm ${isActive ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`
+              }
+            >
+              Data
+            </NavLink>
             <div className="mt-4 border-t pt-3 dark:border-gray-700">
               <span className="px-3 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">External</span>
             </div>

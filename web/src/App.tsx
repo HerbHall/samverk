@@ -10,6 +10,9 @@ import { Logs } from './pages/Logs'
 import { Synapset } from './pages/Synapset'
 import { DevKit } from './pages/DevKit'
 import { Providers } from './pages/Providers'
+import MCP from './pages/MCP'
+import { Projects } from './pages/Projects'
+import { Data } from './pages/Data'
 import { useWebSocket } from './hooks/useWebSocket'
 
 export class ErrorBoundary extends React.Component<
@@ -61,6 +64,9 @@ export function App() {
           <Route path="providers" element={<Providers />} />
           <Route path="metrics" element={<Metrics />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="mcp" element={<MCP />} />
+          <Route path="projects" element={<Projects />} />
+          <Route path="data" element={<Data />} />
           <Route path="synapset" element={<Synapset />} />
           <Route path="devkit" element={<DevKit />} />
         </Route>
