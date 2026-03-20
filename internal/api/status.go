@@ -9,6 +9,7 @@ type statusResponse struct {
 	Healthy           bool `json:"healthy"`
 	ForgeConnected    bool `json:"forge_connected"`
 	DatabaseConnected bool `json:"database_connected"`
+	ToolCount         int  `json:"tool_count"`
 }
 
 // handleStatus handles GET /api/v1/status.
@@ -17,6 +18,7 @@ func (a *API) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	resp := statusResponse{
 		ForgeConnected:    a.tracker != nil,
 		DatabaseConnected: a.store != nil,
+		ToolCount:         a.toolCount,
 	}
 	resp.Healthy = resp.ForgeConnected && resp.DatabaseConnected
 

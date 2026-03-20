@@ -53,6 +53,7 @@ type API struct {
 	projectRegistry *internalmcp.ProjectRegistry // may be nil; single-project mode
 	synapsetProxy   *SynapsetProxy               // may be nil; proxies Synapset API requests
 	logStore        *logstore.LogStore            // may be nil; for log query API
+	toolCount       int                           // number of MCP tools registered; set via SetToolCount
 	chatAPIKey      string                        // Anthropic API key for chat proxy; empty = use env
 	chatRateLimit  *chatRateLimit    // rate limiter for chat endpoint
 	history        []historyEntry    // ring buffer of recent snapshots; guarded by historyMu
@@ -126,6 +127,12 @@ func (a *API) SetProjectRegistry(reg *internalmcp.ProjectRegistry) {
 	a.projectRegistry = reg
 }
 
+// SetToolCount records the number of MCP tools exposed by this server
+// so the /api/v1/status and /api/v1/mcp/servers endpoints can report it.
+func (a *API) SetToolCount(n int) {
+	a.toolCount = n
+}
+
 // RegisterRoutes registers all API endpoints on the given mux.
 // Routes use Go 1.22+ method+path patterns.
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
@@ -159,6 +166,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/capacity/apply", a.handleCapacityApply)
 	mux.HandleFunc("GET /api/v1/devkit/summary", a.handleDevkitSummary)
 	mux.HandleFunc("GET /api/v1/data/sources", a.handleDataSources)
+	mux.HandleFunc("GET /api/v1/mcp/servers", a.handleMCPServers)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)

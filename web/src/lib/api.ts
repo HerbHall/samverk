@@ -460,6 +460,13 @@ export interface DataSource {
   record_count: number
   path?: string
   healthy: boolean
+export interface MCPServerInfo {
+  name: string
+  type: 'hosted' | 'consumed'
+  endpoint: string
+  healthy: boolean
+  tool_count: number
+  description: string
 }
 
 export const api = {
@@ -585,4 +592,6 @@ export const api = {
 
   getDataSources: () =>
     fetchJSON<DataSource[]>('/data/sources'),
+  getMCPServers: () =>
+    fetchJSON<MCPServerInfo[]>('/mcp/servers'),
 }

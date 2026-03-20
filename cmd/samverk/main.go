@@ -406,6 +406,7 @@ func serveCmd() *cobra.Command {
 			// shows registered PC agent workers in the RUNTIME METRICS section.
 			mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
 			cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
+			apiHandler.SetToolCount(internalmcp.CountTools())
 			logger.Info("MCP handler enabled",
 				zap.String("owner", owner), zap.String("repo", repo))
 

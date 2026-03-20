@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
@@ -241,4 +243,31 @@ func NewHTTPHandler(h *Handler) http.Handler {
 			JSONResponse: true,
 		},
 	)
+}
+
+// CountTools returns the number of MCP tools registered by this server.
+// It spins up a temporary in-process handler and calls tools/list via
+// the Streamable HTTP protocol to avoid reaching into SDK internals.
+func CountTools() int {
+	httpH := NewHTTPHandler(&Handler{})
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	w := httptest.NewRecorder()
+	httpH.ServeHTTP(w, req)
+
+	var resp struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		return 0
+	}
+	return len(resp.Result.Tools)
 }
