@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+// cpuSource describes how the CPUPercent field in a Snapshot was computed.
+type cpuSource string
+
+const (
+	cpuSourceLoadAvg  cpuSource = "load_avg" // load average / NumCPU (bare-metal or unknown)
+	cpuSourceCgroupV2 cpuSource = "cgroup_v2" // cgroup v2 delta (accurate in LXC containers)
+)
+
 // AlertLevel classifies the severity of a resource alert.
 type AlertLevel string
 
@@ -62,10 +70,13 @@ type Snapshot struct {
 	SwapPercent    float64 `json:"swap_percent"`
 
 	// CPU
-	LoadAvg1  float64 `json:"load_avg_1"`
-	LoadAvg5  float64 `json:"load_avg_5"`
-	LoadAvg15 float64 `json:"load_avg_15"`
-	NumCPU    int     `json:"num_cpu"`
+	LoadAvg1   float64   `json:"load_avg_1"`
+	LoadAvg5   float64   `json:"load_avg_5"`
+	LoadAvg15  float64   `json:"load_avg_15"`
+	NumCPU     int       `json:"num_cpu"`
+	CPUPercent float64   `json:"cpu_percent"`
+	CPUSource  cpuSource `json:"cpu_source,omitempty"`
+	InLXC      bool      `json:"in_lxc"`
 
 	// Alerts
 	Alerts []Alert `json:"alerts,omitempty"`
@@ -76,12 +87,16 @@ const historyCapacity = 2880
 
 // Collector gathers host-level metrics on a 30-second interval.
 type Collector struct {
-	mu       sync.RWMutex
-	current  Snapshot
-	history  []Snapshot
-	hIdx     int
-	hFull    bool
-	rootPath string
+	mu          sync.RWMutex
+	current     Snapshot
+	history     []Snapshot
+	hIdx        int
+	hFull       bool
+	rootPath    string
+	detectOnce  sync.Once
+	inLXC       bool
+	prevCPUUsec uint64
+	prevCPUTime time.Time
 }
 
 // NewCollector creates a Collector that reads disk stats from rootPath.
@@ -186,6 +201,34 @@ func (c *Collector) collect() {
 		snap.LoadAvg15 = l15
 	}
 
+	// Determine CPU percent. In LXC containers /proc/loadavg reflects the host,
+	// so use cgroup v2 usage_usec delta for accurate container CPU instead.
+	c.detectOnce.Do(func() {
+		c.inLXC = isLXCContainer()
+	})
+	snap.InLXC = c.inLXC
+
+	if c.inLXC {
+		if usec, err := readCgroupCPUStat(); err == nil {
+			if !c.prevCPUTime.IsZero() && usec >= c.prevCPUUsec {
+				elapsed := now.Sub(c.prevCPUTime).Seconds()
+				if elapsed > 0 && snap.NumCPU > 0 {
+					deltaUsec := usec - c.prevCPUUsec
+					// deltaUsec is in microseconds; convert to seconds and express as percent.
+					snap.CPUPercent = (float64(deltaUsec) / 1e6) / elapsed / float64(snap.NumCPU) * 100.0
+					snap.CPUSource = cpuSourceCgroupV2
+				}
+			}
+			c.prevCPUUsec = usec
+			c.prevCPUTime = now
+		}
+	}
+	// Fallback: derive from load average (accurate on bare-metal, unreliable in LXC).
+	if snap.CPUSource == "" && snap.NumCPU > 0 {
+		snap.CPUPercent = snap.LoadAvg1 / float64(snap.NumCPU) * 100.0
+		snap.CPUSource = cpuSourceLoadAvg
+	}
+
 	// Evaluate alerts.
 	snap.Alerts = EvaluateAlerts(snap)
 
@@ -221,13 +264,9 @@ func EvaluateAlerts(s Snapshot) []Alert {
 		alerts = checkThreshold(alerts, "swap", s.SwapPercent, SwapWarnPct, SwapCritPct)
 	}
 
-	// CPU load alerts (1-min load relative to CPU count).
-	if s.NumCPU > 0 {
-		loadRatio := s.LoadAvg1 / float64(s.NumCPU)
-		warnThreshold := CPULoadWarnRatio * 100.0
-		critThreshold := CPULoadCritRatio * 100.0
-		ratioPercent := loadRatio * 100.0
-		alerts = checkThreshold(alerts, "cpu", ratioPercent, warnThreshold, critThreshold)
+	// CPU alerts (percent utilisation, already normalised by collect()).
+	if s.CPUSource != "" {
+		alerts = checkThreshold(alerts, "cpu", s.CPUPercent, CPULoadWarnRatio*100.0, CPULoadCritRatio*100.0)
 	}
 
 	return alerts

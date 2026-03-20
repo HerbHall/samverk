@@ -83,7 +83,7 @@ function GaugeCard({ label, percent, usedLabel, totalLabel, warnPct, critPct }: 
 }
 
 function HostSection({ current, history }: { current: HostMetricsDTO; history: HostMetricsDTO[] }) {
-  const cpuPercent = current.num_cpu > 0 ? (current.load_avg_1 / current.num_cpu) * 100 : 0
+  const cpuPercent = current.cpu_percent ?? (current.num_cpu > 0 ? (current.load_avg_1 / current.num_cpu) * 100 : 0)
   const diskTrend = estimateDaysToThreshold(history, current.disk_percent, 70)
 
   return (
@@ -115,9 +115,9 @@ function HostSection({ current, history }: { current: HostMetricsDTO; history: H
           critPct={50}
         />
         <GaugeCard
-          label="CPU Load"
+          label={current.in_lxc ? 'CPU (cgroup)' : 'CPU Load'}
           percent={cpuPercent}
-          usedLabel={current.load_avg_1.toFixed(2)}
+          usedLabel={`${cpuPercent.toFixed(1)}%`}
           totalLabel={`${current.num_cpu} cores`}
           warnPct={70}
           critPct={90}
