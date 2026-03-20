@@ -2,8 +2,10 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/herbhall/samverk/internal/logstore"
 	"github.com/herbhall/samverk/pkg/models"
 )
 
@@ -65,6 +67,67 @@ func (a *API) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// sessionLogResponse is the JSON body for GET /api/v1/sessions/{id}/log.
+type sessionLogResponse struct {
+	SessionID string              `json:"session_id"`
+	Entries   []logstore.LogEntry `json:"entries"`
+}
+
+// handleGetSessionLog handles GET /api/v1/sessions/{id}/log.
+// Supports query params: limit (default 200, max 1000), since (RFC3339 or duration), level.
+func (a *API) handleGetSessionLog(w http.ResponseWriter, r *http.Request) {
+	if a.logStore == nil {
+		writeError(w, http.StatusNotFound, "log store not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "session id is required")
+		return
+	}
+
+	q := r.URL.Query()
+	f := logstore.QueryFilter{
+		SessionID: id,
+		Level:     q.Get("level"),
+		Limit:     200,
+	}
+
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "limit must be an integer")
+			return
+		}
+		f.Limit = n
+	}
+
+	if v := q.Get("since"); v != "" {
+		t, err := parseSinceParam(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid since parameter: "+err.Error())
+			return
+		}
+		f.Since = t
+	}
+
+	entries, err := a.logStore.Query(r.Context(), f)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query failed: "+err.Error())
+		return
+	}
+
+	if entries == nil {
+		entries = make([]logstore.LogEntry, 0)
+	}
+
+	writeJSON(w, http.StatusOK, sessionLogResponse{
+		SessionID: id,
+		Entries:   entries,
+	})
 }
 
 // costResponse is the JSON representation of a cost summary.
