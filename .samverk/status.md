@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-21T09:15:00Z
+updated: 2026-03-21T14:30:00Z
 updated_by: claude-code
 ---
 
@@ -35,7 +35,16 @@ Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime vali
 
 ## Open Issues
 
-Remaining: agent:human (#57, #70, #72, #74), agent:docs (#114). Wave 12 complete.
+Remaining: agent:human (#57, #70, #72, #74). Wave 12 + CF auth housekeeping complete.
+
+### Planned Next Waves
+
+| Wave | Issues | What |
+|------|--------|------|
+| A | #157, #158 | CF Access for synapset.herbhall.net + security docs |
+| B | #57 Option B | Structured JSON output for Ollama code-gen |
+| C | #70 sub-issues (#64, #67, #69) | MCP parity tools |
+| D | #72 Phase 1+2 | WebSocket hub + expanded API |
 
 ## Gaps to Full Autonomy
 
@@ -58,6 +67,32 @@ Remaining: agent:human (#57, #70, #72, #74), agent:docs (#114). Wave 12 complete
 2. Configure Cloudflare Access policy for samverk.herbhall.net, then set `CF_ACCESS_TEAM_DOMAIN=herbhall.cloudflareaccess.com` on CT 202
 3. Address agent:human issues (#57 Ollama code-gen validation, #70 MCP parity, #72 full dashboard)
 4. Observe Quality page advisory panel after failure events accumulate (5+ events needed for KPIs)
+
+## Session Summary (2026-03-21, session 2)
+
+CF Access diagnosis and housekeeping session.
+
+### Work Done
+
+- Diagnosed CF Access not enforcing: root cause was `CF_ACCESS_TEAM_DOMAIN` not set (not missing IdP)
+- Set `CF_ACCESS_TEAM_DOMAIN=herbhall.cloudflareaccess.com` on CT 202 → JWT auto-login (#88) now active
+- Removed invalid `mcp.herbhall.net` tunnel entry + DNS record (agent-created workaround from prior session)
+- Corrected CF Access architecture understanding: `samverk.herbhall.net/mcp` and `synapset.herbhall.net/mcp` are the only MCP endpoints
+- Filed issues #155-#158 (CF Access diagnosis, JWT activation, synapset protection, security docs)
+- Closed #155, #156 as resolved; #157 and #158 queued for automation
+- Filed DevKit #487 (homelab security architecture docs)
+- Closed #114 (self-healing KPI research -- deliverables already met by Wave 11)
+- Housekeeping: closed stale PRs #40/#41, removed 7 old worktrees, cleared 9 old stashes, deleted all stale local branches
+- Verified dashboard loads without token prompt at samverk.herbhall.net (CF JWT auto-login confirmed)
+- Remembered: setup RDP on HDH-MSP8 (work laptop) for external network testing
+
+### Security Architecture (clarified)
+
+- Internal (LAN): bearer token only, minimal
+- External (samverk.herbhall.net): CF Access Google OAuth (browser) + service token (programmatic)
+- MCP endpoints: same domain/CF app, service token bypass
+- Tailscale: separate, not part of CF stack
+- mcp.herbhall.net: INVALID -- removed
 
 ## Session Summary (2026-03-21, session 1)
 
