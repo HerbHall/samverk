@@ -1,0 +1,34 @@
+name: Auto-merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge
+    # Skip release-please PRs — release-gate.yml handles those
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge for safe PR types
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          PR="${{ github.event.pull_request.number }}"
+
+          if echo "$TITLE" | grep -qE '^(chore|docs|ci|style|fix|refactor|test|feat)(\(.+\))?(!)?: '; then
+            echo "Safe prefix detected -- enabling auto-merge on PR #${PR}: $TITLE"
+            gh pr merge "$PR" \
+              --repo "${{ github.repository }}" \
+              --squash --auto
+          else
+            echo "Skipping: '$TITLE' does not match a conventional commit prefix"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
