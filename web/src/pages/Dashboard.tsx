@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { api, ActiveWorker, Issue, ProviderHealthEntry } from '../lib/api'
 import { useWSStore } from '../store/wsStore'
+import { WorkerDetailPanel } from '../components/WorkerDetailPanel'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -200,7 +201,15 @@ function OverviewCard({
 
 // ── Row 4: Active Worker Card ─────────────────────────────────────────────────
 
-function WorkerCard({ w, issueTitles }: { w: ActiveWorker; issueTitles: Map<number, string> }) {
+function WorkerCard({
+  w,
+  issueTitles,
+  onClick,
+}: {
+  w: ActiveWorker
+  issueTitles: Map<number, string>
+  onClick: () => void
+}) {
   const issueTitle = issueTitles.get(w.issue_number)
   const startedAt = new Date(w.started_at)
   const elapsed = formatElapsed(w.elapsed_s)
@@ -213,7 +222,16 @@ function WorkerCard({ w, issueTitles }: { w: ActiveWorker; issueTitles: Map<numb
         : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
 
   return (
-    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4 flex flex-col gap-2">
+    <div
+      className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4 flex flex-col gap-2 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onClick()
+      }}
+      aria-label={`View session details for issue #${w.issue_number}`}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
@@ -222,6 +240,7 @@ function WorkerCard({ w, issueTitles }: { w: ActiveWorker; issueTitles: Map<numb
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400 shrink-0"
+              onClick={(e) => e.stopPropagation()}
             >
               #{w.issue_number}
             </a>
@@ -275,6 +294,7 @@ function WorkerCard({ w, issueTitles }: { w: ActiveWorker; issueTitles: Map<numb
 
 export function Dashboard() {
   const wsConnected = useWSStore((s) => s.connected)
+  const [selectedWorker, setSelectedWorker] = useState<ActiveWorker | null>(null)
 
   const status = useQuery({
     queryKey: ['status'],
@@ -366,7 +386,8 @@ export function Dashboard() {
 
   return (
     <div>
-      {/* Header */}
+      <WorkerDetailPanel worker={selectedWorker} onClose={() => setSelectedWorker(null)} />
+
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h2>
         <span className="inline-flex items-center gap-1 text-xs">
@@ -431,7 +452,12 @@ export function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {activeWorkerList.map((w) => (
-              <WorkerCard key={w.session_id} w={w} issueTitles={issueTitles} />
+              <WorkerCard
+                key={w.session_id}
+                w={w}
+                issueTitles={issueTitles}
+                onClick={() => setSelectedWorker(w)}
+              />
             ))}
           </div>
         )}
