@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts'
+import type { TooltipContentProps } from 'recharts'
 import { Link } from 'react-router'
-import { api, ActiveWorker, Issue, ProviderHealthEntry } from '../lib/api'
+import { api, ActiveWorker, HistoryEntry, Issue, ProviderHealthEntry } from '../lib/api'
 import { useWSStore } from '../store/wsStore'
 import { WorkerDetailPanel } from '../components/WorkerDetailPanel'
 
@@ -290,6 +292,62 @@ function WorkerCard({
   )
 }
 
+function QueueDepthTooltip({ active, payload, label }: Partial<TooltipContentProps<number, string>>) {
+  if (!active || payload == null || payload.length === 0) return null
+  return (
+    <div className="rounded border dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs shadow">
+      <p className="text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="font-medium text-gray-900 dark:text-gray-100">{payload[0].value} queued</p>
+    </div>
+  )
+}
+
+function QueueDepthSparkline({
+  entries,
+  isLoading,
+}: {
+  entries: HistoryEntry[]
+  isLoading: boolean
+}) {
+  const data = entries
+    .filter((e) => e.pool != null)
+    .map((e) => ({
+      time: new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      queue_depth: e.pool!.queue_depth,
+    }))
+
+  return (
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+      {isLoading ? (
+        <p className="text-sm text-gray-400 dark:text-gray-500">Loading...</p>
+      ) : data.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-gray-500">No data</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={120}>
+          <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id="queueFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <Tooltip content={<QueueDepthTooltip />} />
+            <Area
+              type="monotone"
+              dataKey="queue_depth"
+              stroke="#6366f1"
+              strokeWidth={1.5}
+              fill="url(#queueFill)"
+              dot={false}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  )
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 export function Dashboard() {
@@ -327,6 +385,12 @@ export function Dashboard() {
     queryFn: api.getProviderHealth,
     refetchInterval: 30_000,
     retry: 1,
+  })
+
+  const metricsHistory = useQuery({
+    queryKey: ['metrics', 'history', '30m'],
+    queryFn: () => api.getMetricsHistory('30m'),
+    refetchInterval: 30_000,
   })
 
   const issueTitles = useMemo(() => {
@@ -441,7 +505,7 @@ export function Dashboard() {
       </section>
 
       {/* Row 4: Active Worker Cards */}
-      <section>
+      <section className="mb-8">
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           Active Workers
         </h3>
@@ -461,6 +525,16 @@ export function Dashboard() {
             ))}
           </div>
         )}
+      </section>
+
+      <section>
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Queue Depth (30m)
+        </h3>
+        <QueueDepthSparkline
+          entries={metricsHistory.data?.entries ?? []}
+          isLoading={metricsHistory.isLoading}
+        />
       </section>
     </div>
   )
