@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-20T23:45:00Z
+updated: 2026-03-21T09:15:00Z
 updated_by: claude-code
 ---
 
@@ -35,7 +35,7 @@ Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime vali
 
 ## Open Issues
 
-Remaining: agent:human (#57, #70, #72, #74), agent:docs (#121, #127), blocked on design (#120). Waves 7-11 complete.
+Remaining: agent:human (#57, #70, #72, #74), agent:docs (#114). Wave 12 complete.
 
 ## Gaps to Full Autonomy
 
@@ -50,15 +50,33 @@ Remaining: agent:human (#57, #70, #72, #74), agent:docs (#121, #127), blocked on
 ### Medium (remaining)
 
 1. Synapset parse error (Synapset#62 filed)
-2. DevKit dashboard native React (replace iframe)
-3. Multi-repo dispatch (code ready, config needed)
+2. `CF_ACCESS_TEAM_DOMAIN` env var on CT 202 to activate CF auto-login (#88 shipped, waiting on Cloudflare Access setup)
 
 ## Recommended Next Session
 
-1. Launch #120 (advisory engine -- blocked on #117+#118, now unblocked)
-2. Set `SAMVERK_DEVKIT_PATH` on CT 202 to activate DevKit native page
+1. Set `SAMVERK_DEVKIT_PATH` on CT 202 to activate DevKit native page
+2. Configure Cloudflare Access policy for samverk.herbhall.net, then set `CF_ACCESS_TEAM_DOMAIN=herbhall.cloudflareaccess.com` on CT 202
 3. Address agent:human issues (#57 Ollama code-gen validation, #70 MCP parity, #72 full dashboard)
-4. Observe Quality page after failure events accumulate (need 5+ events for KPIs to compute)
+4. Observe Quality page advisory panel after failure events accumulate (5+ events needed for KPIs)
+
+## Session Summary (2026-03-21, session 1)
+
+Wave 12 complete. 4 issues resolved (2 code-gen + 2 docs). Deployed successfully.
+
+### Work Done
+
+- #120 -- Advisory engine: background goroutine (15-min refresh), 5 pattern detectors, GET /api/v1/quality/recommendations, advisory panel on Quality page
+- #88 -- CF Access JWT auto-login: `CFAccessMiddleware` with RS256 JWKS validation, 24h cache, `CF_ACCESS_TEAM_DOMAIN` env var gating
+- #121 -- Dashboard IA spec: `docs/dashboard-ia.md` -- goals, 13-page inventory, 4 information groups, evaluation criteria
+- #127 -- Dashboard evergreen process: `docs/dashboard-evergreen.md` + `.github/PULL_REQUEST_TEMPLATE.md` with evergreen checklist
+
+### Architecture
+
+Quality page self-healing loop now fully wired: failure_events → RCA fields → KPI computation → advisory engine pattern detection → recommendations panel.
+
+### Lint gotcha
+
+Parallel worktree agents use golangci-lint cache; missed 2 prealloc violations in `detectors.go` that passed pre-push but failed CI. Fixed immediately (2 min). Root cause: lint cache in worktree doesn't reset between runs.
 
 ## Session Summary (2026-03-20, session 5)
 
