@@ -106,6 +106,13 @@ func serveCmd() *cobra.Command {
 				logger.Info("MCP authentication enabled (env token)")
 			}
 
+			// Wire Cloudflare Access JWT auto-login.
+			cfg.CFAccessTeamDomain = os.Getenv("CF_ACCESS_TEAM_DOMAIN")
+			if cfg.CFAccessTeamDomain != "" {
+				logger.Info("Cloudflare Access JWT auto-login enabled",
+					zap.String("team_domain", cfg.CFAccessTeamDomain))
+			}
+
 			// Persist browser sessions alongside the database so logins survive restarts.
 			if dbPath != "" {
 				cfg.SessionFile = strings.TrimSuffix(dbPath, ".db") + "-sessions.json"

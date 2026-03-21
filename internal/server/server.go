@@ -25,13 +25,14 @@ type PressureProvider interface {
 
 // Config holds server configuration.
 type Config struct {
-	Addr             string          // listen address, e.g. ":8080"
-	AuthToken        string          //nolint:gosec // G117: config field, not a hardcoded secret
-	KeyStore         *KeyStore       // YAML-backed API key store (may be nil)
-	SessionFile      string          // optional path for persistent session storage (survive restarts)
-	MCPHandler       http.Handler    // optional MCP protocol handler; nil keeps the 501 placeholder
-	APIHandler       APIRegistrar    // optional REST API handler; nil keeps the 501 placeholder
-	PressureProvider PressureProvider // optional; /healthz omits pressure field when nil
+	Addr               string           // listen address, e.g. ":8080"
+	AuthToken          string           //nolint:gosec // G117: config field, not a hardcoded secret
+	KeyStore           *KeyStore        // YAML-backed API key store (may be nil)
+	SessionFile        string           // optional path for persistent session storage (survive restarts)
+	MCPHandler         http.Handler     // optional MCP protocol handler; nil keeps the 501 placeholder
+	APIHandler         APIRegistrar     // optional REST API handler; nil keeps the 501 placeholder
+	PressureProvider   PressureProvider // optional; /healthz omits pressure field when nil
+	CFAccessTeamDomain string           // Cloudflare Access team domain; empty = CF auto-login disabled
 }
 
 // Server is the main HTTP server.
@@ -176,7 +177,12 @@ func (s *Server) registerRoutes() {
 
 	// Login / logout routes (unauthenticated).
 	if s.authEnabled() {
-		s.mux.HandleFunc("GET /login", s.handleLoginPage)
+		// Wrap login page with CF Access auto-login when configured.
+		loginPageHandler := http.Handler(http.HandlerFunc(s.handleLoginPage))
+		if s.cfg.CFAccessTeamDomain != "" && s.sessions != nil {
+			loginPageHandler = CFAccessMiddleware(s.cfg.CFAccessTeamDomain, s.sessions)(loginPageHandler)
+		}
+		s.mux.Handle("GET /login", loginPageHandler)
 		s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
 		s.mux.HandleFunc("POST /logout", s.handleLogout)
 	}
@@ -221,9 +227,15 @@ func (s *Server) registerRoutes() {
 
 	// Serve embedded SPA for all unmatched routes.
 	// When auth is enabled, require a valid session cookie.
+	// CF Access middleware runs first: if a valid JWT is present, it auto-issues
+	// a session and redirects to /, bypassing the token login form.
 	spa := spaHandler()
 	if s.authEnabled() {
-		s.mux.Handle("/", requireSession(s.sessions)(spa))
+		spaWithAuth := requireSession(s.sessions)(spa)
+		if s.cfg.CFAccessTeamDomain != "" && s.sessions != nil {
+			spaWithAuth = CFAccessMiddleware(s.cfg.CFAccessTeamDomain, s.sessions)(spaWithAuth)
+		}
+		s.mux.Handle("/", spaWithAuth)
 	} else {
 		s.mux.Handle("/", spa)
 	}
