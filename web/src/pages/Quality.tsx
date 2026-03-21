@@ -4,7 +4,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { PieChart, Pie, Cell, Tooltip as RechartTooltip } from 'recharts'
 import { api } from '../lib/api'
-import type { KPIReport, RootCauseBreakdownEntry } from '../lib/api'
+import type { KPIReport, QualityRecommendation, RootCauseBreakdownEntry } from '../lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -191,6 +191,81 @@ function HeadlineCards({ report }: { report: KPIReport }) {
   )
 }
 
+// ── Advisory panel ────────────────────────────────────────────────────────────
+
+function levelBorderClass(level: QualityRecommendation['level']): string {
+  if (level === 'critical') return 'border-l-4 border-l-red-500'
+  if (level === 'warn') return 'border-l-4 border-l-amber-500'
+  return 'border-l-4 border-l-blue-500'
+}
+
+function levelBadgeClass(level: QualityRecommendation['level']): string {
+  if (level === 'critical') return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+  if (level === 'warn') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+  return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+}
+
+function AdvisoryPanel() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['quality', 'recommendations'],
+    queryFn: api.getRecommendations,
+    refetchInterval: 5 * 60_000,
+  })
+
+  return (
+    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-4">
+        Advisory Engine
+      </h2>
+
+      {isLoading && (
+        <div className="space-y-2">
+          <div className="h-10 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+          <div className="h-10 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+        </div>
+      )}
+
+      {error != null && (
+        <p className="text-sm text-red-600 dark:text-red-400">
+          Unable to load recommendations
+        </p>
+      )}
+
+      {data != null && data.length === 0 && (
+        <p className="text-sm text-gray-400 dark:text-gray-500">
+          No recommendations — system looks healthy
+        </p>
+      )}
+
+      {data != null && data.length > 0 && (
+        <div className="space-y-2">
+          {data.map((rec) => (
+            <div
+              key={rec.id}
+              className={`rounded-r-lg border dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3 ${levelBorderClass(rec.level)}`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className={`inline-block rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide ${levelBadgeClass(rec.level)}`}
+                >
+                  {rec.level}
+                </span>
+                <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                  {rec.title}
+                </span>
+              </div>
+              <p className="text-xs text-gray-600 dark:text-gray-400">{rec.detail}</p>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Affected: {rec.affected_count} in {rec.window_days}d window
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Quality() {
@@ -234,15 +309,8 @@ export default function Quality() {
             <RootCauseChart data={data.root_cause_breakdown ?? []} />
           </div>
 
-          {/* Row 3 — Advisory placeholder */}
-          <div className="rounded-lg border dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-5">
-            <h2 className="text-sm font-semibold text-gray-400 dark:text-gray-500 mb-1">
-              Advisory Engine
-            </h2>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              Pattern detection recommendations — coming soon (#120)
-            </p>
-          </div>
+          {/* Row 3 — Advisory Engine */}
+          <AdvisoryPanel />
         </>
       )}
     </div>

@@ -125,6 +125,18 @@ type KPIReport struct {
 	SampleSize           int                       `json:"sample_size"`
 }
 
+// QualityRecommendation is one advisory recommendation from the advisory engine.
+type QualityRecommendation struct {
+	ID            string    `json:"id"`
+	Level         string    `json:"level"`        // "info" | "warn" | "critical"
+	Category      string    `json:"category"`
+	Title         string    `json:"title"`
+	Detail        string    `json:"detail"`
+	AffectedCount int       `json:"affected_count"`
+	WindowDays    int       `json:"window_days"`
+	GeneratedAt   time.Time `json:"generated_at"`
+}
+
 // CorrectionEvent records a correction decision made by the failure response engine.
 type CorrectionEvent struct {
 	ID           string       `json:"id"`

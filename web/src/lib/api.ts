@@ -491,6 +491,17 @@ export interface KPIReport {
   sample_size: number
 }
 
+export interface QualityRecommendation {
+  id: string
+  level: 'info' | 'warn' | 'critical'
+  category: string
+  title: string
+  detail: string
+  affected_count: number
+  window_days: number
+  generated_at: string
+}
+
 export interface ForgeInfo {
   name: string
   type: string
@@ -665,4 +676,7 @@ export const api = {
 
   getKPIs: () =>
     fetchJSON<KPIReport>('/kpis'),
+
+  getRecommendations: () =>
+    fetchJSON<QualityRecommendation[]>('/quality/recommendations'),
 }

@@ -6,6 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/herbhall/samverk/internal/advisor"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/hostmetrics"
@@ -50,6 +51,7 @@ type API struct {
 	scalingEnabled bool                    // true when autoscaler was configured
 	scalingMin     int
 	scalingMax     int
+	advisor         *advisor.Advisor             // may be nil; set via SetAdvisor
 	projectRegistry *internalmcp.ProjectRegistry // may be nil; single-project mode
 	synapsetProxy   *SynapsetProxy               // may be nil; proxies Synapset API requests
 	logStore        *logstore.LogStore            // may be nil; for log query API
@@ -158,6 +160,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/metrics/host", a.handleHostMetrics)
 	mux.HandleFunc("GET /api/v1/failures", a.handleFailureSummary)
 	mux.HandleFunc("GET /api/v1/kpis", a.handleGetKPIs)
+	mux.HandleFunc("GET /api/v1/quality/recommendations", a.handleGetRecommendations)
 	mux.HandleFunc("GET /api/v1/providers/health", a.handleProviderHealth)
 	mux.HandleFunc("GET /api/v1/agents", a.handleAgents)
 	mux.HandleFunc("GET /api/v1/logs", a.handleListLogs)

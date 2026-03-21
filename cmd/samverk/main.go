@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"go.uber.org/zap"
@@ -15,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/herbhall/samverk/internal/advisor"
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/docaudit"
@@ -395,6 +397,18 @@ func serveCmd() *cobra.Command {
 				}
 			}()
 			logger.Info("host metrics collector started")
+
+			// Start advisory engine (quality KPI recommendations).
+			if st != nil {
+				adv := advisor.New(st, logger)
+				apiHandler.SetAdvisor(adv)
+				go func() {
+					if advErr := adv.Start(ctx); advErr != nil && !errors.Is(advErr, context.Canceled) {
+						logger.Warn("advisory engine stopped", zap.Error(advErr))
+					}
+				}()
+				logger.Info("advisory engine started")
+			}
 
 			// Wire log analyst if logstore is available.
 			if ls != nil {
