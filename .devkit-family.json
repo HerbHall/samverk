@@ -1,0 +1,9 @@
+{
+  "family": "Samverk",
+  "description": "Samverk-managed product projects. All projects here are orchestrated by the Samverk project lifecycle manager.",
+  "tier": "full",
+  "default_profile": null,
+  "managed_by": "samverk",
+  "auto_enroll_children": true,
+  "notes": "Projects here should all have .samverk/project.yaml. Compliance: full 21-check conformance audit."
+}
