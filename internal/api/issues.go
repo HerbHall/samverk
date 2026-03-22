@@ -1,30 +1,49 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/herbhall/samverk/internal/forge"
+	internalmcp "github.com/herbhall/samverk/internal/mcp"
 )
 
 // issueResponse is the JSON representation of a forge issue.
+// ProjectName, Owner, Repo, ForgeURL, and ForgeType are populated when the
+// project registry is active (multi-project mode). They are empty strings in
+// single-project mode; callers should treat an empty ForgeURL as "github".
 type issueResponse struct {
-	Number    int       `json:"number"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	State     string    `json:"state"`
-	Labels    []string  `json:"labels"`
-	Assignees []string  `json:"assignees"`
-	CreatedAt string    `json:"created_at"`
-	UpdatedAt string    `json:"updated_at"`
-	ClosedAt  *string   `json:"closed_at,omitempty"`
+	Number      int     `json:"number"`
+	Title       string  `json:"title"`
+	Body        string  `json:"body"`
+	State       string  `json:"state"`
+	Labels      []string `json:"labels"`
+	Assignees   []string `json:"assignees"`
+	CreatedAt   string   `json:"created_at"`
+	UpdatedAt   string   `json:"updated_at"`
+	ClosedAt    *string  `json:"closed_at,omitempty"`
+	// Forge / project metadata — populated in multi-project mode.
+	ProjectName string `json:"project_name,omitempty"`
+	Owner       string `json:"owner,omitempty"`
+	Repo        string `json:"repo,omitempty"`
+	ForgeURL    string `json:"forge_url,omitempty"`
+	ForgeType   string `json:"forge_type,omitempty"`
 }
 
-// toIssueResponse converts a forge.Issue to the API response type.
+// toIssueResponse converts a forge.Issue to the API response type without
+// project metadata (single-project mode fallback).
 func toIssueResponse(iss *forge.Issue) issueResponse {
+	return toIssueResponseForProject(iss, nil)
+}
+
+// toIssueResponseForProject converts a forge.Issue to the API response type,
+// attaching forge/project metadata from the given project when non-nil.
+func toIssueResponseForProject(iss *forge.Issue, p *internalmcp.Project) issueResponse {
 	r := issueResponse{
 		Number:    iss.Number,
 		Title:     iss.Title,
@@ -45,6 +64,13 @@ func toIssueResponse(iss *forge.Issue) issueResponse {
 	}
 	if r.Assignees == nil {
 		r.Assignees = []string{}
+	}
+	if p != nil {
+		r.ProjectName = p.Name
+		r.Owner = p.Owner
+		r.Repo = p.Repo
+		r.ForgeURL = p.ForgeURL
+		r.ForgeType = p.ForgeType
 	}
 	return r
 }
@@ -67,12 +93,12 @@ type issueListResponse struct {
 // handleListIssues handles GET /api/v1/issues.
 // Supports query params: state, labels, limit, offset, page, per_page.
 // limit/offset take precedence over page/per_page when provided.
+//
+// When a project registry is configured (multi-project mode), issues are
+// aggregated from ALL registered projects concurrently, each tagged with the
+// correct forge/project metadata. In single-project mode the active tracker
+// is queried directly (legacy behaviour).
 func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request) {
-	if a.tracker == nil {
-		writeError(w, http.StatusServiceUnavailable, "issue tracker not available")
-		return
-	}
-
 	q := r.URL.Query()
 	opts := &forge.ListOptions{}
 
@@ -126,6 +152,36 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Multi-project mode: aggregate from all registered projects concurrently.
+	if a.projectRegistry != nil {
+		issueList := a.listIssuesFromAllProjects(r.Context(), opts)
+		// Apply offset/limit after aggregation.
+		total := len(issueList)
+		if offset > total {
+			offset = total
+		}
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		page := offset/limit + 1
+		writeJSON(w, http.StatusOK, issueListResponse{
+			Issues:  issueList[offset:end],
+			Total:   total,
+			Limit:   limit,
+			Offset:  offset,
+			Page:    page,
+			PerPage: limit,
+		})
+		return
+	}
+
+	// Single-project mode fallback.
+	if a.tracker == nil {
+		writeError(w, http.StatusServiceUnavailable, "issue tracker not available")
+		return
+	}
+
 	// Compute 1-based page from offset/limit for the forge call.
 	page := offset/limit + 1
 	opts.Page = page
@@ -150,6 +206,61 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		Page:    page,
 		PerPage: limit,
 	})
+}
+
+// listIssuesFromAllProjects fetches open issues from every project in the
+// registry concurrently and returns the combined, deduplicated list sorted by
+// updated_at descending. Each issue carries forge/project metadata.
+func (a *API) listIssuesFromAllProjects(ctx context.Context, opts *forge.ListOptions) []issueResponse {
+	projects := a.projectRegistry.List()
+
+	type result struct {
+		issues []issueResponse
+	}
+
+	results := make([]result, len(projects))
+	var wg sync.WaitGroup
+
+	// Fetch up to maxLimit issues per project — the aggregated list is
+	// sufficient for the My Queue UI which filters client-side.
+	fetchOpts := &forge.ListOptions{
+		State:   opts.State,
+		Labels:  opts.Labels,
+		Page:    1,
+		PerPage: maxLimit,
+	}
+
+	for i, p := range projects {
+		if p.Tracker == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, proj *internalmcp.Project) {
+			defer wg.Done()
+			issues, err := proj.Tracker.ListIssues(ctx, fetchOpts)
+			if err != nil {
+				return
+			}
+			batch := make([]issueResponse, 0, len(issues))
+			for _, iss := range issues {
+				batch = append(batch, toIssueResponseForProject(iss, proj))
+			}
+			results[idx] = result{issues: batch}
+		}(i, p)
+	}
+
+	wg.Wait()
+
+	// Flatten results.
+	totalCount := 0
+	for i := range results {
+		totalCount += len(results[i].issues)
+	}
+	all := make([]issueResponse, 0, totalCount)
+	for i := range results {
+		all = append(all, results[i].issues...)
+	}
+	return all
 }
 
 // handleSearchIssues handles GET /api/v1/issues/search.

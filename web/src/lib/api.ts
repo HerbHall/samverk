@@ -39,6 +39,12 @@ export interface Issue {
   created_at: string
   updated_at: string
   closed_at: string | null
+  // Forge / project metadata — present in multi-project mode, absent otherwise.
+  project_name?: string
+  owner?: string
+  repo?: string
+  forge_url?: string
+  forge_type?: string
 }
 
 export interface Session {

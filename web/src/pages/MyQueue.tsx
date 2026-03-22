@@ -47,19 +47,36 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString()
 }
 
+function issueURL(issue: Issue): string {
+  if (issue.forge_url && issue.owner && issue.repo) {
+    return `${issue.forge_url}/${issue.owner}/${issue.repo}/issues/${issue.number}`
+  }
+  // Legacy fallback for single-project mode (no forge metadata).
+  return `https://github.com/HerbHall/samverk/issues/${issue.number}`
+}
+
 function buildAgentPrompt(issue: Issue): string {
-  const deps = issue.labels
-    .filter((l) => l.startsWith('status:blocked'))
-    .length > 0
+  const deps = issue.labels.filter((l) => l.startsWith('status:blocked')).length > 0
     ? '\n\nNote: This issue may have dependencies -- check the issue body for depends_on references.'
     : ''
 
-  return `Resolve GitHub issue #${issue.number} in the Samverk project (d:\\DevSpace\\Samverk).
+  const projectRef = issue.project_name && issue.owner && issue.repo
+    ? `the ${issue.project_name} project (${issue.owner}/${issue.repo})`
+    : 'the Samverk project (d:\\DevSpace\\Samverk)'
+
+  const url = issueURL(issue)
+
+  // For GitHub: suggest `gh issue view`. For Gitea or unknown: suggest the MCP tool.
+  const readCmd = issue.forge_type === 'github' || (!issue.forge_type && !issue.forge_url)
+    ? `gh issue view ${issue.number} --repo ${issue.owner ?? 'HerbHall'}/${issue.repo ?? 'samverk'}`
+    : `Use the Samverk MCP get_issue tool (issue #${issue.number}, project: ${issue.project_name ?? issue.repo ?? 'samverk'})`
+
+  return `Resolve issue #${issue.number} in ${projectRef}.
 
 Issue: ${issue.title}
-URL: https://github.com/HerbHall/samverk/issues/${issue.number}
+URL: ${url}
 
-Read the full issue body with: gh issue view ${issue.number}
+Read the full issue body with: ${readCmd}
 
 Follow the Explore -> Plan -> Code -> Verify -> Commit workflow. Create a feature branch, implement the fix, run \`make ci\` to verify, then create a PR with \`gh pr create\`.${deps}`
 }
@@ -178,7 +195,7 @@ export function MyQueue() {
                     {priority.label.replace('priority:', '').toUpperCase()}
                   </span>
 
-                  <a href={`https://github.com/HerbHall/samverk/issues/${issue.number}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400" onClick={(e) => e.stopPropagation()}>#{issue.number}</a>
+                  <a href={issueURL(issue)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400" onClick={(e) => e.stopPropagation()}>#{issue.number}</a>
 
                   <span className="flex-1 font-medium text-gray-900 dark:text-gray-100">{issue.title}</span>
 
