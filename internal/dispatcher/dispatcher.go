@@ -64,7 +64,7 @@ type Dispatcher struct {
 	configReloadError error          // last config reload error; nil = OK
 	primaryForgeType  string         // current primary forge type label (for logging)
 	primaryForgeURL   string         // current primary forge URL (for logging)
-	mu                sync.Mutex
+	mu                sync.RWMutex
 	logger            *zap.Logger
 	stop              context.CancelFunc
 }
@@ -82,6 +82,8 @@ func trackerKey(owner, repo string) string {
 // trackerFor resolves the IssueTracker for a given owner/repo pair.
 // Returns the first registered tracker if owner/repo is empty (backward compat).
 func (d *Dispatcher) trackerFor(owner, repo string) forge.IssueTracker {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	if owner == "" && repo == "" && len(d.trackerEntries) > 0 {
 		return d.trackerEntries[0].Tracker
 	}
