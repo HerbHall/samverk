@@ -144,7 +144,7 @@ func TestSessionRecordingCreateIssue(t *testing.T) {
 		Params: map[string]any{
 			"name": "create_issue",
 			"arguments": map[string]any{
-				"title": "Test issue",
+				"title": "test: session recording issue",
 				"body":  "Test body",
 			},
 		},

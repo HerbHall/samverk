@@ -43,10 +43,12 @@ type addCommentInput struct {
 
 // createIssueInput is the typed input for the create_issue tool.
 type createIssueInput struct {
-	Title     string   `json:"title" jsonschema:"required,the issue title"`
-	Body      string   `json:"body" jsonschema:"required,the issue body text"`
-	Labels    []string `json:"labels,omitempty" jsonschema:"optional label names to apply"`
-	Assignees []string `json:"assignees,omitempty" jsonschema:"optional usernames to assign"`
+	Title       string            `json:"title" jsonschema:"required,the issue title -- must begin with a conventional commit prefix (feat:|fix:|chore:|docs:|test:|ci:|style:|refactor:)"`
+	Body        string            `json:"body" jsonschema:"required,the issue body text"`
+	Labels      []string          `json:"labels,omitempty" jsonschema:"optional label names to apply -- agent:* and priority:* are injected automatically when absent"`
+	Assignees   []string          `json:"assignees,omitempty" jsonschema:"optional usernames to assign"`
+	Project     string            `json:"project,omitempty" jsonschema:"optional project name; resolves tracker from registry when set"`
+	Frontmatter map[string]string `json:"frontmatter,omitempty" jsonschema:"optional key/value pairs prepended to body as a YAML frontmatter block"`
 }
 
 // listIssuesInput is the typed input for the list_issues tool.
@@ -365,6 +367,13 @@ func (h *Handler) handleCreateIssue(
 	if input.Title == "" {
 		return nil, nil, fmt.Errorf("title must not be empty")
 	}
+
+	enrichedLabels, enrichedBody, valErr := validateAndEnrichIssue(input.Title, input.Body, input.Labels, input.Frontmatter)
+	if valErr != nil {
+		return nil, nil, valErr
+	}
+	input.Labels = enrichedLabels
+	input.Body = enrichedBody
 
 	if result := h.checkTier(autonomy.ActionOpenIssue, "create_issue", func() (*gosdk.CallToolResult, error) {
 		return h.executeCreateIssue(ctx, input)

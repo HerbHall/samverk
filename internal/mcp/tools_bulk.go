@@ -44,10 +44,11 @@ type createIssueBatchInput struct {
 
 // batchIssueSpec describes a single issue to create in a batch.
 type batchIssueSpec struct {
-	Title     string   `json:"title" jsonschema:"required,the issue title"`
-	Body      string   `json:"body" jsonschema:"required,the issue body text"`
-	Labels    []string `json:"labels,omitempty" jsonschema:"optional label names to apply"`
-	Assignees []string `json:"assignees,omitempty" jsonschema:"optional usernames to assign"`
+	Title       string            `json:"title" jsonschema:"required,the issue title -- must begin with a conventional commit prefix"`
+	Body        string            `json:"body" jsonschema:"required,the issue body text"`
+	Labels      []string          `json:"labels,omitempty" jsonschema:"optional label names to apply -- agent:* and priority:* are injected automatically when absent"`
+	Assignees   []string          `json:"assignees,omitempty" jsonschema:"optional usernames to assign"`
+	Frontmatter map[string]string `json:"frontmatter,omitempty" jsonschema:"optional key/value pairs prepended to body as a YAML frontmatter block"`
 }
 
 // batchCreateResult holds the outcome of a single issue creation.
@@ -253,10 +254,18 @@ func (h *Handler) executeCreateIssueBatch(ctx context.Context, input createIssue
 			continue
 		}
 
+		enrichedLabels, enrichedBody, valErr := validateAndEnrichIssue(spec.Title, spec.Body, spec.Labels, spec.Frontmatter)
+		if valErr != nil {
+			r.Status = "error"
+			r.Error = valErr.Error()
+			results = append(results, r)
+			continue
+		}
+
 		issue, err := tracker.CreateIssue(ctx, &forge.CreateIssueRequest{
 			Title:     spec.Title,
-			Body:      spec.Body,
-			Labels:    spec.Labels,
+			Body:      enrichedBody,
+			Labels:    enrichedLabels,
 			Assignees: spec.Assignees,
 		})
 		if err != nil {

@@ -226,8 +226,8 @@ func TestCreateIssueBatch(t *testing.T) {
 			"name": "create_issue_batch",
 			"arguments": {
 				"issues": [
-					{"title": "Task 1", "body": "Do thing 1", "labels": ["task"]},
-					{"title": "Task 2", "body": "Do thing 2"}
+					{"title": "feat: task 1 implementation", "body": "Do thing 1", "labels": ["task"]},
+					{"title": "feat: task 2 implementation", "body": "Do thing 2"}
 				]
 			}
 		}`),
@@ -275,7 +275,7 @@ func TestCreateIssueBatch_EmptyTitle(t *testing.T) {
 			"arguments": {
 				"issues": [
 					{"title": "", "body": "missing title"},
-					{"title": "Valid", "body": "has title"}
+					{"title": "chore: valid test issue", "body": "has title"}
 				]
 			}
 		}`),
