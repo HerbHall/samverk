@@ -20,6 +20,17 @@ import (
 // ErrNotFound is returned when a requested record does not exist.
 var ErrNotFound = errors.New("not found")
 
+// PipelineEvent records a stage transition for an issue in the pipeline.
+type PipelineEvent struct {
+	ID          int64
+	IssueNumber int
+	Project     string
+	FromStage   string
+	ToStage     string
+	TriggeredBy string
+	OccurredAt  time.Time
+}
+
 // Store defines the persistence interface for Samverk.
 type Store interface {
 	// Sessions
@@ -81,6 +92,10 @@ type Store interface {
 	// Provider health snapshots (written by dispatch, read by serve for cross-process health)
 	SaveProviderHealthSnapshot(ctx context.Context, entries []provider.ProviderHealth) error
 	LoadProviderHealthSnapshot(ctx context.Context) ([]provider.ProviderHealth, time.Time, error)
+
+	// Pipeline events (written by dispatcher on each stage transition, read by API)
+	RecordPipelineEvent(ctx context.Context, e PipelineEvent) error
+	GetPipelineEvents(ctx context.Context, issueNumber int, since time.Time, limit int) ([]PipelineEvent, error)
 
 	Close() error
 }
@@ -265,6 +280,19 @@ CREATE TABLE IF NOT EXISTS provider_health_snapshots (
 	snapshot_at TEXT NOT NULL,
 	data        TEXT NOT NULL DEFAULT '[]'
 );
+
+CREATE TABLE IF NOT EXISTS pipeline_events (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	issue_number INTEGER NOT NULL,
+	project      TEXT NOT NULL,
+	from_stage   TEXT NOT NULL DEFAULT '',
+	to_stage     TEXT NOT NULL,
+	triggered_by TEXT NOT NULL DEFAULT '',
+	occurred_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pipeline_issue ON pipeline_events(issue_number);
+CREATE INDEX IF NOT EXISTS idx_pipeline_occurred ON pipeline_events(occurred_at DESC);
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
 		return err

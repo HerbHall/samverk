@@ -219,6 +219,10 @@ func (m *mockStore) GetKPIReport(_ context.Context) (*models.KPIReport, error) {
 		RootCauseBreakdown: []models.RootCauseBreakdownEntry{},
 	}, nil
 }
+func (m *mockStore) RecordPipelineEvent(_ context.Context, _ store.PipelineEvent) error { return nil }
+func (m *mockStore) GetPipelineEvents(_ context.Context, _ int, _ time.Time, _ int) ([]store.PipelineEvent, error) {
+	return nil, nil
+}
 func (m *mockStore) Close() error { return nil }
 
 // Compile-time check: mockStore implements store.Store.

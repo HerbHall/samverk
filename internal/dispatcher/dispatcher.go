@@ -189,6 +189,7 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		if err := tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
 			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "needs-qc"), zap.String("error", err.Error()))
 		}
+		d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, "status:in-progress", "status:needs-qc", "agent")
 		d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
 		broadcastEvent(d.broadcaster, "worker.complete", map[string]any{
 			"issue_number": result.IssueNumber,
@@ -691,6 +692,7 @@ func (d *Dispatcher) escalate(ctx context.Context, owner, repo string, issueNumb
 	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
 		return fmt.Errorf("add escalation comment: %w", err)
 	}
+	d.recordPipelineEvent(ctx, owner, repo, issueNumber, "", "status:needs-human", "dispatcher")
 	return nil
 }
 
@@ -736,5 +738,6 @@ func (d *Dispatcher) blockIssue(ctx context.Context, owner, repo string, issueNu
 	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
 		return fmt.Errorf("add block comment: %w", err)
 	}
+	d.recordPipelineEvent(ctx, owner, repo, issueNumber, "", "status:blocked", "dispatcher")
 	return nil
 }
