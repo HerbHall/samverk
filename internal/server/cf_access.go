@@ -272,22 +272,45 @@ func validateCFJWT(token string, keys []*rsa.PublicKey) bool {
 	return ok
 }
 
-// CFAccessOrBearerAuth returns middleware that accepts EITHER a valid Cloudflare
-// Access JWT OR a Bearer token. Used when the server must serve both external
-// (CF-tunnelled) and internal (LAN/Tailscale) clients on the same /mcp endpoint.
+// CFAccessOrBearerAuth returns middleware that accepts three credential paths:
 //
-// If the Cf-Access-Jwt-Assertion header is present, JWT validation is attempted.
-// Otherwise, Bearer token validation is attempted.
-// Returns 401 if the selected credential is absent or invalid.
-func CFAccessOrBearerAuth(teamDomain, clientID, token string, keyStore *KeyStore) func(http.Handler) http.Handler {
+//  1. Cf-Access-Jwt-Assertion header — CF tunnel JWT validated against clientID (self-hosted AUD).
+//  2. Authorization: Bearer <jwt> — OIDC-issued JWT from the OAuth flow, validated against
+//     saasClientID (SAAS app AUD). Used when Claude.ai presents the access_token after completing
+//     the /authorize → /token flow.
+//  3. Authorization: Bearer <static> — static token for internal/LAN tools (Claude Code, agents).
+//
+// Returns 401 if no credential is present or valid.
+func CFAccessOrBearerAuth(teamDomain, clientID, saasClientID, token string, keyStore *KeyStore) func(http.Handler) http.Handler {
+	saasCache := &jwksCache{}
 	return func(next http.Handler) http.Handler {
 		cfHandler := CFAccessEnforceMiddleware(teamDomain, clientID)(next)
 		bearerHandler := BearerAuth(token, keyStore)(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Path 1: CF tunnel injects JWT into dedicated header.
 			if r.Header.Get(cfJWTHeader) != "" {
 				cfHandler.ServeHTTP(w, r)
 				return
 			}
+
+			// Path 2: OIDC access_token presented as Bearer JWT (after OAuth flow).
+			if saasClientID != "" {
+				if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+					bearer := strings.TrimPrefix(auth, "Bearer ")
+					if strings.Count(bearer, ".") == 2 { // three-part JWT
+						keys, err := getOrFetchJWKS(r.Context(), teamDomain, saasCache)
+						if err == nil && len(keys) > 0 {
+							claims, ok := validateAndParseCFJWT(bearer, keys)
+							if ok && claims.Aud == saasClientID {
+								next.ServeHTTP(w, r)
+								return
+							}
+						}
+					}
+				}
+			}
+
+			// Path 3: Static bearer token for internal tools.
 			bearerHandler.ServeHTTP(w, r)
 		})
 	}
