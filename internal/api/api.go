@@ -172,6 +172,8 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/devkit/summary", a.handleDevkitSummary)
 	mux.HandleFunc("GET /api/v1/data/sources", a.handleDataSources)
 	mux.HandleFunc("GET /api/v1/mcp/servers", a.handleMCPServers)
+	mux.HandleFunc("GET /api/v1/pipeline/events", a.handlePipelineEvents)
+	mux.HandleFunc("GET /api/v1/pipeline/throughput", a.handlePipelineThroughput)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)
