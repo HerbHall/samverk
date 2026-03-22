@@ -110,6 +110,12 @@ func serveCmd() *cobra.Command {
 
 			// Wire Cloudflare Access JWT auto-login.
 			cfg.CFAccessTeamDomain = os.Getenv("CF_ACCESS_TEAM_DOMAIN")
+			cfg.SecureCookies = true
+			cfg.CFAccessMCPClientID = os.Getenv("CF_ACCESS_MCP_CLIENT_ID")
+			if cfg.CFAccessTeamDomain != "" && cfg.CFAccessMCPClientID != "" {
+				logger.Info("CF Access JWT enforcement enabled for /mcp",
+					zap.String("team_domain", cfg.CFAccessTeamDomain))
+			}
 			if cfg.CFAccessTeamDomain != "" {
 				logger.Info("Cloudflare Access JWT auto-login enabled",
 					zap.String("team_domain", cfg.CFAccessTeamDomain))
@@ -454,11 +460,15 @@ func serveCmd() *cobra.Command {
 			// that serve HTML (the SPA catch-all triggers it).
 			if cfg.MCPHandler != nil {
 				mcpMux := http.NewServeMux()
-				// Apply Bearer auth to MCP-only listener when configured.
+				// Apply CF Access JWT enforcement and Bearer auth to MCP-only listener.
+				mcpHandler := cfg.MCPHandler
+				if cfg.CFAccessTeamDomain != "" && cfg.CFAccessMCPClientID != "" {
+					mcpHandler = server.CFAccessEnforceMiddleware(cfg.CFAccessTeamDomain, cfg.CFAccessMCPClientID)(mcpHandler)
+				}
 				if cfg.AuthToken != "" || cfg.KeyStore != nil {
-					mcpMux.Handle("/", server.BearerAuth(cfg.AuthToken, cfg.KeyStore)(cfg.MCPHandler))
+					mcpMux.Handle("/", server.BearerAuth(cfg.AuthToken, cfg.KeyStore)(mcpHandler))
 				} else {
-					mcpMux.Handle("/", cfg.MCPHandler)
+					mcpMux.Handle("/", mcpHandler)
 				}
 				mcpMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")

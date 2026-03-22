@@ -32,8 +32,9 @@ type Config struct {
 	MCPHandler         http.Handler     // optional MCP protocol handler; nil keeps the 501 placeholder
 	APIHandler         APIRegistrar     // optional REST API handler; nil keeps the 501 placeholder
 	PressureProvider   PressureProvider // optional; /healthz omits pressure field when nil
-	CFAccessTeamDomain string           // Cloudflare Access team domain; empty = CF auto-login disabled
-	SecureCookies      bool             // set Secure flag on session cookies (false when behind Cloudflare Tunnel)
+	CFAccessTeamDomain  string           // Cloudflare Access team domain; empty = CF auto-login disabled
+	CFAccessMCPClientID string           // CF Access client_id for /mcp JWT enforcement; empty = disabled
+	SecureCookies       bool             // set Secure flag on session cookies (false when behind Cloudflare Tunnel)
 }
 
 // Server is the main HTTP server.

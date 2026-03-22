@@ -201,52 +201,53 @@ func parseRSAPublicKey(nB64, eB64 string) (*rsa.PublicKey, error) {
 
 // jwtClaims holds the parsed subset of JWT claims we care about.
 type jwtClaims struct {
-	Exp int64 `json:"exp"`
+	Aud string `json:"aud"`
+	Exp int64  `json:"exp"`
 }
 
-// validateCFJWT parses and validates a Cloudflare Access JWT against the given RSA keys.
-// Returns true only when the signature is valid and the token has not expired.
-// Any parse or validation error results in false (fall-through, no error to caller).
-func validateCFJWT(token string, keys []*rsa.PublicKey) bool {
+// validateAndParseCFJWT parses and validates a Cloudflare Access JWT against the given
+// RSA keys. Returns the parsed claims and true on success. Any parse or validation error
+// returns an empty jwtClaims and false.
+func validateAndParseCFJWT(token string, keys []*rsa.PublicKey) (jwtClaims, bool) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return false
+		return jwtClaims{}, false
 	}
 
 	// Decode header to confirm RS256.
 	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return false
+		return jwtClaims{}, false
 	}
 
 	var header struct {
 		Alg string `json:"alg"`
 	}
 	if err := json.Unmarshal(headerJSON, &header); err != nil {
-		return false
+		return jwtClaims{}, false
 	}
 	if header.Alg != "RS256" {
-		return false
+		return jwtClaims{}, false
 	}
 
 	// Decode claims to check expiry.
 	claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return false
+		return jwtClaims{}, false
 	}
 
 	var claims jwtClaims
 	if err := json.Unmarshal(claimsJSON, &claims); err != nil {
-		return false
+		return jwtClaims{}, false
 	}
 	if claims.Exp > 0 && time.Now().Unix() > claims.Exp {
-		return false
+		return jwtClaims{}, false
 	}
 
 	// Decode the signature.
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return false
+		return jwtClaims{}, false
 	}
 
 	// Compute the message digest: SHA-256 of "header.payload".
@@ -256,9 +257,62 @@ func validateCFJWT(token string, keys []*rsa.PublicKey) bool {
 	// Try each key; succeed on the first valid signature.
 	for _, key := range keys {
 		if err := rsa.VerifyPKCS1v15(key, crypto.SHA256, digest[:], sig); err == nil {
-			return true
+			return claims, true
 		}
 	}
 
-	return false
+	return jwtClaims{}, false
+}
+
+// validateCFJWT parses and validates a Cloudflare Access JWT against the given RSA keys.
+// Returns true only when the signature is valid and the token has not expired.
+// Any parse or validation error results in false (fall-through, no error to caller).
+func validateCFJWT(token string, keys []*rsa.PublicKey) bool {
+	_, ok := validateAndParseCFJWT(token, keys)
+	return ok
+}
+
+// CFAccessEnforceMiddleware rejects all requests that do not carry a valid
+// Cloudflare Access JWT in the Cf-Access-Jwt-Assertion header.
+// Returns 401 JSON on missing/invalid JWT or aud mismatch.
+// Only active when both teamDomain and clientID are non-empty.
+func CFAccessEnforceMiddleware(teamDomain, clientID string) func(http.Handler) http.Handler {
+	if teamDomain == "" || clientID == "" {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return cfAccessEnforceWithCache(teamDomain, clientID, &jwksCache{})
+}
+
+// cfAccessEnforceWithCache builds the enforcement middleware with the given JWKS cache.
+// Separated from CFAccessEnforceMiddleware to allow pre-warming the cache in tests.
+func cfAccessEnforceWithCache(teamDomain, clientID string, cache *jwksCache) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			jwt := r.Header.Get(cfJWTHeader)
+			if jwt == "" {
+				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "CF Access JWT required"})
+				return
+			}
+
+			keys, err := getOrFetchJWKS(r.Context(), teamDomain, cache)
+			if err != nil || len(keys) == 0 {
+				// JWKS fetch failed — fail closed.
+				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "CF Access JWT invalid"})
+				return
+			}
+
+			claims, ok := validateAndParseCFJWT(jwt, keys)
+			if !ok {
+				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "CF Access JWT invalid"})
+				return
+			}
+
+			if claims.Aud != clientID {
+				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "CF Access JWT invalid"})
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
