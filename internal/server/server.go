@@ -172,10 +172,18 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
 	// Return 404 for /.well-known/ paths so the SPA catch-all doesn't
-	// serve HTML with a 200 status. Claude.ai probes this endpoint and
-	// interprets a 200 as "OAuth is available", breaking MCP connectivity.
+	// serve HTML with a 200 status. The specific OAuth discovery path below
+	// takes priority via Go 1.22+ ServeMux exact-pattern matching.
 	s.mux.HandleFunc("GET /.well-known/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorResponse{Error: "not found"})
+	})
+
+	// OAuth 2.0 Authorization Server Metadata + proxy endpoints for Claude.ai
+	// custom connector authentication via Cloudflare Access OIDC.
+	// No-op when CFAccessTeamDomain or CFAccessMCPClientID is not configured.
+	RegisterMCPOAuthRoutes(s.mux, MCPOAuthConfig{
+		TeamDomain: s.cfg.CFAccessTeamDomain,
+		ClientID:   s.cfg.CFAccessMCPClientID,
 	})
 
 	// Login / logout routes (unauthenticated).
