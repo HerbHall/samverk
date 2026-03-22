@@ -57,9 +57,19 @@ func encodeExponent(e int) []byte {
 // buildTestJWT signs a minimal RS256 JWT using the given key and expiry.
 func buildTestJWT(t *testing.T, key *rsa.PrivateKey, exp int64) string {
 	t.Helper()
+	return buildTestJWTWithAud(t, key, exp, "")
+}
+
+// buildTestJWTWithAud signs a minimal RS256 JWT with an optional aud claim.
+func buildTestJWTWithAud(t *testing.T, key *rsa.PrivateKey, exp int64, aud string) string {
+	t.Helper()
 
 	headerJSON, _ := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT"})
-	claimsJSON, _ := json.Marshal(map[string]any{"sub": "test", "exp": exp})
+	claims := map[string]any{"sub": "test", "exp": exp}
+	if aud != "" {
+		claims["aud"] = aud
+	}
+	claimsJSON, _ := json.Marshal(claims)
 
 	header := base64.RawURLEncoding.EncodeToString(headerJSON)
 	payload := base64.RawURLEncoding.EncodeToString(claimsJSON)
@@ -293,4 +303,169 @@ func TestCFAccessMiddleware_ValidJWT(t *testing.T) {
 			t.Errorf("expected no sessions for API path, got %d", len(sess.created))
 		}
 	})
+}
+
+// TestCFAccessEnforceMiddleware_Disabled verifies that empty teamDomain/clientID is a no-op.
+func TestCFAccessEnforceMiddleware_Disabled(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	tests := []struct {
+		name       string
+		teamDomain string
+		clientID   string
+	}{
+		{"empty teamDomain", "", "some-client-id"},
+		{"empty clientID", "example.cloudflareaccess.com", ""},
+		{"both empty", "", ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mw := CFAccessEnforceMiddleware(tc.teamDomain, tc.clientID)
+			req := httptest.NewRequest(http.MethodGet, "/mcp", http.NoBody)
+			rr := httptest.NewRecorder()
+			mw(next).ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Errorf("expected 200 when enforcement is disabled, got %d", rr.Code)
+			}
+		})
+	}
+}
+
+// TestCFAccessEnforceMiddleware_MissingJWT verifies that missing header returns 401.
+func TestCFAccessEnforceMiddleware_MissingJWT(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Pre-warm cache so fetch is skipped; missing header is checked first anyway.
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	pub, err := parseRSAPublicKey(
+		base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+		base64.RawURLEncoding.EncodeToString(encodeExponent(key.E)),
+	)
+	if err != nil {
+		t.Fatalf("parse public key: %v", err)
+	}
+	cache := &jwksCache{}
+	cache.set([]*rsa.PublicKey{pub})
+
+	mw := cfAccessEnforceWithCache("example.cloudflareaccess.com", "client-id", cache)
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+	// Deliberately no Cf-Access-Jwt-Assertion header.
+	rr := httptest.NewRecorder()
+	mw(next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 on missing JWT, got %d", rr.Code)
+	}
+}
+
+// TestCFAccessEnforceMiddleware_InvalidJWT verifies that a malformed JWT returns 401.
+func TestCFAccessEnforceMiddleware_InvalidJWT(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	pub, err := parseRSAPublicKey(
+		base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+		base64.RawURLEncoding.EncodeToString(encodeExponent(key.E)),
+	)
+	if err != nil {
+		t.Fatalf("parse public key: %v", err)
+	}
+	cache := &jwksCache{}
+	cache.set([]*rsa.PublicKey{pub})
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mw := cfAccessEnforceWithCache("example.cloudflareaccess.com", "client-id", cache)
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+	req.Header.Set(cfJWTHeader, "not.a.valid.jwt")
+	rr := httptest.NewRecorder()
+	mw(next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 on invalid JWT, got %d", rr.Code)
+	}
+}
+
+// TestCFAccessEnforceMiddleware_WrongAud verifies that a valid JWT with wrong aud returns 401.
+func TestCFAccessEnforceMiddleware_WrongAud(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	pub, err := parseRSAPublicKey(
+		base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+		base64.RawURLEncoding.EncodeToString(encodeExponent(key.E)),
+	)
+	if err != nil {
+		t.Fatalf("parse public key: %v", err)
+	}
+	cache := &jwksCache{}
+	cache.set([]*rsa.PublicKey{pub})
+
+	jwtToken := buildTestJWTWithAud(t, key, time.Now().Add(time.Hour).Unix(), "wrong-client-id")
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mw := cfAccessEnforceWithCache("example.cloudflareaccess.com", "expected-client-id", cache)
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+	req.Header.Set(cfJWTHeader, jwtToken)
+	rr := httptest.NewRecorder()
+	mw(next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 on wrong aud, got %d", rr.Code)
+	}
+}
+
+// TestCFAccessEnforceMiddleware_ValidJWT verifies that a valid JWT with correct aud passes through.
+func TestCFAccessEnforceMiddleware_ValidJWT(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	pub, err := parseRSAPublicKey(
+		base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+		base64.RawURLEncoding.EncodeToString(encodeExponent(key.E)),
+	)
+	if err != nil {
+		t.Fatalf("parse public key: %v", err)
+	}
+	cache := &jwksCache{}
+	cache.set([]*rsa.PublicKey{pub})
+
+	const clientID = "f2d5bb1805ca5509440b6a4263576cef4a056734b97171b08b5359de82088d18"
+	jwtToken := buildTestJWTWithAud(t, key, time.Now().Add(time.Hour).Unix(), clientID)
+
+	called := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+	mw := cfAccessEnforceWithCache("example.cloudflareaccess.com", clientID, cache)
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+	req.Header.Set(cfJWTHeader, jwtToken)
+	rr := httptest.NewRecorder()
+	mw(next).ServeHTTP(rr, req)
+
+	if !called {
+		t.Error("expected next handler to be called on valid JWT with correct aud")
+	}
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rr.Code)
+	}
 }

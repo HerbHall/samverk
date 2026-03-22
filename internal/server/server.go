@@ -32,8 +32,9 @@ type Config struct {
 	MCPHandler         http.Handler     // optional MCP protocol handler; nil keeps the 501 placeholder
 	APIHandler         APIRegistrar     // optional REST API handler; nil keeps the 501 placeholder
 	PressureProvider   PressureProvider // optional; /healthz omits pressure field when nil
-	CFAccessTeamDomain string           // Cloudflare Access team domain; empty = CF auto-login disabled
-	SecureCookies      bool             // set Secure flag on session cookies (false when behind Cloudflare Tunnel)
+	CFAccessTeamDomain  string           // Cloudflare Access team domain; empty = CF auto-login disabled
+	CFAccessMCPClientID string           // CF Access client_id for /mcp JWT enforcement; empty = disabled
+	SecureCookies       bool             // set Secure flag on session cookies (false when behind Cloudflare Tunnel)
 }
 
 // Server is the main HTTP server.
@@ -171,10 +172,18 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
 	// Return 404 for /.well-known/ paths so the SPA catch-all doesn't
-	// serve HTML with a 200 status. Claude.ai probes this endpoint and
-	// interprets a 200 as "OAuth is available", breaking MCP connectivity.
+	// serve HTML with a 200 status. The specific OAuth discovery path below
+	// takes priority via Go 1.22+ ServeMux exact-pattern matching.
 	s.mux.HandleFunc("GET /.well-known/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorResponse{Error: "not found"})
+	})
+
+	// OAuth 2.0 Authorization Server Metadata + proxy endpoints for Claude.ai
+	// custom connector authentication via Cloudflare Access OIDC.
+	// No-op when CFAccessTeamDomain or CFAccessMCPClientID is not configured.
+	RegisterMCPOAuthRoutes(s.mux, MCPOAuthConfig{
+		TeamDomain: s.cfg.CFAccessTeamDomain,
+		ClientID:   s.cfg.CFAccessMCPClientID,
 	})
 
 	// Login / logout routes (unauthenticated).
@@ -190,11 +199,30 @@ func (s *Server) registerRoutes() {
 	}
 
 	if s.cfg.MCPHandler != nil {
-		// MCP endpoints require Bearer token auth when configured.
+		// MCP endpoints: JWT enforcement takes priority over Bearer auth.
 		// Register without method prefix so StreamableHTTPHandler receives
 		// POST (messages), GET (SSE streams), and DELETE (session teardown).
-		if s.authEnabled() {
-			mcpAuth := BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)
+		//
+		// When CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_MCP_CLIENT_ID are set, the
+		// Cloudflare Tunnel routes external traffic to port 8080 (this server),
+		// so JWT enforcement must live here — not on the MCP-only port 8081.
+		jwtEnabled := s.cfg.CFAccessTeamDomain != "" && s.cfg.CFAccessMCPClientID != ""
+
+		var mcpAuth func(http.Handler) http.Handler
+		switch {
+		case jwtEnabled && s.authEnabled():
+			// Accept either CF Access JWT (external/CF-tunnel) or Bearer token
+			// (internal/LAN). JWT is checked first; Bearer is the fallback.
+			mcpAuth = CFAccessOrBearerAuth(s.cfg.CFAccessTeamDomain, s.cfg.CFAccessMCPClientID, s.cfg.AuthToken, s.cfg.KeyStore)
+		case jwtEnabled:
+			// JWT-only: no Bearer configured.
+			mcpAuth = CFAccessEnforceMiddleware(s.cfg.CFAccessTeamDomain, s.cfg.CFAccessMCPClientID)
+		case s.authEnabled():
+			// Bearer-only: no CF Access configured.
+			mcpAuth = BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)
+		}
+
+		if mcpAuth != nil {
 			s.mux.Handle("/connect", mcpAuth(s.cfg.MCPHandler))
 			s.mux.Handle("/mcp", mcpAuth(s.cfg.MCPHandler))
 		} else {
