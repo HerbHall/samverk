@@ -3,14 +3,17 @@ package server
 import (
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 // MCPOAuthConfig holds the Cloudflare Access OIDC parameters needed to proxy
 // OAuth requests from Claude.ai to the CF Access authorization server.
 type MCPOAuthConfig struct {
-	TeamDomain   string // e.g. herbhall.cloudflareaccess.com
-	ClientID     string // CF Access self-hosted app aud_tag (for JWT validation on /mcp)
-	SAASClientID string // CF Access SAAS app client_id (used in OIDC proxy path for /authorize and /token)
+	TeamDomain       string // e.g. herbhall.cloudflareaccess.com
+	ClientID         string // CF Access self-hosted app aud_tag (for JWT validation on /mcp)
+	SAASClientID     string // CF Access SAAS app client_id (used in OIDC proxy path for /authorize and /token)
+	SAASClientSecret string // CF Access SAAS app client_secret (injected server-side into token exchange)
 }
 
 // oauthServerMeta is the JSON body for GET /.well-known/oauth-authorization-server.
@@ -25,13 +28,13 @@ type oauthServerMeta struct {
 
 // RegisterMCPOAuthRoutes registers the three OAuth endpoints needed for Claude.ai
 // custom connector authentication via Cloudflare Access OIDC. It is a no-op when
-// either TeamDomain or ClientID is empty.
+// any required field is empty.
 //
 // Route specificity: Go 1.22+ ServeMux gives exact patterns priority over subtree
 // patterns, so "GET /.well-known/oauth-authorization-server" wins over the existing
 // "GET /.well-known/" catch-all 404.
 func RegisterMCPOAuthRoutes(mux *http.ServeMux, cfg MCPOAuthConfig) {
-	if cfg.TeamDomain == "" || cfg.ClientID == "" || cfg.SAASClientID == "" {
+	if cfg.TeamDomain == "" || cfg.ClientID == "" || cfg.SAASClientID == "" || cfg.SAASClientSecret == "" {
 		return
 	}
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", cfg.handleOAuthMeta)
@@ -70,16 +73,34 @@ func (cfg MCPOAuthConfig) handleAuthorize(w http.ResponseWriter, r *http.Request
 }
 
 // handleToken proxies Claude.ai's token exchange POST to the Cloudflare Access
-// OIDC token endpoint and pipes the response back unchanged.
+// OIDC token endpoint, injecting the client_secret server-side.
+// Claude.ai uses PKCE and does not send the client_secret; CF Access requires it.
+// The secret is held only on the server — never exposed to clients.
 func (cfg MCPOAuthConfig) handleToken(w http.ResponseWriter, r *http.Request) {
 	target := "https://" + cfg.TeamDomain + "/cdn-cgi/access/sso/oidc/" + cfg.SAASClientID + "/token"
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target, r.Body)
+	// Read and parse the incoming form body so we can inject the client_secret.
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "failed to read request body"})
+		return
+	}
+
+	params, err := url.ParseQuery(string(bodyBytes))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+
+	// Inject the client_secret — required by CF Access, unknown to the client.
+	params.Set("client_secret", cfg.SAASClientSecret) //nolint:gosec // G101: value is a runtime config secret, not hardcoded
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target, strings.NewReader(params.Encode()))
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "failed to build token request"})
 		return
 	}
-	req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is constructed from the trusted CF_ACCESS_TEAM_DOMAIN config value
 	if err != nil {

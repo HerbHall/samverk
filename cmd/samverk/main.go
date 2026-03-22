@@ -113,6 +113,7 @@ func serveCmd() *cobra.Command {
 			cfg.SecureCookies = true
 			cfg.CFAccessMCPClientID = os.Getenv("CF_ACCESS_MCP_CLIENT_ID")
 			cfg.CFAccessSAASClientID = os.Getenv("CF_ACCESS_SAAS_CLIENT_ID")
+			cfg.CFAccessSAASClientSecret = os.Getenv("CF_ACCESS_SAAS_CLIENT_SECRET")
 			if cfg.CFAccessTeamDomain != "" && cfg.CFAccessMCPClientID != "" {
 				logger.Info("CF Access JWT enforcement enabled for /mcp",
 					zap.String("team_domain", cfg.CFAccessTeamDomain))
