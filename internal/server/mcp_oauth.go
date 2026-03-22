@@ -7,6 +7,15 @@ import (
 	"strings"
 )
 
+// mcpTokenClient is a dedicated HTTP client for the /token proxy that does NOT
+// follow redirects. CF Access returns 302 to the redirect_uri on error; we
+// convert those to JSON errors instead of blindly following them to Claude.ai.
+var mcpTokenClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 // MCPOAuthConfig holds the Cloudflare Access OIDC parameters needed to proxy
 // OAuth requests from Claude.ai to the CF Access authorization server.
 type MCPOAuthConfig struct {
@@ -102,12 +111,31 @@ func (cfg MCPOAuthConfig) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is constructed from the trusted CF_ACCESS_TEAM_DOMAIN config value
+	resp, err := mcpTokenClient.Do(req) //nolint:gosec // G704: URL is constructed from the trusted CF_ACCESS_TEAM_DOMAIN config value
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "token exchange failed"})
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	// CF Access returns 302 to redirect_uri on error (non-standard but observed behavior).
+	// Convert to a JSON error so Claude.ai receives a proper OAuth error response.
+	if resp.StatusCode == http.StatusFound {
+		loc := resp.Header.Get("Location")
+		oauthErr := "token_exchange_error"
+		if loc != "" {
+			if u, parseErr := url.Parse(loc); parseErr == nil {
+				if e := u.Query().Get("error"); e != "" {
+					oauthErr = e
+				}
+				if desc := u.Query().Get("error_description"); desc != "" {
+					oauthErr += ": " + desc
+				}
+			}
+		}
+		writeJSON(w, http.StatusUnauthorized, errorResponse{Error: oauthErr})
+		return
+	}
 
 	for k, vs := range resp.Header {
 		for _, v := range vs {
