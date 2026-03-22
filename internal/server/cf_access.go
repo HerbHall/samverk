@@ -240,9 +240,46 @@ func parseRSAPublicKey(nB64, eB64 string) (*rsa.PublicKey, error) {
 }
 
 // jwtClaims holds the parsed subset of JWT claims we care about.
+// Aud is stored as raw JSON because OIDC tokens use an array ["client_id"]
+// while CF Access self-hosted tokens use a plain string "aud_tag".
+// Use HasAudience to check the audience regardless of format.
 type jwtClaims struct {
-	Aud string `json:"aud"`
-	Exp int64  `json:"exp"`
+	RawAud json.RawMessage `json:"aud"`
+	Exp    int64           `json:"exp"`
+}
+
+// HasAudience reports whether the JWT audience claim contains the given value.
+// Handles both string and []string formats.
+func (c jwtClaims) HasAudience(aud string) bool {
+	if len(c.RawAud) == 0 {
+		return false
+	}
+	var s string
+	if err := json.Unmarshal(c.RawAud, &s); err == nil {
+		return s == aud
+	}
+	var ss []string
+	if err := json.Unmarshal(c.RawAud, &ss); err == nil {
+		for _, a := range ss {
+			if a == aud {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Aud returns the first audience value as a string (for backwards compatibility).
+func (c jwtClaims) Aud() string {
+	var s string
+	if err := json.Unmarshal(c.RawAud, &s); err == nil {
+		return s
+	}
+	var ss []string
+	if err := json.Unmarshal(c.RawAud, &ss); err == nil && len(ss) > 0 {
+		return ss[0]
+	}
+	return ""
 }
 
 // validateAndParseCFJWT parses and validates a Cloudflare Access JWT against the given
@@ -342,7 +379,7 @@ func CFAccessOrBearerAuth(teamDomain, clientID, saasClientID, token string, keyS
 						keys, err := getOrFetchSAASJWKS(r.Context(), teamDomain, saasClientID, saasCache)
 						if err == nil && len(keys) > 0 {
 							claims, ok := validateAndParseCFJWT(bearer, keys)
-							if ok && claims.Aud == saasClientID {
+							if ok && claims.HasAudience(saasClientID) {
 								next.ServeHTTP(w, r)
 								return
 							}
@@ -392,7 +429,7 @@ func cfAccessEnforceWithCache(teamDomain, clientID string, cache *jwksCache) fun
 				return
 			}
 
-			if claims.Aud != clientID {
+			if !claims.HasAudience(clientID) {
 				writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "CF Access JWT invalid"})
 				return
 			}
