@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.24](https://github.com/HerbHall/samverk/compare/v0.1.23...v0.1.24) (2026-03-22)
+
+
+### Features
+
+* **api:** add GET /api/v1/pipeline/stages ([#172](https://github.com/HerbHall/samverk/issues/172)) ([#716](https://github.com/HerbHall/samverk/issues/716)) ([0fbbd47](https://github.com/HerbHall/samverk/commit/0fbbd476d390f026d4bc46675872607cc17c320c))
+* **api:** add pipeline event log ([#173](https://github.com/HerbHall/samverk/issues/173)) ([#718](https://github.com/HerbHall/samverk/issues/718)) ([16e26ae](https://github.com/HerbHall/samverk/commit/16e26ae512a4a6178cb04ea2b69d2e329c6860d3))
+* **ui:** add /pipeline page ([#175](https://github.com/HerbHall/samverk/issues/175)) ([#720](https://github.com/HerbHall/samverk/issues/720)) ([6d912fa](https://github.com/HerbHall/samverk/commit/6d912fa744ef2f8891bf31818f836d0521318e92))
+
+
+### Bug Fixes
+
+* **dispatcher:** hot-reload project.yaml on file change ([#174](https://github.com/HerbHall/samverk/issues/174)) ([#722](https://github.com/HerbHall/samverk/issues/722)) ([2d6bfb7](https://github.com/HerbHall/samverk/commit/2d6bfb74dec576bea7187aede985b0d82330bfdc))
+* **mcp:** enforce dispatcher-readiness on create_issue ([#171](https://github.com/HerbHall/samverk/issues/171)) ([#719](https://github.com/HerbHall/samverk/issues/719)) ([6ac9cc5](https://github.com/HerbHall/samverk/commit/6ac9cc572e5c57d6f125e4fdcef090e51b8a7527))
+* **security:** resolve CodeQL alerts [#176](https://github.com/HerbHall/samverk/issues/176) [#177](https://github.com/HerbHall/samverk/issues/177) [#178](https://github.com/HerbHall/samverk/issues/178) ([#715](https://github.com/HerbHall/samverk/issues/715)) ([b30c841](https://github.com/HerbHall/samverk/commit/b30c84158a6f2b2eb60371e524326f214ba4a4aa))
+
 ## [0.1.23](https://github.com/HerbHall/samverk/compare/v0.1.22...v0.1.23) (2026-03-22)
 
 
