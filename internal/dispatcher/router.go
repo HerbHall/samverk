@@ -226,6 +226,7 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	if err := tracker.AddLabel(ctx, issue.Number, "status:claimed"); err != nil {
 		return fmt.Errorf("add claimed label to #%d: %w", issue.Number, err)
 	}
+	d.recordPipelineEvent(ctx, owner, repo, issue.Number, "status:queued", "status:claimed", "dispatcher")
 	if err := tracker.Assign(ctx, issue.Number, string(agentType)); err != nil {
 		// Best-effort: Gitea requires assignee to be a repo collaborator,
 		// GitHub silently ignores invalid assignees. Don't block routing.
@@ -321,6 +322,7 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		if err := d.pool.Submit(task); err != nil {
 			return fmt.Errorf("submit agent task for #%d: %w", issue.Number, err)
 		}
+		d.recordPipelineEvent(ctx, owner, repo, issue.Number, "status:claimed", "status:in-progress", "dispatcher")
 	}
 	return nil
 }
