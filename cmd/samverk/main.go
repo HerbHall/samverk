@@ -125,10 +125,10 @@ func serveCmd() *cobra.Command {
 				if _, statErr := os.Stat(authKeysPath); statErr == nil {
 					ks, ksErr := server.NewKeyStore(authKeysPath)
 					if ksErr != nil {
-						logger.Warn("could not load API key store", zap.String("path", authKeysPath), zap.Error(ksErr))
+						logger.Warn("could not load API key store", zap.String("path", authKeysPath), zap.Error(ksErr)) //nolint:gosec // G101: authKeysPath is a filesystem path, not a credential
 					} else {
 						cfg.KeyStore = ks
-						logger.Info("API key authentication enabled", zap.Int("keys", len(ks.List())), zap.String("path", authKeysPath))
+						logger.Info("API key authentication enabled", zap.Int("keys", len(ks.List())), zap.String("path", authKeysPath)) //nolint:gosec // G101: authKeysPath is a filesystem path, not a credential
 					}
 				}
 			}

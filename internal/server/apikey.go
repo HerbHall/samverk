@@ -219,7 +219,7 @@ func (ks *KeyStore) Validate(token string) (*APIKey, bool) {
 	ks.mu.RLock()
 	defer ks.mu.RUnlock()
 
-	hash := sha256.Sum256([]byte(token))
+	hash := sha256.Sum256([]byte(token)) //nolint:gosec // G401: SHA-256 is appropriate for constant-time API token hash comparison
 	tokenHash := hex.EncodeToString(hash[:])
 
 	for i := range ks.keys {
