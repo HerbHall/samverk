@@ -112,9 +112,13 @@ func serveCmd() *cobra.Command {
 			cfg.CFAccessTeamDomain = os.Getenv("CF_ACCESS_TEAM_DOMAIN")
 			cfg.SecureCookies = true
 			cfg.CFAccessMCPClientID = os.Getenv("CF_ACCESS_MCP_CLIENT_ID")
+			cfg.CFAccessSAASClientID = os.Getenv("CF_ACCESS_SAAS_CLIENT_ID")
 			if cfg.CFAccessTeamDomain != "" && cfg.CFAccessMCPClientID != "" {
 				logger.Info("CF Access JWT enforcement enabled for /mcp",
 					zap.String("team_domain", cfg.CFAccessTeamDomain))
+			}
+			if cfg.CFAccessSAASClientID != "" {
+				logger.Info("CF Access OAuth proxy enabled (/authorize, /token)")
 			}
 			if cfg.CFAccessTeamDomain != "" {
 				logger.Info("Cloudflare Access JWT auto-login enabled",

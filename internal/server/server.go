@@ -32,8 +32,9 @@ type Config struct {
 	MCPHandler         http.Handler     // optional MCP protocol handler; nil keeps the 501 placeholder
 	APIHandler         APIRegistrar     // optional REST API handler; nil keeps the 501 placeholder
 	PressureProvider   PressureProvider // optional; /healthz omits pressure field when nil
-	CFAccessTeamDomain  string           // Cloudflare Access team domain; empty = CF auto-login disabled
-	CFAccessMCPClientID string           // CF Access client_id for /mcp JWT enforcement; empty = disabled
+	CFAccessTeamDomain    string           // Cloudflare Access team domain; empty = CF auto-login disabled
+	CFAccessMCPClientID  string           // CF Access self-hosted app AUD for /mcp JWT enforcement; empty = disabled
+	CFAccessSAASClientID string           // CF Access SAAS app client_id for OAuth OIDC proxy (/authorize, /token)
 	SecureCookies       bool             // set Secure flag on session cookies (false when behind Cloudflare Tunnel)
 }
 
@@ -182,8 +183,9 @@ func (s *Server) registerRoutes() {
 	// custom connector authentication via Cloudflare Access OIDC.
 	// No-op when CFAccessTeamDomain or CFAccessMCPClientID is not configured.
 	RegisterMCPOAuthRoutes(s.mux, MCPOAuthConfig{
-		TeamDomain: s.cfg.CFAccessTeamDomain,
-		ClientID:   s.cfg.CFAccessMCPClientID,
+		TeamDomain:   s.cfg.CFAccessTeamDomain,
+		ClientID:     s.cfg.CFAccessMCPClientID,
+		SAASClientID: s.cfg.CFAccessSAASClientID,
 	})
 
 	// Login / logout routes (unauthenticated).

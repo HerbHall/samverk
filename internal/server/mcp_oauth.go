@@ -8,8 +8,9 @@ import (
 // MCPOAuthConfig holds the Cloudflare Access OIDC parameters needed to proxy
 // OAuth requests from Claude.ai to the CF Access authorization server.
 type MCPOAuthConfig struct {
-	TeamDomain string // e.g. herbhall.cloudflareaccess.com
-	ClientID   string // CF Access self-hosted app aud_tag
+	TeamDomain   string // e.g. herbhall.cloudflareaccess.com
+	ClientID     string // CF Access self-hosted app aud_tag (for JWT validation on /mcp)
+	SAASClientID string // CF Access SAAS app client_id (used in OIDC proxy path for /authorize and /token)
 }
 
 // oauthServerMeta is the JSON body for GET /.well-known/oauth-authorization-server.
@@ -30,7 +31,7 @@ type oauthServerMeta struct {
 // patterns, so "GET /.well-known/oauth-authorization-server" wins over the existing
 // "GET /.well-known/" catch-all 404.
 func RegisterMCPOAuthRoutes(mux *http.ServeMux, cfg MCPOAuthConfig) {
-	if cfg.TeamDomain == "" || cfg.ClientID == "" {
+	if cfg.TeamDomain == "" || cfg.ClientID == "" || cfg.SAASClientID == "" {
 		return
 	}
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", cfg.handleOAuthMeta)
@@ -55,7 +56,9 @@ func (cfg MCPOAuthConfig) handleOAuthMeta(w http.ResponseWriter, _ *http.Request
 // Cloudflare Access OIDC authorization endpoint. CF Access handles Google auth
 // and redirects back to https://claude.ai/api/mcp/auth_callback.
 func (cfg MCPOAuthConfig) handleAuthorize(w http.ResponseWriter, r *http.Request) {
-	target := "https://" + cfg.TeamDomain + "/cdn-cgi/access/sso/oidc/" + cfg.ClientID + "/authorize"
+	// SAASClientID is the CF Access SAAS app client_id, used in the OIDC path.
+	// ClientID is the self-hosted app AUD, used only for JWT validation — not here.
+	target := "https://" + cfg.TeamDomain + "/cdn-cgi/access/sso/oidc/" + cfg.SAASClientID + "/authorize"
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}
@@ -65,7 +68,7 @@ func (cfg MCPOAuthConfig) handleAuthorize(w http.ResponseWriter, r *http.Request
 // handleToken proxies Claude.ai's token exchange POST to the Cloudflare Access
 // OIDC token endpoint and pipes the response back unchanged.
 func (cfg MCPOAuthConfig) handleToken(w http.ResponseWriter, r *http.Request) {
-	target := "https://" + cfg.TeamDomain + "/cdn-cgi/access/sso/oidc/" + cfg.ClientID + "/token"
+	target := "https://" + cfg.TeamDomain + "/cdn-cgi/access/sso/oidc/" + cfg.SAASClientID + "/token"
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target, r.Body)
 	if err != nil {
