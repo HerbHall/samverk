@@ -64,6 +64,7 @@ func run() int {
 		return 1
 	}
 	defer func() { _ = logger.Sync() }()
+	zap.ReplaceGlobals(logger)
 
 	root := &cobra.Command{
 		Use:   "samverk",

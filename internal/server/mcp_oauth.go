@@ -1,10 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // mcpTokenClient is a dedicated HTTP client for the /token proxy that does NOT
@@ -101,7 +104,10 @@ func (cfg MCPOAuthConfig) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Inject the client_secret — required by CF Access, unknown to the client.
+	// Inject correct client_id and client_secret server-side.
+	// The connector's configured client_id may differ from the SAAS app's actual client_id;
+	// the secret is held server-only and never exposed to clients.
+	params.Set("client_id", cfg.SAASClientID)
 	params.Set("client_secret", cfg.SAASClientSecret) //nolint:gosec // G101: value is a runtime config secret, not hardcoded
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target, strings.NewReader(params.Encode()))
@@ -113,10 +119,13 @@ func (cfg MCPOAuthConfig) handleToken(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := mcpTokenClient.Do(req) //nolint:gosec // G704: URL is constructed from the trusted CF_ACCESS_TEAM_DOMAIN config value
 	if err != nil {
+		zap.L().Error("mcp_oauth: token exchange HTTP error", zap.Error(err))
 		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "token exchange failed"})
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	zap.L().Info("mcp_oauth: CF Access token response", zap.Int("status", resp.StatusCode))
 
 	// CF Access returns 302 to redirect_uri on error (non-standard but observed behavior).
 	// Convert to a JSON error so Claude.ai receives a proper OAuth error response.
@@ -134,6 +143,24 @@ func (cfg MCPOAuthConfig) handleToken(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSON(w, http.StatusUnauthorized, errorResponse{Error: oauthErr})
+		return
+	}
+
+	// For non-200 responses, log the body to help diagnose failures.
+	// For 200, pipe directly without reading (contains the access token — do not log).
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		zap.L().Warn("mcp_oauth: CF Access token non-200",
+			zap.Int("status", resp.StatusCode),
+			zap.String("body", string(body)),
+		)
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, bytes.NewReader(body))
 		return
 	}
 
