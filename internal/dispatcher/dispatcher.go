@@ -56,11 +56,17 @@ type Dispatcher struct {
 	circuitBreaker *CircuitBreaker
 	metrics        *metrics.DispatcherMetrics
 	broadcaster    EventBroadcaster
-	wakeup         chan struct{}
-	lastEventTime  time.Time // updated by watcher callbacks; read by stale detection
-	mu             sync.Mutex
-	logger         *zap.Logger
-	stop           context.CancelFunc
+	wakeup            chan struct{}
+	lastEventTime     time.Time // updated by watcher callbacks; read by stale detection
+	// projectYAML hot-reload: all fields guarded by mu except path/factory (set before Run).
+	projectYAMLPath   string         // path to .samverk/project.yaml; empty = disabled
+	trackerFactory    TrackerFactory // factory for building replacement trackers on reload
+	configReloadError error          // last config reload error; nil = OK
+	primaryForgeType  string         // current primary forge type label (for logging)
+	primaryForgeURL   string         // current primary forge URL (for logging)
+	mu                sync.Mutex
+	logger            *zap.Logger
+	stop              context.CancelFunc
 }
 
 // issueKey returns a case-insensitive composite key for claimed/failure maps.
@@ -149,6 +155,60 @@ func (d *Dispatcher) SetBroadcaster(b EventBroadcaster) {
 // Snapshot returns a point-in-time snapshot of dispatcher metrics.
 func (d *Dispatcher) Snapshot() metrics.DispatcherSnapshot {
 	return d.metrics.Snapshot()
+}
+
+// SetProjectYAMLWatcher configures hot-reload of the dispatcher's primary tracker
+// when .samverk/project.yaml changes. path is the YAML file to watch; factory is
+// called with the new forge type and URL to build a replacement TrackerEntry.
+// Set before calling Run(); setting path to "" disables hot-reload.
+func (d *Dispatcher) SetProjectYAMLWatcher(path string, factory TrackerFactory) {
+	d.projectYAMLPath = path
+	d.trackerFactory = factory
+}
+
+// ConfigReloadError returns the most recent error from a project.yaml reload attempt,
+// or nil when the last reload was successful. Thread-safe.
+func (d *Dispatcher) ConfigReloadError() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.configReloadError
+}
+
+// setConfigReloadError updates the stored reload error. Called from the watcher goroutine.
+func (d *Dispatcher) setConfigReloadError(err error) {
+	d.mu.Lock()
+	d.configReloadError = err
+	d.mu.Unlock()
+}
+
+// swapPrimaryTracker atomically replaces the tracker for newEntry's Owner/Repo.
+// newForgeType and newForgeURL are stored for logging. Returns the previous forge type
+// and URL. If there is no existing entry with the same Owner/Repo, appends the new entry.
+func (d *Dispatcher) swapPrimaryTracker(newEntry TrackerEntry, newForgeType, newForgeURL string) (oldForgeType, oldForgeURL string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	oldForgeType = d.primaryForgeType
+	oldForgeURL = d.primaryForgeURL
+
+	key := trackerKey(newEntry.Owner, newEntry.Repo)
+	d.trackers[key] = newEntry.Tracker
+
+	replaced := false
+	for i := range d.trackerEntries {
+		if trackerKey(d.trackerEntries[i].Owner, d.trackerEntries[i].Repo) == key {
+			d.trackerEntries[i].Tracker = newEntry.Tracker
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		d.trackerEntries = append(d.trackerEntries, newEntry)
+	}
+
+	d.primaryForgeType = newForgeType
+	d.primaryForgeURL = newForgeURL
+	return oldForgeType, oldForgeURL
 }
 
 // handleTaskComplete is called by the agent pool when a task finishes.
@@ -256,6 +316,12 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 	// Register completion callback with agent pool.
 	if d.pool != nil {
 		d.pool.SetOnComplete(d.handleTaskComplete)
+	}
+
+	// Start project.yaml hot-reload watcher if configured.
+	if d.projectYAMLPath != "" {
+		w := newProjectYAMLWatcher(d.projectYAMLPath, d.trackerFactory, d, d.logger)
+		go w.run(ctx)
 	}
 
 	type watcherError struct {

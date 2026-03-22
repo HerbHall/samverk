@@ -61,6 +61,7 @@ type API struct {
 	history            []historyEntry                // ring buffer of recent snapshots; guarded by historyMu
 	primaryDBPath      string                        // file-system path to the primary SQLite database
 	logsDBPath         string                        // file-system path to the logs SQLite database
+	configReloadSrc    configReloadErrorSource       // may be nil; reports project.yaml reload errors
 	logger             *zap.Logger
 }
 
