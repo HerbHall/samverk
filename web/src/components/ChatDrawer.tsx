@@ -32,6 +32,16 @@ export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
     }
   }, [open])
 
+  // Dismiss on Escape key.
+  useEffect(() => {
+    if (!open) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open, onClose])
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
@@ -50,10 +60,10 @@ export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
 
   return (
     <>
-      {/* Backdrop (mobile only) */}
+      {/* Backdrop (click-outside dismiss) */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/30 md:hidden"
+          className="fixed inset-0 z-40 bg-black/30"
           onClick={onClose}
           role="presentation"
         />
