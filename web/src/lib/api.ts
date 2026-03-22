@@ -549,6 +549,44 @@ export interface KPIReport {
   sample_size: number
 }
 
+export interface PipelineIssueRef {
+  number: number
+  title: string
+}
+
+export interface PipelineStage {
+  name: string
+  count: number
+  issues: PipelineIssueRef[]
+}
+
+export interface PipelineTotals {
+  open: number
+  closed: number
+  throughput_24h: number
+}
+
+export interface PipelineStagesResponse {
+  stages: PipelineStage[]
+  totals: PipelineTotals
+  generated_at: string
+}
+
+export interface PipelineThroughputResponse {
+  issues_completed_per_hour_24h: number
+  avg_cycle_time_hours: number
+  generated_at: string
+}
+
+export interface PipelineEvent {
+  issue_number: number
+  issue_title: string
+  from_stage: string
+  to_stage: string
+  triggered_by: string
+  timestamp: string
+}
+
 export const api = {
   listIssues: async (params?: { state?: string; page?: number }) => {
     const data = await fetchJSON<{ issues: Issue[]; total: number }>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`)
@@ -688,4 +726,18 @@ export const api = {
 
   getSessionLog: (sessionId: string) =>
     fetchJSON<{ session_id: string; entries: LogEntry[] }>(`/sessions/${sessionId}/log`),
+
+  getPipelineStages: () =>
+    fetchJSON<PipelineStagesResponse>('/pipeline/stages'),
+
+  getPipelineThroughput: () =>
+    fetchJSON<PipelineThroughputResponse>('/pipeline/throughput'),
+
+  getPipelineEvents: (params?: { issue?: number; limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.issue != null) searchParams.set('issue', String(params.issue))
+    if (params?.limit != null) searchParams.set('limit', String(params.limit))
+    const qs = searchParams.toString()
+    return fetchJSON<PipelineEvent[]>(`/pipeline/events${qs ? '?' + qs : ''}`)
+  },
 }
