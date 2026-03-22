@@ -1,6 +1,6 @@
 name: samverk
-forge: github
-forge_url: https://github.com/HerbHall/samverk
+forge: gitea
+forge_url: https://gitea.herbhall.net/samverk/samverk
 phase: execution
 registered: 2026-02-15
 labels_synced: true
