@@ -191,11 +191,26 @@ func (s *Server) registerRoutes() {
 	}
 
 	if s.cfg.MCPHandler != nil {
-		// MCP endpoints require Bearer token auth when configured.
+		// MCP endpoints: JWT enforcement takes priority over Bearer auth.
 		// Register without method prefix so StreamableHTTPHandler receives
 		// POST (messages), GET (SSE streams), and DELETE (session teardown).
-		if s.authEnabled() {
-			mcpAuth := BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)
+		//
+		// When CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_MCP_CLIENT_ID are set, the
+		// Cloudflare Tunnel routes external traffic to port 8080 (this server),
+		// so JWT enforcement must live here — not on the MCP-only port 8081.
+		jwtEnabled := s.cfg.CFAccessTeamDomain != "" && s.cfg.CFAccessMCPClientID != ""
+
+		var mcpAuth func(http.Handler) http.Handler
+		if jwtEnabled {
+			// JWT enforcement: CF Access validates the service token at the edge,
+			// adds Cf-Access-Jwt-Assertion header, server validates it here.
+			mcpAuth = CFAccessEnforceMiddleware(s.cfg.CFAccessTeamDomain, s.cfg.CFAccessMCPClientID)
+		} else if s.authEnabled() {
+			// Fallback: Bearer token auth when JWT is not configured.
+			mcpAuth = BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)
+		}
+
+		if mcpAuth != nil {
 			s.mux.Handle("/connect", mcpAuth(s.cfg.MCPHandler))
 			s.mux.Handle("/mcp", mcpAuth(s.cfg.MCPHandler))
 		} else {
