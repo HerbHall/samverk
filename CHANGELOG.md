@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.1.23](https://github.com/HerbHall/samverk/compare/v0.1.22...v0.1.23) (2026-03-22)
+
+
+### Features
+
+* advisory engine -- pattern detection and quality recommendations ([#120](https://github.com/HerbHall/samverk/issues/120)) ([#150](https://github.com/HerbHall/samverk/issues/150)) ([d64cf27](https://github.com/HerbHall/samverk/commit/d64cf270031d38ada83a7d1d26ae91357f8b4dcd))
+* **capacity:** full intelligence layer — advisor actions, header indicator, apply modal ([#704](https://github.com/HerbHall/samverk/issues/704)) ([0fc7eb4](https://github.com/HerbHall/samverk/commit/0fc7eb4c2ebcf06fee48d16efd949b62b5474f4e))
+* **chat:** complete chat drawer with multi-turn conversation and typing indicator ([#109](https://github.com/HerbHall/samverk/issues/109)) ([#708](https://github.com/HerbHall/samverk/issues/708)) ([230a262](https://github.com/HerbHall/samverk/commit/230a2625f2f0adcf4fe88db428ca64c674539a1b))
+* Cloudflare Access JWT auto-login for dashboard ([#88](https://github.com/HerbHall/samverk/issues/88)) ([#151](https://github.com/HerbHall/samverk/issues/151)) ([33bf0e2](https://github.com/HerbHall/samverk/commit/33bf0e254f5362a0464596403709a151cbff1661))
+* **dashboard:** queue depth sparkline using 30-min metrics history ([#107](https://github.com/HerbHall/samverk/issues/107)) ([#711](https://github.com/HerbHall/samverk/issues/711)) ([3d0ae7d](https://github.com/HerbHall/samverk/commit/3d0ae7d3dc9242852c20bf705c9fcfd377b1263b))
+* **dashboard:** redesign landing page as operator decision-making command center ([#142](https://github.com/HerbHall/samverk/issues/142)) ([16bd40d](https://github.com/HerbHall/samverk/commit/16bd40d9a2693acf9dd02e6b3ee721f53a85fb26))
+* **dashboard:** worker detail panel with session log and token usage ([#105](https://github.com/HerbHall/samverk/issues/105)) ([#710](https://github.com/HerbHall/samverk/issues/710)) ([bac63ac](https://github.com/HerbHall/samverk/commit/bac63acde055cbf95648dca9f67aadd25ed9d986))
+* **data:** add data sources page with database health and storage overview ([#143](https://github.com/HerbHall/samverk/issues/143)) ([6a452a2](https://github.com/HerbHall/samverk/commit/6a452a2c8cc19f6f3bde31ddd2eafad509d8b26d))
+* **devkit:** replace iframe with native React component backed by /api/v1/devkit/summary ([#141](https://github.com/HerbHall/samverk/issues/141)) ([2b9fe3b](https://github.com/HerbHall/samverk/commit/2b9fe3bee8cdf69ed31b31f39f8c002665f7dcb6))
+* **gitea:** add issue templates with RCA fields for bug reports ([#147](https://github.com/HerbHall/samverk/issues/147)) ([c2c4018](https://github.com/HerbHall/samverk/commit/c2c40180f7c767999b4f6b8364b573672853e8c0))
+* **issues:** bulk operations API and multi-select toolbar ([#137](https://github.com/HerbHall/samverk/issues/137)) ([0da48e9](https://github.com/HerbHall/samverk/commit/0da48e9fbf68fc47bb7d3111ad04823c8df1b5d0))
+* **issues:** search endpoint and debounced frontend search bar ([#136](https://github.com/HerbHall/samverk/issues/136)) ([11e81f9](https://github.com/HerbHall/samverk/commit/11e81f9041497a0de24bc8d95904970366a50511))
+* **layout:** mobile bottom tab bar for viewport &lt; 768px ([#106](https://github.com/HerbHall/samverk/issues/106)) ([#709](https://github.com/HerbHall/samverk/issues/709)) ([b2bb59f](https://github.com/HerbHall/samverk/commit/b2bb59fc7afa00462950ef610c8925f0fddd035b))
+* **logs:** live log stream via WebSocket log.entry events ([#108](https://github.com/HerbHall/samverk/issues/108)) ([#712](https://github.com/HerbHall/samverk/issues/712)) ([a5d2612](https://github.com/HerbHall/samverk/commit/a5d26121f797f542100a68e9605c3420e25b0124))
+* **mcp:** add MCP server health page and GET /api/v1/mcp/servers ([#144](https://github.com/HerbHall/samverk/issues/144)) ([419805f](https://github.com/HerbHall/samverk/commit/419805f9c5a7bed6bd239f8435d0ce75e902077d))
+* **metrics:** capacity advisor — 24h trend analysis and hardware recommendations ([#703](https://github.com/HerbHall/samverk/issues/703)) ([c1f3db9](https://github.com/HerbHall/samverk/commit/c1f3db9634087e3ea646a190f6e6f92f8ddec395))
+* **nav:** wire MCP, Projects, Data pages into router and sidebar ([#122](https://github.com/HerbHall/samverk/issues/122) [#123](https://github.com/HerbHall/samverk/issues/123) [#125](https://github.com/HerbHall/samverk/issues/125)) ([9d7f597](https://github.com/HerbHall/samverk/commit/9d7f597aeef7d7509259649b71ffe5f0382c329a))
+* **nav:** wire Quality page into router and sidebar ([#118](https://github.com/HerbHall/samverk/issues/118)) ([3a2fa90](https://github.com/HerbHall/samverk/commit/3a2fa903ff7a7582cfea2d358226d80b5a43a92a))
+* **projects:** add forge health and project status page with issue counts ([#146](https://github.com/HerbHall/samverk/issues/146)) ([9c8341a](https://github.com/HerbHall/samverk/commit/9c8341a308fb305be67b28e317c8fe3cdb29642a))
+* **provider:** promote qwen3-coder:30b to code-gen routing, remove soft block ([#134](https://github.com/HerbHall/samverk/issues/134)) ([efba728](https://github.com/HerbHall/samverk/commit/efba728938b897b63ab3495933c0c656f5a1675f))
+* **quality:** add ESLint, Vitest, and full frontend validation gates ([#707](https://github.com/HerbHall/samverk/issues/707)) ([961fcb7](https://github.com/HerbHall/samverk/commit/961fcb74d99562b3973a9e8595d0a7d25dd752a1))
+* **quality:** add Quality KPI dashboard page with FTFR, recurrence, and root cause breakdown ([#149](https://github.com/HerbHall/samverk/issues/149)) ([9b13bc3](https://github.com/HerbHall/samverk/commit/9b13bc34a9dc0fa48c8661e79aadcc7ca883641d))
+* **serve:** schedule nightly infra probe goroutine at 3am ([#135](https://github.com/HerbHall/samverk/issues/135)) ([034be2d](https://github.com/HerbHall/samverk/commit/034be2d990b508a9bb752fe2975298dd3a2f14db))
+* **store:** extend failure_events with RCA fields and add GET /api/v1/kpis ([#148](https://github.com/HerbHall/samverk/issues/148)) ([ca18716](https://github.com/HerbHall/samverk/commit/ca187166cc439d60cc1fb1525dd906d4375c24c8))
+
+
+### Bug Fixes
+
+* **frontend:** add ErrorBoundary and fix CostSummary type mismatch ([#706](https://github.com/HerbHall/samverk/issues/706)) ([d5b4a8b](https://github.com/HerbHall/samverk/commit/d5b4a8bb90407e3c36564ede1860a91f9d9809b5))
+* **frontend:** unwrap issues API response to return Issue[] array ([#705](https://github.com/HerbHall/samverk/issues/705)) ([940f847](https://github.com/HerbHall/samverk/commit/940f8472c1986ea964aa5b052f25780e975e3da0))
+* **hostmetrics:** use cgroup v2 delta for accurate CPU % in LXC containers ([#701](https://github.com/HerbHall/samverk/issues/701)) ([42485f9](https://github.com/HerbHall/samverk/commit/42485f98815e6172eaad19e4507d0b497c5957be))
+* **providers:** wire health monitor to API via store-backed snapshots ([#145](https://github.com/HerbHall/samverk/issues/145)) ([0ad8325](https://github.com/HerbHall/samverk/commit/0ad832557c7323123081450c1bde3d836062d3f9))
+* **server:** prevent blank screen on first SPA load ([#700](https://github.com/HerbHall/samverk/issues/700)) ([ce076eb](https://github.com/HerbHall/samverk/commit/ce076ebd7a9cc90ea5e3b1d7df7c082018f0adb5))
+* **synapset:** pass format=json to search_memory and search_all ([#139](https://github.com/HerbHall/samverk/issues/139)) ([224718b](https://github.com/HerbHall/samverk/commit/224718bbb723a797afb6268045683ae4cbbacf31))
+
 ## [0.1.22](https://github.com/HerbHall/samverk/compare/v0.1.21...v0.1.22) (2026-03-20)
 
 
