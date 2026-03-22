@@ -86,8 +86,9 @@ func validateWorktree(ctx context.Context, workDir string, logger *zap.Logger) *
 		return result // Pass by default when tool is missing.
 	}
 
-	// Build check.
-	buildOut, buildErr := runInDir(ctx, workDir, "go", "build", "./...")
+	// Build check. Use -buildvcs=false to avoid VCS-stamp failures when the
+	// worktree is not a full git repository (agent temp dirs).
+	buildOut, buildErr := runInDir(ctx, workDir, "go", "build", "-buildvcs=false", "./...")
 	if buildErr != nil {
 		logger.Warn("validation: build failed",
 			zap.String("workDir", workDir),
