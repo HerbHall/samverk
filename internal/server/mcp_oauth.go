@@ -58,7 +58,7 @@ func (cfg MCPOAuthConfig) handleOAuthMeta(w http.ResponseWriter, _ *http.Request
 func (cfg MCPOAuthConfig) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// SAASClientID is the CF Access SAAS app client_id, used in the OIDC path.
 	// ClientID is the self-hosted app AUD, used only for JWT validation — not here.
-	target := "https://" + cfg.TeamDomain + "/cdn-cgi/access/sso/oidc/" + cfg.SAASClientID + "/authorize"
+	target := "https://" + cfg.TeamDomain + "/cdn-cgi/access/sso/oidc/" + cfg.SAASClientID + "/authorization"
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}
