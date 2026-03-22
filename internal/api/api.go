@@ -55,13 +55,13 @@ type API struct {
 	projectRegistry *internalmcp.ProjectRegistry // may be nil; single-project mode
 	synapsetProxy   *SynapsetProxy               // may be nil; proxies Synapset API requests
 	logStore        *logstore.LogStore            // may be nil; for log query API
-	toolCount       int                           // number of MCP tools registered; set via SetToolCount
-	chatAPIKey      string                        // Anthropic API key for chat proxy; empty = use env
-	chatRateLimit  *chatRateLimit    // rate limiter for chat endpoint
-	history        []historyEntry    // ring buffer of recent snapshots; guarded by historyMu
-	primaryDBPath  string            // file-system path to the primary SQLite database
-	logsDBPath     string            // file-system path to the logs SQLite database
-	logger         *zap.Logger
+	toolCount          int                           // number of MCP tools registered; set via SetToolCount
+	chatAPIKey         string                        // Anthropic API key for chat proxy; empty = use env
+	chatRateLimit      *chatRateLimit                // rate limiter for chat endpoint
+	history            []historyEntry                // ring buffer of recent snapshots; guarded by historyMu
+	primaryDBPath      string                        // file-system path to the primary SQLite database
+	logsDBPath         string                        // file-system path to the logs SQLite database
+	logger             *zap.Logger
 }
 
 // New creates an API handler with the given dependencies.
@@ -174,6 +174,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/mcp/servers", a.handleMCPServers)
 	mux.HandleFunc("GET /api/v1/pipeline/events", a.handlePipelineEvents)
 	mux.HandleFunc("GET /api/v1/pipeline/throughput", a.handlePipelineThroughput)
+	mux.HandleFunc("GET /api/v1/pipeline/stages", a.handlePipelineStages)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)
