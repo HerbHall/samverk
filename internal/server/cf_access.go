@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	cfJWTHeader   = "Cf-Access-Jwt-Assertion"
-	jwksCacheTTL  = 24 * time.Hour
-	jwksFetchPath = "/cdn-cgi/access/certs"
+	cfJWTHeader      = "Cf-Access-Jwt-Assertion"
+	jwksCacheTTL     = 24 * time.Hour
+	jwksFetchPath    = "/cdn-cgi/access/certs"
+	saasJWKSPathFmt  = "/cdn-cgi/access/sso/oidc/%s/jwks"
 )
 
 // jwksResponse is the JSON structure returned by the Cloudflare Access JWKS endpoint.
@@ -134,6 +135,45 @@ func getOrFetchJWKS(ctx context.Context, teamDomain string, cache *jwksCache) ([
 	keys, err := fetchJWKS(ctx, teamDomain)
 	if err != nil {
 		return nil, err
+	}
+	cache.set(keys)
+	return keys, nil
+}
+
+// getOrFetchSAASJWKS returns cached keys or fetches fresh ones from the CF Access
+// SAAS app OIDC JWKS endpoint. The SAAS app uses different signing keys than the
+// team-level /cdn-cgi/access/certs endpoint.
+func getOrFetchSAASJWKS(ctx context.Context, teamDomain, saasClientID string, cache *jwksCache) ([]*rsa.PublicKey, error) {
+	if keys := cache.get(); keys != nil {
+		return keys, nil
+	}
+	jwksURL := "https://" + teamDomain + fmt.Sprintf(saasJWKSPathFmt, saasClientID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("cf_access: build SAAS JWKS request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is constructed from trusted CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_SAAS_CLIENT_ID config values
+	if err != nil {
+		return nil, fmt.Errorf("cf_access: fetch SAAS JWKS: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("cf_access: SAAS JWKS endpoint returned %d", resp.StatusCode)
+	}
+	var body jwksResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("cf_access: decode SAAS JWKS: %w", err)
+	}
+	keys := make([]*rsa.PublicKey, 0, len(body.Keys))
+	for _, k := range body.Keys {
+		if k.Alg != "RS256" {
+			continue
+		}
+		pub, err := parseRSAPublicKey(k.N, k.E)
+		if err != nil {
+			continue
+		}
+		keys = append(keys, pub)
 	}
 	cache.set(keys)
 	return keys, nil
@@ -294,11 +334,12 @@ func CFAccessOrBearerAuth(teamDomain, clientID, saasClientID, token string, keyS
 			}
 
 			// Path 2: OIDC access_token presented as Bearer JWT (after OAuth flow).
+			// Uses the SAAS app OIDC JWKS — different keys from the team /certs endpoint.
 			if saasClientID != "" {
 				if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 					bearer := strings.TrimPrefix(auth, "Bearer ")
 					if strings.Count(bearer, ".") == 2 { // three-part JWT
-						keys, err := getOrFetchJWKS(r.Context(), teamDomain, saasCache)
+						keys, err := getOrFetchSAASJWKS(r.Context(), teamDomain, saasClientID, saasCache)
 						if err == nil && len(keys) > 0 {
 							claims, ok := validateAndParseCFJWT(bearer, keys)
 							if ok && claims.Aud == saasClientID {
