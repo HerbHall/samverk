@@ -59,9 +59,13 @@ func (cfg MCPOAuthConfig) handleAuthorize(w http.ResponseWriter, r *http.Request
 	// SAASClientID is the CF Access SAAS app client_id, used in the OIDC path.
 	// ClientID is the self-hosted app AUD, used only for JWT validation — not here.
 	target := "https://" + cfg.TeamDomain + "/cdn-cgi/access/sso/oidc/" + cfg.SAASClientID + "/authorization"
-	if r.URL.RawQuery != "" {
-		target += "?" + r.URL.RawQuery
-	}
+
+	// Forward all query params but translate scope: Claude.ai sends scope=claudeai,
+	// CF Access requires openid in the scope (per its OIDC discovery document).
+	q := r.URL.Query()
+	q.Set("scope", "openid email")
+	target += "?" + q.Encode()
+
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
