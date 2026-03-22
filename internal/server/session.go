@@ -32,11 +32,12 @@ type sessionSnapshot struct {
 // SessionManager stores browser sessions in memory with optional disk persistence.
 // Acceptable for single-server deployment.
 type SessionManager struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
-	maxAge   time.Duration
-	file     string // optional path for persistence; empty = in-memory only
-	done     chan struct{}
+	mu             sync.RWMutex
+	sessions        map[string]*Session
+	maxAge          time.Duration
+	file            string // optional path for persistence; empty = in-memory only
+	done            chan struct{}
+	secureCookies   bool   // whether to set the Secure flag on session cookies
 }
 
 // NewSessionManager creates an in-memory SessionManager and starts background cleanup.
@@ -160,7 +161,7 @@ func (sm *SessionManager) SetCookie(w http.ResponseWriter, sessionID string) {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   false, // Set by reverse proxy (Cloudflare Tunnel)
+		Secure:   sm.secureCookies, // configurable; set false when behind Cloudflare Tunnel
 		MaxAge:   int(sm.maxAge.Seconds()),
 	})
 }

@@ -33,6 +33,7 @@ type Config struct {
 	APIHandler         APIRegistrar     // optional REST API handler; nil keeps the 501 placeholder
 	PressureProvider   PressureProvider // optional; /healthz omits pressure field when nil
 	CFAccessTeamDomain string           // Cloudflare Access team domain; empty = CF auto-login disabled
+	SecureCookies      bool             // set Secure flag on session cookies (false when behind Cloudflare Tunnel)
 }
 
 // Server is the main HTTP server.
@@ -61,6 +62,7 @@ func New(cfg Config, logger *zap.Logger) *Server {
 		} else {
 			sessions = NewSessionManager()
 		}
+		sessions.secureCookies = cfg.SecureCookies
 	}
 
 	s := &Server{
