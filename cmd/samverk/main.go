@@ -150,6 +150,7 @@ func serveCmd() *cobra.Command {
 
 			// Create log store for structured log persistence (separate DB).
 			var ls *logstore.LogStore
+			var lsSyncer *logstore.Syncer
 			if dbPath != "" {
 				logsDBPath := strings.TrimSuffix(dbPath, ".db") + "-logs.db"
 				var lsErr error
@@ -159,11 +160,12 @@ func serveCmd() *cobra.Command {
 				} else {
 					defer func() { _ = ls.Close() }()
 					// Upgrade logger to tee to SQLite.
-					teeLogger, teeErr := logging.NewWithTee(ls)
+					teeLogger, syncer, teeErr := logging.NewWithTee(ls)
 					if teeErr != nil {
 						logger.Warn("could not create tee logger", zap.Error(teeErr))
 					} else {
 						logger = teeLogger
+						lsSyncer = syncer
 					}
 					// Start log pruner (30 day retention).
 					go logstore.StartPruner(ctx, ls, 30*24*time.Hour, logger)
@@ -438,6 +440,11 @@ func serveCmd() *cobra.Command {
 				zap.String("owner", owner), zap.String("repo", repo))
 
 			s := server.New(cfg, logger)
+			// Wire log.entry WS broadcasts: each persisted log entry is pushed
+			// to all connected dashboard clients via the Hub broadcaster.
+			if lsSyncer != nil {
+				lsSyncer.SetBroadcaster(s.Hub())
+			}
 			logger.Info("starting samverk server", zap.String("addr", addr))
 
 			// Start a standalone MCP-only listener on port 8081 for
@@ -719,7 +726,7 @@ func dispatchCmd() *cobra.Command {
 					logger.Warn("could not open log store", zap.String("path", logsDBPath), zap.Error(lsErr))
 				} else {
 					defer func() { _ = dispLS.Close() }()
-					teeLogger, teeErr := logging.NewWithTee(dispLS)
+					teeLogger, _, teeErr := logging.NewWithTee(dispLS)
 					if teeErr != nil {
 						logger.Warn("could not create tee logger", zap.Error(teeErr))
 					} else {
