@@ -840,7 +840,7 @@ func TestCreateIssueTool(t *testing.T) {
 		Params: map[string]any{
 			"name": "create_issue",
 			"arguments": map[string]any{
-				"title":     "Fix login bug",
+				"title":     "fix: login bug -- users cannot authenticate",
 				"body":      "Users cannot log in when...",
 				"labels":    []string{"bug", "priority:high"},
 				"assignees": []string{"alice"},
@@ -874,22 +874,23 @@ func TestCreateIssueTool(t *testing.T) {
 	if issueResult["issue_number"] != float64(99) {
 		t.Errorf("issue_number = %v, want 99", issueResult["issue_number"])
 	}
-	if issueResult["title"] != "Fix login bug" {
-		t.Errorf("title = %v, want %q", issueResult["title"], "Fix login bug")
+	if issueResult["title"] != "fix: login bug -- users cannot authenticate" {
+		t.Errorf("title = %v, want %q", issueResult["title"], "fix: login bug -- users cannot authenticate")
 	}
 
 	if len(tracker.createIssueCalls) != 1 {
 		t.Fatalf("expected 1 CreateIssue call, got %d", len(tracker.createIssueCalls))
 	}
 	req := tracker.createIssueCalls[0]
-	if req.Title != "Fix login bug" {
-		t.Errorf("CreateIssue title = %q, want %q", req.Title, "Fix login bug")
+	if req.Title != "fix: login bug -- users cannot authenticate" {
+		t.Errorf("CreateIssue title = %q, want %q", req.Title, "fix: login bug -- users cannot authenticate")
 	}
 	if req.Body != "Users cannot log in when..." {
 		t.Errorf("CreateIssue body = %q, want %q", req.Body, "Users cannot log in when...")
 	}
-	if len(req.Labels) != 2 {
-		t.Errorf("CreateIssue labels count = %d, want 2", len(req.Labels))
+	// Caller provided 2 labels; agent:code-gen is auto-injected (no agent:* supplied).
+	if len(req.Labels) < 2 {
+		t.Errorf("CreateIssue labels count = %d, want >= 2", len(req.Labels))
 	}
 	if len(req.Assignees) != 1 || req.Assignees[0] != "alice" {
 		t.Errorf("CreateIssue assignees = %v, want [alice]", req.Assignees)
@@ -907,7 +908,7 @@ func TestCreateIssueToolMinimal(t *testing.T) {
 		Params: map[string]any{
 			"name": "create_issue",
 			"arguments": map[string]any{
-				"title": "Simple issue",
+				"title": "chore: simple test issue",
 				"body":  "Just a body.",
 			},
 		},
@@ -930,13 +931,25 @@ func TestCreateIssueToolMinimal(t *testing.T) {
 		t.Fatal("expected content in response")
 	}
 
-	// Verify mock was called without labels/assignees.
+	// Verify mock was called; agent and priority labels are auto-injected when not supplied.
 	if len(tracker.createIssueCalls) != 1 {
 		t.Fatalf("expected 1 CreateIssue call, got %d", len(tracker.createIssueCalls))
 	}
 	req := tracker.createIssueCalls[0]
-	if len(req.Labels) != 0 {
-		t.Errorf("CreateIssue labels = %v, want empty", req.Labels)
+	hasAgent, hasPriority := false, false
+	for _, l := range req.Labels {
+		if strings.HasPrefix(l, "agent:") {
+			hasAgent = true
+		}
+		if strings.HasPrefix(l, "priority:") {
+			hasPriority = true
+		}
+	}
+	if !hasAgent {
+		t.Errorf("expected auto-injected agent:* label, got %v", req.Labels)
+	}
+	if !hasPriority {
+		t.Errorf("expected auto-injected priority:* label, got %v", req.Labels)
 	}
 	if len(req.Assignees) != 0 {
 		t.Errorf("CreateIssue assignees = %v, want empty", req.Assignees)
