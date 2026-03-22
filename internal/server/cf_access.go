@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -375,11 +377,27 @@ func CFAccessOrBearerAuth(teamDomain, clientID, saasClientID, token string, keyS
 			if saasClientID != "" {
 				if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 					bearer := strings.TrimPrefix(auth, "Bearer ")
-					if strings.Count(bearer, ".") == 2 { // three-part JWT
+					isJWT := strings.Count(bearer, ".") == 2
+					zap.L().Info("mcp_oauth: /mcp bearer token received",
+						zap.Bool("looks_like_jwt", isJWT),
+						zap.Int("token_len", len(bearer)),
+					)
+					if isJWT {
 						keys, err := getOrFetchSAASJWKS(r.Context(), teamDomain, saasClientID, saasCache)
+						zap.L().Info("mcp_oauth: SAAS JWKS fetch",
+							zap.Int("key_count", len(keys)),
+							zap.Error(err),
+						)
 						if err == nil && len(keys) > 0 {
 							claims, ok := validateAndParseCFJWT(bearer, keys)
-							if ok && claims.HasAudience(saasClientID) {
+							zap.L().Info("mcp_oauth: JWT validation",
+								zap.Bool("valid_sig", ok),
+								zap.String("aud", claims.Aud()),
+							)
+							// Signature valid against SAAS JWKS = legitimate CF Access SAAS token.
+							// CF Access sets aud to the redirect_uri, not the client_id, so we
+							// rely on signature verification rather than audience string matching.
+							if ok {
 								next.ServeHTTP(w, r)
 								return
 							}
