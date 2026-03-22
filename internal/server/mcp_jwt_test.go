@@ -186,6 +186,85 @@ func TestMCPRoute_BearerAuth_ValidToken(t *testing.T) {
 	}
 }
 
+// TestMCPRoute_CFAccessOrBearer_BearerFallback verifies that when both JWT and
+// Bearer are configured, a request carrying only a Bearer token is accepted (200).
+// This covers the internal/LAN access path where no CF JWT header is present.
+func TestMCPRoute_CFAccessOrBearer_BearerFallback(t *testing.T) {
+	const (
+		token    = "test-bearer-token"
+		clientID = "some-cf-client-id"
+	)
+	stub := &stubMCPHandler{}
+
+	s := New(Config{
+		Addr:                "localhost:0",
+		AuthToken:           token,
+		CFAccessTeamDomain:  "test.cloudflareaccess.com",
+		CFAccessMCPClientID: clientID,
+		MCPHandler:          stub,
+	}, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/mcp", http.NoBody)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200 (bearer should be accepted when CF JWT header is absent)", resp.StatusCode)
+	}
+	if !stub.called {
+		t.Error("expected MCP handler to be called with valid Bearer token")
+	}
+}
+
+// TestMCPRoute_CFAccessOrBearer_NoCredentials verifies that when both JWT and
+// Bearer are configured, a request with no credentials is rejected (401).
+func TestMCPRoute_CFAccessOrBearer_NoCredentials(t *testing.T) {
+	const (
+		token    = "test-bearer-token"
+		clientID = "some-cf-client-id"
+	)
+	stub := &stubMCPHandler{}
+
+	s := New(Config{
+		Addr:                "localhost:0",
+		AuthToken:           token,
+		CFAccessTeamDomain:  "test.cloudflareaccess.com",
+		CFAccessMCPClientID: clientID,
+		MCPHandler:          stub,
+	}, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/mcp", http.NoBody)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	// No auth headers.
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", resp.StatusCode)
+	}
+	if stub.called {
+		t.Error("MCP handler must not be called without credentials")
+	}
+}
+
 // TestMCPRoute_BearerAuth_NoToken verifies that Bearer-only auth (no JWT configured)
 // rejects requests without a token (401).
 func TestMCPRoute_BearerAuth_NoToken(t *testing.T) {

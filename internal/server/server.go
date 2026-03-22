@@ -209,12 +209,16 @@ func (s *Server) registerRoutes() {
 		jwtEnabled := s.cfg.CFAccessTeamDomain != "" && s.cfg.CFAccessMCPClientID != ""
 
 		var mcpAuth func(http.Handler) http.Handler
-		if jwtEnabled {
-			// JWT enforcement: CF Access validates the service token at the edge,
-			// adds Cf-Access-Jwt-Assertion header, server validates it here.
+		switch {
+		case jwtEnabled && s.authEnabled():
+			// Accept either CF Access JWT (external/CF-tunnel) or Bearer token
+			// (internal/LAN). JWT is checked first; Bearer is the fallback.
+			mcpAuth = CFAccessOrBearerAuth(s.cfg.CFAccessTeamDomain, s.cfg.CFAccessMCPClientID, s.cfg.AuthToken, s.cfg.KeyStore)
+		case jwtEnabled:
+			// JWT-only: no Bearer configured.
 			mcpAuth = CFAccessEnforceMiddleware(s.cfg.CFAccessTeamDomain, s.cfg.CFAccessMCPClientID)
-		} else if s.authEnabled() {
-			// Fallback: Bearer token auth when JWT is not configured.
+		case s.authEnabled():
+			// Bearer-only: no CF Access configured.
 			mcpAuth = BearerAuth(s.cfg.AuthToken, s.cfg.KeyStore)
 		}
 

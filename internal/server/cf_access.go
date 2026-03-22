@@ -272,6 +272,27 @@ func validateCFJWT(token string, keys []*rsa.PublicKey) bool {
 	return ok
 }
 
+// CFAccessOrBearerAuth returns middleware that accepts EITHER a valid Cloudflare
+// Access JWT OR a Bearer token. Used when the server must serve both external
+// (CF-tunnelled) and internal (LAN/Tailscale) clients on the same /mcp endpoint.
+//
+// If the Cf-Access-Jwt-Assertion header is present, JWT validation is attempted.
+// Otherwise, Bearer token validation is attempted.
+// Returns 401 if the selected credential is absent or invalid.
+func CFAccessOrBearerAuth(teamDomain, clientID, token string, keyStore *KeyStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		cfHandler := CFAccessEnforceMiddleware(teamDomain, clientID)(next)
+		bearerHandler := BearerAuth(token, keyStore)(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get(cfJWTHeader) != "" {
+				cfHandler.ServeHTTP(w, r)
+				return
+			}
+			bearerHandler.ServeHTTP(w, r)
+		})
+	}
+}
+
 // CFAccessEnforceMiddleware rejects all requests that do not carry a valid
 // Cloudflare Access JWT in the Cf-Access-Jwt-Assertion header.
 // Returns 401 JSON on missing/invalid JWT or aud mismatch.
