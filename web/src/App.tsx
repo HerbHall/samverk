@@ -14,6 +14,7 @@ import MCP from './pages/MCP'
 import { Projects } from './pages/Projects'
 import { Data } from './pages/Data'
 import Quality from './pages/Quality'
+import { Pipeline } from './pages/Pipeline'
 import { useWebSocket } from './hooks/useWebSocket'
 
 export class ErrorBoundary extends React.Component<
@@ -66,6 +67,7 @@ export function App() {
           <Route path="metrics" element={<Metrics />} />
           <Route path="logs" element={<Logs />} />
           <Route path="quality" element={<Quality />} />
+          <Route path="pipeline" element={<Pipeline />} />
           <Route path="mcp" element={<MCP />} />
           <Route path="projects" element={<Projects />} />
           <Route path="data" element={<Data />} />
