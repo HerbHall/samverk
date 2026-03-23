@@ -35,6 +35,7 @@ type bulkUpdateResult struct {
 type closeIssueWithCommentInput struct {
 	IssueNumber int    `json:"issue_number" jsonschema:"required,the issue number to close"`
 	Comment     string `json:"comment" jsonschema:"required,comment to add before closing"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // createIssueBatchInput is the typed input for the create_issue_batch tool.
@@ -193,9 +194,9 @@ func (h *Handler) handleCloseIssueWithComment(
 }
 
 func (h *Handler) executeCloseIssueWithComment(ctx context.Context, input closeIssueWithCommentInput) (*gosdk.CallToolResult, error) {
-	tracker := h.activeTracker()
-	if tracker == nil {
-		return nil, fmt.Errorf("no issue tracker configured")
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
 	}
 
 	if _, err := tracker.AddComment(ctx, input.IssueNumber, input.Comment); err != nil {

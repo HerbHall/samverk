@@ -27,18 +27,21 @@ type getCostSummaryInput struct {
 type addLabelInput struct {
 	IssueNumber int    `json:"issue_number" jsonschema:"required,the issue number to add the label to"`
 	Label       string `json:"label" jsonschema:"required,the label name to add"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // removeLabelInput is the typed input for the remove_label tool.
 type removeLabelInput struct {
 	IssueNumber int    `json:"issue_number" jsonschema:"required,the issue number to remove the label from"`
 	Label       string `json:"label" jsonschema:"required,the label name to remove"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // addCommentInput is the typed input for the add_comment tool.
 type addCommentInput struct {
 	IssueNumber int    `json:"issue_number" jsonschema:"required,the issue number to comment on"`
 	Body        string `json:"body" jsonschema:"required,the comment body text"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // createIssueInput is the typed input for the create_issue tool.
@@ -63,7 +66,8 @@ type listIssuesInput struct {
 
 // getIssueInput is the typed input for the get_issue tool.
 type getIssueInput struct {
-	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to retrieve"`
+	IssueNumber int    `json:"issue_number" jsonschema:"required,the issue number to retrieve"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // updateIssueInput is the typed input for the update_issue tool.
@@ -72,27 +76,32 @@ type updateIssueInput struct {
 	Title       *string `json:"title,omitempty" jsonschema:"new title for the issue"`
 	Body        *string `json:"body,omitempty" jsonschema:"new body for the issue"`
 	State       *string `json:"state,omitempty" jsonschema:"new state: open or closed"`
+	Project     string  `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // closeIssueInput is the typed input for the close_issue tool.
 type closeIssueInput struct {
-	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to close"`
+	IssueNumber int    `json:"issue_number" jsonschema:"required,the issue number to close"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // reopenIssueInput is the typed input for the reopen_issue tool.
 type reopenIssueInput struct {
-	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to reopen"`
+	IssueNumber int    `json:"issue_number" jsonschema:"required,the issue number to reopen"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // setLabelsInput is the typed input for the set_labels tool.
 type setLabelsInput struct {
 	IssueNumber int      `json:"issue_number" jsonschema:"required,the issue number to set labels on"`
 	Labels      []string `json:"labels" jsonschema:"required,the complete set of labels to apply"`
+	Project     string   `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // listCommentsInput is the typed input for the list_comments tool.
 type listCommentsInput struct {
-	IssueNumber int `json:"issue_number" jsonschema:"required,the issue number to list comments for"`
+	IssueNumber int    `json:"issue_number" jsonschema:"required,the issue number to list comments for"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project name; defaults to active project"`
 }
 
 // approveActionInput is the typed input for the approve_action tool.
@@ -260,7 +269,11 @@ func (h *Handler) handleAddLabel(
 }
 
 func (h *Handler) executeAddLabel(ctx context.Context, input addLabelInput) (*gosdk.CallToolResult, error) {
-	if err := h.activeTracker().AddLabel(ctx, input.IssueNumber, input.Label); err != nil {
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
+	}
+	if err := tracker.AddLabel(ctx, input.IssueNumber, input.Label); err != nil {
 		return nil, fmt.Errorf("adding label: %w", err)
 	}
 
@@ -298,7 +311,11 @@ func (h *Handler) handleRemoveLabel(
 }
 
 func (h *Handler) executeRemoveLabel(ctx context.Context, input removeLabelInput) (*gosdk.CallToolResult, error) {
-	if err := h.activeTracker().RemoveLabel(ctx, input.IssueNumber, input.Label); err != nil {
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
+	}
+	if err := tracker.RemoveLabel(ctx, input.IssueNumber, input.Label); err != nil {
 		return nil, fmt.Errorf("removing label: %w", err)
 	}
 
@@ -336,7 +353,11 @@ func (h *Handler) handleAddComment(
 }
 
 func (h *Handler) executeAddComment(ctx context.Context, input addCommentInput) (*gosdk.CallToolResult, error) {
-	comment, err := h.activeTracker().AddComment(ctx, input.IssueNumber, input.Body)
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
+	}
+	comment, err := tracker.AddComment(ctx, input.IssueNumber, input.Body)
 	if err != nil {
 		return nil, fmt.Errorf("adding comment: %w", err)
 	}
@@ -386,7 +407,11 @@ func (h *Handler) handleCreateIssue(
 }
 
 func (h *Handler) executeCreateIssue(ctx context.Context, input createIssueInput) (*gosdk.CallToolResult, error) {
-	issue, err := h.activeTracker().CreateIssue(ctx, &forge.CreateIssueRequest{
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
+	}
+	issue, err := tracker.CreateIssue(ctx, &forge.CreateIssueRequest{
 		Title:     input.Title,
 		Body:      input.Body,
 		Labels:    input.Labels,
@@ -459,7 +484,11 @@ func (h *Handler) handleGetIssue(
 		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
 	}
 
-	issue, err := h.activeTracker().GetIssue(ctx, input.IssueNumber)
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, nil, err
+	}
+	issue, err := tracker.GetIssue(ctx, input.IssueNumber)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting issue: %w", err)
 	}
@@ -506,7 +535,11 @@ func (h *Handler) executeUpdateIssue(ctx context.Context, input updateIssueInput
 		req.State = &s
 	}
 
-	issue, err := h.activeTracker().UpdateIssue(ctx, input.IssueNumber, req)
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
+	}
+	issue, err := tracker.UpdateIssue(ctx, input.IssueNumber, req)
 	if err != nil {
 		return nil, fmt.Errorf("updating issue: %w", err)
 	}
@@ -546,8 +579,12 @@ func (h *Handler) handleCloseIssue(
 }
 
 func (h *Handler) executeCloseIssue(ctx context.Context, input closeIssueInput) (*gosdk.CallToolResult, error) {
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
+	}
 	closedState := forge.StateClosed
-	_, err := h.activeTracker().UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
+	_, err = tracker.UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
 		State: &closedState,
 	})
 	if err != nil {
@@ -585,8 +622,12 @@ func (h *Handler) handleReopenIssue(
 }
 
 func (h *Handler) executeReopenIssue(ctx context.Context, input reopenIssueInput) (*gosdk.CallToolResult, error) {
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
+	}
 	openState := forge.StateOpen
-	_, err := h.activeTracker().UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
+	_, err = tracker.UpdateIssue(ctx, input.IssueNumber, &forge.UpdateIssueRequest{
 		State: &openState,
 	})
 	if err != nil {
@@ -627,7 +668,11 @@ func (h *Handler) handleSetLabels(
 }
 
 func (h *Handler) executeSetLabels(ctx context.Context, input setLabelsInput) (*gosdk.CallToolResult, error) {
-	if err := h.activeTracker().SetLabels(ctx, input.IssueNumber, input.Labels); err != nil {
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, err
+	}
+	if err := tracker.SetLabels(ctx, input.IssueNumber, input.Labels); err != nil {
 		return nil, fmt.Errorf("setting labels: %w", err)
 	}
 
@@ -651,7 +696,11 @@ func (h *Handler) handleListComments(
 		return nil, nil, fmt.Errorf("issue_number must be greater than 0")
 	}
 
-	comments, err := h.activeTracker().ListComments(ctx, input.IssueNumber)
+	tracker, err := h.resolveTracker(input.Project)
+	if err != nil {
+		return nil, nil, err
+	}
+	comments, err := tracker.ListComments(ctx, input.IssueNumber)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing comments: %w", err)
 	}
