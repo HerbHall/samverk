@@ -536,6 +536,94 @@ func TestHandleOpened_NoFrontmatter_AgentHumanLabel(t *testing.T) {
 	}
 }
 
+func TestClassify_LabelOverridesFrontmatter(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// Issue #213 bug: agent:human label + frontmatter agent_type: code-gen.
+	// Label must win.
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "fix: something needs human review",
+		Body:   issueBody("code-gen", nil),
+		State:  forge.StateOpen,
+		Labels: []string{"agent:human", "fix", "priority:high"},
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("expected status:needs-human — agent:human label should override frontmatter agent_type: code-gen")
+	}
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("did not expect status:claimed — agent:human issues must not be dispatched")
+	}
+	if hasLabel(issue.Labels, "status:needs-qc") {
+		t.Error("did not expect status:needs-qc — this was the #213 bug")
+	}
+}
+
+func TestClassify_FrontmatterFallback_NoAgentLabel(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	// No agent:* label — frontmatter should be used.
+	issue := &forge.Issue{
+		Number: 1,
+		Title:  "test: add more coverage",
+		Body:   issueBody("test", nil),
+		State:  forge.StateOpen,
+		Labels: []string{"priority:normal"},
+	}
+	tracker.issues[1] = issue
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 1,
+		Issue:       issue,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should be routed as test agent via frontmatter fallback.
+	if hasLabel(issue.Labels, "status:needs-human") {
+		t.Error("did not expect status:needs-human — frontmatter says test, not human")
+	}
+}
+
+func TestAgentTypeFromLabels(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels []string
+		want   models.AgentType
+	}{
+		{"agent:human", []string{"agent:human", "fix"}, models.AgentTypeHuman},
+		{"agent:code-gen", []string{"priority:high", "agent:code-gen"}, models.AgentTypeCodeGen},
+		{"agent:research", []string{"agent:research"}, models.AgentTypeResearch},
+		{"agent:qc", []string{"agent:qc"}, models.AgentTypeQC},
+		{"no agent label", []string{"fix", "priority:high"}, ""},
+		{"unknown agent type ignored", []string{"agent:nonexistent"}, ""},
+		{"empty labels", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := agentTypeFromLabels(tt.labels)
+			if got != tt.want {
+				t.Errorf("agentTypeFromLabels() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleOpened_WithDependencies_AllDone(t *testing.T) {
 	tracker := newMockTracker()
 	d := newTestDispatcher(tracker)

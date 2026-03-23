@@ -27,34 +27,65 @@ var knownAgentTypes = map[models.AgentType]bool{
 // complexTitleKeywords are title signals that indicate architectural/heavy work.
 var complexTitleKeywords = []string{"architect", "refactor", "redesign", "spike"}
 
-// classify parses frontmatter from the issue body and validates the agent_type.
-// Returns the agent type and parsed frontmatter (may be nil for heuristic matches).
-// If frontmatter is present but malformed, returns an error immediately (no
-// heuristic fallback). Heuristics are only attempted when frontmatter is absent.
+// classify determines the agent type for routing and parses optional frontmatter.
 //
-// When a heuristic match succeeds for an issue without frontmatter, classify
-// auto-generates frontmatter and attempts to persist it back to the issue body
-// via UpdateIssue. If persistence fails the generated frontmatter is still
-// returned for in-memory routing.
+// Resolution order (first match wins):
+//  1. agent:* label — the user-facing control surface, always authoritative.
+//  2. Frontmatter agent_type — embedded metadata, used when no agent label exists.
+//  3. Heuristic — title prefix and label patterns, used when neither is present.
+//
+// Labels take priority over frontmatter because they are visible on the Gitea UI
+// and can be changed without editing the issue body. This prevents the bug where
+// an agent:human label was overridden by frontmatter agent_type: code-gen (#213).
 func (d *Dispatcher) classify(ctx context.Context, owner, repo string, issue *forge.Issue) (models.AgentType, *models.IssueFrontmatter, error) {
+	// Always parse frontmatter for supplementary metadata (depends_on, timeout, etc.)
+	// even when the agent type comes from labels.
 	fm, err := d.parseFrontmatter(issue)
 	if err != nil {
 		return "", nil, fmt.Errorf("classify issue #%d: %w", issue.Number, err)
 	}
-	if fm == nil {
-		if at := classifyByHeuristic(issue); at != "" {
-			fm = d.autoInjectFrontmatter(ctx, owner, repo, issue, at)
-			return at, fm, nil
+
+	// 1. Check agent:* label first — labels are the authoritative routing signal.
+	if at := agentTypeFromLabels(issue.Labels); at != "" {
+		if fm != nil {
+			// Sync frontmatter to match label so downstream code sees consistent data.
+			fm.AgentType = at
 		}
-		return "", nil, fmt.Errorf("classify issue #%d: no frontmatter found and no heuristic match", issue.Number)
+		return at, fm, nil
 	}
-	if fm.AgentType == "" {
-		return "", nil, fmt.Errorf("classify issue #%d: agent_type is empty", issue.Number)
+
+	// 2. Fall back to frontmatter agent_type.
+	if fm != nil {
+		if fm.AgentType == "" {
+			return "", nil, fmt.Errorf("classify issue #%d: agent_type is empty", issue.Number)
+		}
+		if !knownAgentTypes[fm.AgentType] {
+			return "", nil, fmt.Errorf("classify issue #%d: unknown agent_type %q", issue.Number, fm.AgentType)
+		}
+		return fm.AgentType, fm, nil
 	}
-	if !knownAgentTypes[fm.AgentType] {
-		return "", nil, fmt.Errorf("classify issue #%d: unknown agent_type %q", issue.Number, fm.AgentType)
+
+	// 3. Heuristic fallback — no label, no frontmatter.
+	if at := classifyByHeuristic(issue); at != "" {
+		fm = d.autoInjectFrontmatter(ctx, owner, repo, issue, at)
+		return at, fm, nil
 	}
-	return fm.AgentType, fm, nil
+
+	return "", nil, fmt.Errorf("classify issue #%d: no agent label, frontmatter, or heuristic match", issue.Number)
+}
+
+// agentTypeFromLabels extracts the agent type from an agent:* label.
+// Returns empty string if no agent label is present.
+func agentTypeFromLabels(labels []string) models.AgentType {
+	for _, l := range labels {
+		if strings.HasPrefix(l, "agent:") {
+			at := models.AgentType(strings.TrimPrefix(l, "agent:"))
+			if knownAgentTypes[at] {
+				return at
+			}
+		}
+	}
+	return ""
 }
 
 // classifyByHeuristic attempts to determine the agent type from issue labels
