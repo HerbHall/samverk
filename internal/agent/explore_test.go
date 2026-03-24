@@ -272,3 +272,113 @@ func TestReadFileCapped(t *testing.T) {
 		t.Errorf("readFileCapped nonexistent: got %q, want empty", got)
 	}
 }
+
+func TestExploreContext_YAMLFrontmatterFileContext(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create files in various project directories.
+	dirs := map[string]string{
+		"web/src/pages":        "Agents.tsx",
+		"scripts/pc-agent":     "registration.psm1",
+		"internal/api":         "api.go",
+		"overlay":              "labels.json",
+		".samverk":             "project.yaml",
+		".github/workflows":    "ci.yml",
+	}
+	for d, f := range dirs {
+		p := filepath.Join(dir, filepath.FromSlash(d))
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, f), []byte("content of "+f), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Issue body with YAML frontmatter file_context list.
+	body := `---
+schema_version: "1.1.0"
+type: task
+agent_type: code-gen
+file_context:
+  - web/src/pages/Agents.tsx
+  - scripts/pc-agent/registration.psm1
+  - internal/api/api.go
+  - overlay/labels.json
+  - .samverk/project.yaml
+  - .github/workflows/ci.yml
+---
+
+## Summary
+
+Update the agents page.
+`
+
+	result := ExploreContext(dir, body)
+
+	expected := []string{
+		"web/src/pages/Agents.tsx",
+		"scripts/pc-agent/registration.psm1",
+		"internal/api/api.go",
+		"overlay/labels.json",
+		".samverk/project.yaml",
+		".github/workflows/ci.yml",
+	}
+	for _, path := range expected {
+		if _, ok := result[path]; !ok {
+			t.Errorf("expected %q in explore result, not found", path)
+		}
+	}
+}
+
+func TestFilePathRe_YAMLListMarker(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "YAML list with dash prefix",
+			input: "  - internal/api/api.go\n  - web/src/pages/Agents.tsx",
+			want:  []string{"internal/api/api.go", "web/src/pages/Agents.tsx"},
+		},
+		{
+			name:  "prose reference",
+			input: "Update internal/dispatcher/router.go to fix the bug.",
+			want:  []string{"internal/dispatcher/router.go"},
+		},
+		{
+			name:  "scripts prefix",
+			input: "  - scripts/pc-agent/registration.psm1",
+			want:  []string{"scripts/pc-agent/registration.psm1"},
+		},
+		{
+			name:  "overlay prefix",
+			input: "  - overlay/labels.json",
+			want:  []string{"overlay/labels.json"},
+		},
+		{
+			name:  "dotfile prefixes",
+			input: "  - .samverk/project.yaml\n  - .github/workflows/ci.yml\n  - .gitea/workflows/security.yml",
+			want:  []string{".samverk/project.yaml", ".github/workflows/ci.yml", ".gitea/workflows/security.yml"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matches := filePathRe.FindAllStringSubmatch(tt.input, -1)
+			var got []string
+			for _, m := range matches {
+				got = append(got, strings.TrimSpace(m[1]))
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d matches %v, want %d %v", len(got), got, len(tt.want), tt.want)
+			}
+			for i, w := range tt.want {
+				if got[i] != w {
+					t.Errorf("match[%d] = %q, want %q", i, got[i], w)
+				}
+			}
+		})
+	}
+}

@@ -88,11 +88,18 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "type:scaffold",
 		},
 		{
-			name:      "title prefix chore: → local",
+			name:      "title prefix chore: with code-gen agent → local",
 			issue:     &forge.Issue{Title: "chore: update deps", Body: longBody},
-			agentType: models.AgentTypeDocs, // docs agent, but chore prefix wins
+			agentType: models.AgentTypeCodeGen,
 			wantKey:   "local",
 			wantReason: "chore:",
+		},
+		{
+			name:      "docs agent overrides chore: prefix → triage (#263)",
+			issue:     &forge.Issue{Title: "chore: update docs", Body: longBody},
+			agentType: models.AgentTypeDocs,
+			wantKey:   "triage",
+			wantReason: "agent type docs",
 		},
 
 		// --- triage tier ---
@@ -181,16 +188,16 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "complexity:high",
 		},
 		{
-			// local beats triage: type:scaffold takes precedence over docs agent type
-			name: "type:scaffold beats docs agent type",
+			// docs agent type overrides scaffold label (#263)
+			name: "docs agent type beats type:scaffold",
 			issue: &forge.Issue{
 				Title:  "scaffold docs",
 				Body:   longBody,
 				Labels: []string{"type:scaffold"},
 			},
 			agentType: models.AgentTypeDocs,
-			wantKey:   "local",
-			wantReason: "type:scaffold",
+			wantKey:   "triage",
+			wantReason: "agent type docs",
 		},
 		{
 			// local beats triage: chore: prefix takes precedence over short body
@@ -224,6 +231,40 @@ func TestSelectProviderKey(t *testing.T) {
 			agentType: models.AgentTypeCodeGen,
 			wantKey:   "triage",
 			wantReason: "short issue body",
+		},
+
+		// --- agent-type override tests (#263) ---
+		{
+			name: "docs agent with architecture title → triage not complex (#263)",
+			issue: &forge.Issue{
+				Title: "docs: update architecture.md with fleet topology",
+				Body:  longBody,
+			},
+			agentType: models.AgentTypeDocs,
+			wantKey:   "triage",
+			wantReason: "agent type docs",
+		},
+		{
+			name: "test agent → default (#263)",
+			issue: &forge.Issue{
+				Title: "test: add forge interface tests",
+				Body:  longBody,
+			},
+			agentType: models.AgentTypeTest,
+			wantKey:   "default",
+			wantReason: "agent type test",
+		},
+
+		// --- frontmatter word count tests (#264) ---
+		{
+			name: "short prose but rich frontmatter → default not triage (#264)",
+			issue: &forge.Issue{
+				Title: "feat: add worker status",
+				Body: "---\nschema_version: \"1.1.0\"\ntype: task\nagent_type: code-gen\npriority: high\nestimated_tokens: 12000\nhandoff_ready: true\nfile_context:\n  - internal/api/api.go\n  - internal/api/workers.go\nconstraints:\n  - do not modify existing endpoints\n  - run make ci before finishing\n---\n\n## Summary\n\n" + strings.Repeat("word ", 200),
+			},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "default",
+			wantReason: "default routing",
 		},
 	}
 
