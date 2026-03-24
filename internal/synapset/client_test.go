@@ -305,6 +305,10 @@ func TestSessionReconnection(t *testing.T) {
 }
 
 func TestConfigFromEnv(t *testing.T) {
+	// Clear env vars so the test is hermetic.
+	t.Setenv("SYNAPSET_URL", "")
+	t.Setenv("SYNAPSET_POOL", "")
+
 	// With defaults.
 	cfg := ConfigFromEnv(Config{})
 	if cfg.URL != DefaultURL {

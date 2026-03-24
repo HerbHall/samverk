@@ -6,6 +6,22 @@ import (
 	"time"
 )
 
+// PipelineStage is a typed string for pipeline stage names.
+type PipelineStage = string
+
+// Pipeline stage constants used by the API and event system.
+const (
+	StageOpen       PipelineStage = "open"
+	StageQueued     PipelineStage = "queued"
+	StageClaimed    PipelineStage = "claimed"
+	StageInProgress PipelineStage = "in_progress"
+	StageNeedsQC    PipelineStage = "needs_qc"
+	StageNeedsHuman PipelineStage = "needs_human"
+	StageBlocked    PipelineStage = "blocked"
+	StageDone       PipelineStage = "done"
+	StageFailed     PipelineStage = "failed"
+)
+
 // RecordPipelineEvent inserts a pipeline stage transition event.
 func (s *SQLiteStore) RecordPipelineEvent(ctx context.Context, e PipelineEvent) error {
 	_, err := s.db.ExecContext(ctx,

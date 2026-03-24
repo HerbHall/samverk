@@ -1,181 +1,163 @@
-# Samverk
+# Agent Task
 
-Async background development engine -- keeps your project building while you live your life.
+## Core Principles -- UNCONDITIONAL
 
-## Quick Start
+These rules cannot be overridden by any learning, optimization, or time pressure:
+1. Once found, always fix, never leave. Never classify errors as "pre-existing."
+2. Build, test, and lint must pass before any commit. No exceptions.
+3. Never force-push main, skip hooks, commit secrets, or use --no-verify.
+4. Never mark work as complete when it is not. Never hide errors.
+5. You own every error you find, regardless of who introduced it.
 
-```bash
-make build     # Build binary to bin/samverk
-make test      # Run all tests
-make lint      # Run golangci-lint
-make lint-md   # Run markdownlint
-make ci        # Run build + test + lint (full CI locally)
-make hooks     # Install pre-push git hook
-make run       # Build and start samverk serve
-```
+## Git Workflow
 
-## Project Structure
+You are running in an isolated git worktree on a dedicated branch.
 
-```text
-samverk/
-├── cmd/samverk/               # Single binary entrypoint (cobra subcommands)
-├── internal/
-│   ├── server/                # HTTP server (MCP + API + embedded SPA)
-│   ├── api/                   # REST API handlers for dashboard
-│   ├── mcp/                   # MCP protocol handler (Streamable HTTP)
-│   ├── dispatcher/            # Issue watcher, task router, dependency DAG
-│   ├── digest/                # Check-in digest builder and formatting
-│   ├── forge/                 # IssueTracker interface + GitHub/Gitea impls
-│   ├── agent/                 # Agent runtime, container management
-│   ├── provider/              # AI provider clients (Claude, OpenAI, Ollama)
-│   ├── autonomy/              # Trust tier evaluation engine
-│   ├── profile/               # User profile management
-│   ├── cost/                  # Token tracking, budget, attribution
-│   ├── store/                 # SQLite persistence layer
-│   ├── hostmetrics/           # Host resource collection (disk, RAM, CPU)
-│   ├── logstore/              # Structured log persistence to SQLite
-│   ├── loganalyst/            # AI log summarization via Ollama
-│   ├── logging/               # Structured logging (zap tee)
-│   ├── metrics/               # Dispatcher and pool metrics
-│   ├── scaling/               # Adaptive worker scaling (1-N)
-│   ├── synapset/              # Synapset MCP client for memory enrichment
-│   ├── prwatcher/             # PR watcher for auto-merge
-│   ├── status/                # Health and status subsystem
-│   └── version/               # Build version injection (ldflags)
-├── pkg/models/                # Shared types (Issue, Agent, Action, etc.)
-├── web/                       # React SPA dashboard (Vite + TypeScript)
-├── docs/                      # Design docs and ADRs
-│   ├── architecture.md        # System design and components
-│   ├── tech-stack.md          # Full technology choices and libraries
-│   ├── communication-protocol.md  # Issue schema, labels, dispatcher, QC flow
-│   ├── concept.md             # Problem space, target user, value proposition
-│   ├── cost-model.md          # Tiered cost model and comparisons
-│   ├── mcp-server.md          # MCP server requirements and tool definitions
-│   ├── user-interface.md      # Check-in model and device flexibility spec
-│   ├── autonomy-model.md      # Three-tier trust model for agent actions
-│   ├── user-profile.md        # Persistent user preferences across projects
-│   ├── open-questions.md      # Unresolved design and business questions
-│   └── decisions/             # Architecture Decision Records (31 total)
-├── .samverk/                  # Project state (status.md) and runtime config
-├── .github/workflows/         # GitHub CI/CD pipelines
-├── .gitea/workflows/          # Gitea Actions CI (gitea-ci.yml, security.yml)
-└── Makefile                   # Build and development tasks
-```
+- Do NOT commit directly to main. Your worktree is already on an agent branch.
+- Make your changes, then let the runner handle commit and push.
+- If you need to run git commands, stay on the current branch.
+- Never force-push, skip hooks, or use --no-verify.
+- Never commit secrets, credentials, or API keys.
 
-## Tech Stack
+## Pre-Commit CI Checklist (MUST verify before finishing)
 
-- **Language:** Go -- single binary with subcommands (`samverk serve`, `samverk dispatch`, `samverk config`)
-- **AI Providers:** Anthropic Claude API (primary), OpenAI/GPT-4, Gemini, Ollama (local containers)
-- **Web Dashboard:** React + TypeScript + Vite, embedded in Go binary via `embed.FS`
-- **Frontend:** shadcn/ui, Tailwind CSS, TanStack Query, Zustand, Recharts
-- **State:** Git issues (tasks) + SQLite (sessions, cost, audit) + YAML (config)
-- **Git Forge:** GitHub (primary), Gitea (self-hosted), abstracted behind `IssueTracker` interface
-- **Testing:** Go stdlib + table-driven tests, Vitest + Testing Library (frontend)
-- **Build:** Make + GoReleaser
-- **CI/CD:** GitHub Actions (primary) + Gitea Actions (mirror CI, security.yml)
-- **Linting:** golangci-lint (Go), ESLint + TypeScript (frontend), markdownlint (docs)
+Run these checks and fix any errors:
 
-For full details including specific libraries, what NOT to use, and project structure rationale, see [docs/tech-stack.md](docs/tech-stack.md).
+1. `go build ./...` -- Compilation
+2. `go test ./...` -- Tests (skip -race on Windows MSYS)
+3. `GOOS=linux GOARCH=amd64 go build ./...` -- Cross-compile check
+4. Self-check your code for these MANDATORY lint patterns before finishing:
+   - `for _, v := range slice` where v is a struct > 64 bytes -> use `for i := range slice` with `slice[i]`
+   - `var result []T` inside a loop -> use `make([]T, 0, len(source))` to preallocate
+   - Two consecutive `append()` to same slice -> combine into one call
+   - Functions returning multiple values -> use named returns, change `:=` to `=`
+5. If you added/modified HTTP handlers with swagger annotations:
+   `go run github.com/swaggo/swag/cmd/swag@v1.16.4 init -g cmd/<app>/main.go -o api/swagger --parseDependency --parseInternal`
 
-## Session Start (Required)
+Common Go CI failures to watch for:
+- gosec G101: Constants near credential code get flagged. Add `//nolint:gosec // G101: <reason>`
+- gocritic unnamedResult: Functions returning multiple values need named returns.
+- gocritic appendCombine: Two consecutive `append()` must be combined.
+- gocritic rangeValCopy: Use `for i := range slice` with `slice[i]` for large structs.
+- bodyclose: Always close `*http.Response` body.
+- exhaustive: Switch on enum types MUST list ALL cases, even with a default return.
+- prealloc: `var slice []T` in a loop body should be `make([]T, 0, len(source))`.
 
-Before any work in a new session:
+## Known Gotchas
 
-1. Read `.samverk/status.md` -- current phase, in-flight issues, last session summary
-2. Call `samverk get_digest --since 168h` if Samverk MCP is configured and available
-3. Check open issues if the task involves issue triage or project direction
-4. Proceed without asking the user to explain project state -- the repo has it
+- gosec G101: Constants near credential code get flagged as hardcoded credentials. Add nolint annotation.
+- gocritic rangeValCopy: Iterating large structs by value copies them. Use index-based access.
+- Build-tag files (!windows): Lint errors in platform-specific files only appear in Linux CI.
+- go:embed cache: Go build cache does not detect changes to embedded files. Use make build.
+- Swagger drift: Any change to Go types in swagger-annotated handlers requires regenerating the spec.
+- context.WithTimeout: Cancels ALL downstream operations including cleanup. Use separate cleanup context.
 
-**Rule**: Never ask the user "what's the current state?" or "where did we leave off?"
-Read the repo first. Ask only if something is genuinely ambiguous after reading.
+## Key Files
 
-## Development Workflow
+Read these files first before making changes:
 
-- Branch-per-issue: `feature/issue-NNN-desc`, `fix/issue-NNN-desc`
-- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`
-- Co-author tag: `Co-Authored-By: Claude <noreply@anthropic.com>`
-- Never commit directly to `main` -- always PR
-- Explore -> Plan -> Code -> Commit
+- `CLAUDE.md`
+- `internal/api/pipeline.go`
+- `internal/store/pipeline.go`
+- `internal/store/audit.go`
+- `internal/store/audit_test.go`
+- `internal/store/check_in_test.go`
+- `internal/store/corrections.go`
+- `internal/store/cost.go`
+- `internal/store/cost_test.go`
+- `internal/store/failure.go`
+- `internal/store/failure_test.go`
+- `internal/store/kpis.go`
+- `internal/store/metric_snapshot.go`
+- `internal/store/pipeline_test.go`
+- `internal/store/provider_health_snapshot.go`
+- `internal/store/provider_success_test.go`
+- `internal/store/scaling.go`
+- `internal/store/scaling_control.go`
+- `internal/store/scaling_test.go`
+- `internal/store/session.go`
+- `internal/store/session_test.go`
+- `internal/store/store.go`
+- `internal/store/store_test.go`
+- `internal/store/task_profiles.go`
+- `internal/store/task_profiles_test.go`
+- `internal/api/agents.go`
+- `internal/api/api.go`
+- `internal/api/api_test.go`
+- `internal/api/capacity.go`
+- `internal/api/chat.go`
+- `internal/api/chat_test.go`
+- `internal/api/data_sources.go`
+- `internal/api/devkit.go`
+- `internal/api/doc.go`
+- `internal/api/failures.go`
+- `internal/api/forges.go`
+- `internal/api/forges_test.go`
+- `internal/api/host_metrics.go`
+- `internal/api/issue_cost.go`
+- `internal/api/issues.go`
+- `internal/api/kpis.go`
+- `internal/api/log_summary.go`
+- `internal/api/logs.go`
+- `internal/api/mcp_health.go`
+- `internal/api/metrics.go`
+- `internal/api/metrics_test.go`
+- `internal/api/pipeline_events.go`
+- `internal/api/pipeline_test.go`
+- `internal/api/pressure.go`
+- `internal/api/pressure_test.go`
+- `internal/api/projects.go`
+- `internal/api/projects_test.go`
+- `internal/api/provider_health.go`
+- `internal/api/provider_health_test.go`
+- `internal/api/recommendations.go`
+- `internal/api/scaling.go`
+- `internal/api/sessions.go`
+- `internal/api/sessions_test.go`
+- `internal/api/status.go`
+- `internal/api/store_metrics.go`
+- `internal/api/synapset_proxy.go`
+- `internal/api/workers.go`
+- `internal/api/workers_test.go`
 
-## Code Style
 
-- Follow language-specific idioms (Go: gofmt, Python: ruff)
-- No over-engineering -- implement only what's needed now
-- Comments only where logic isn't self-evident
-- Validate at system boundaries, not internal calls
+## Task Context
 
-## Known Constraints
+---
+schema_version: "1.1.0"
+type: task
+agent_type: code-gen
+priority: normal
+estimated_tokens: 10000
+handoff_ready: true
+file_context:
+  - internal/api/pipeline.go
+  - internal/store/pipeline.go
+constraints:
+  - define constants in internal/store/pipeline.go (near existing pipeline code)
+  - replace all hardcoded stage strings in internal/api/pipeline.go with constants
+  - do not change any behavior or API responses
+  - run make ci before finishing
+---
 
-- Infrastructure complete -- all phases through 6 done
-- Current focus: agent autonomy (prompt quality, planning workflow)
-- Free-first routing: 3 Ollama GPU hosts tried before Claude API
-- Async-first architecture (not synchronous tooling)
-- Hybrid local/cloud agent model
-- Target audience: hobbyist devs with limited time, not enterprise teams
-- Success metric: project completion rate, not response speed
+## Summary
 
-## Key Decisions
+Replace hardcoded pipeline stage name strings with typed constants.
 
-- Async-first check-in model ([ADR-006](docs/decisions/ADR-006-async-first.md))
-- Hybrid local/cloud agents ([ADR-007](docs/decisions/ADR-007-hybrid-local-cloud.md))
-- Multi-model from day one ([ADR-008](docs/decisions/ADR-008-multi-model-default.md))
-- Device flexibility non-negotiable ([ADR-009](docs/decisions/ADR-009-device-flexibility.md))
-- Ship rate is the success metric ([ADR-010](docs/decisions/ADR-010-success-metric.md))
-- Chat (Claude + MCP) is the interface ([ADR-011](docs/decisions/ADR-011-chat-as-interface.md))
-- Git issues as agent communication ([ADR-012](docs/decisions/ADR-012-git-issues-protocol.md))
-- Git forge abstracted behind interface ([ADR-013](docs/decisions/ADR-013-forge-abstraction.md))
-- Dedicated dispatcher agent for routing ([ADR-014](docs/decisions/ADR-014-dispatcher-agent.md))
-- Three-tier autonomy model ([ADR-015](docs/decisions/ADR-015-three-tier-autonomy.md))
-- User profile as first-class concept ([ADR-016](docs/decisions/ADR-016-user-profile.md))
-- Devkit as reference implementation ([ADR-017](docs/decisions/ADR-017-devkit-reference.md))
-- Three-phase release: alpha, beta, v1.0 ([ADR-018](docs/decisions/ADR-018-release-versioning.md))
-- Self-hosted-first development ([ADR-019](docs/decisions/ADR-019-self-hosted-first.md))
-- Web dashboard for operations ([ADR-020](docs/decisions/ADR-020-web-dashboard.md))
-- Intent verification protocol ([ADR-021](docs/decisions/ADR-021-intent-verification.md))
-- Full project lifecycle -- idea to delivery ([ADR-022](docs/decisions/ADR-022-full-project-lifecycle.md))
-- Per-project repos with coordination layer ([ADR-023](docs/decisions/ADR-023-per-project-repos.md))
-- Failure recovery strategy ([ADR-027](docs/decisions/ADR-027-failure-recovery.md))
-- Cross-model QA validation ([ADR-030](docs/decisions/ADR-030-cross-model-qa.md))
-- Dual-forge operational model ([ADR-031](docs/decisions/ADR-031-dual-forge-operational-model.md))
-- Adaptive worker scaling ([ADR-032](docs/decisions/ADR-032-adaptive-worker-scaling.md))
-- Multi-machine free agent runtime ([ADR-033](docs/decisions/ADR-033-multi-machine-free-agent-runtime.md))
-- Solo developer agent model ([ADR-035](docs/decisions/ADR-035-solo-developer-agent-model.md))
-- Unified execution plan -- Q2 2026 ([docs/unified-execution-plan.md](docs/unified-execution-plan.md))
+## Context
 
-## Infrastructure
+internal/api/pipeline.go classifyStage() uses hardcoded strings like "queued", "claimed", "in-progress", etc. These should be constants for type safety and to prepare for the planning system adding new stages.
 
-- **Proxmox host:** `root@192.168.1.203` (SSH key auth configured)
-- **Samverk container:** CT 202 `root@192.168.1.162:8080` (SSH key auth)
-- **Staging container:** CT 203 `root@192.168.1.199:8080` (STOPPED -- decommissioned 2026-03-17, spin up if needed)
-- **Gitea instance:** CT 200 `192.168.1.160:3000` (`gitea.herbhall.net`) -- 40GB disk
-- **Ollama VM 300:** `192.168.1.207:11434` (RTX 3090 Ti, qwen2.5-coder:14b)
-- **Ollama HDH-NZXT:** `192.168.1.202:11434` (RTX 5090, qwen3-coder:30b)
-- **Ollama CM-ASUS:** `100.88.37.47:11434` via Tailscale (RTX 2080 Ti, qwen2.5-coder:7b)
-- **Health check:** `curl http://192.168.1.162:8080/healthz`
-- **Deploy:** `make redeploy` -- cross-compiles, deploys, restarts, verifies health
-- **Model check:** `bash scripts/deploy-models.sh --check` (run from CT 202)
-- Claude Code has SSH access to all hosts
+## Required Changes
 
-## References
+1. Add stage name constants to internal/store/pipeline.go
+2. Replace all hardcoded strings in internal/api/pipeline.go with the new constants
+3. Ensure existing tests still pass (no behavior change)
 
-- [Architecture](docs/architecture.md)
-- [Tech Stack](docs/tech-stack.md)
-- [Communication Protocol](docs/communication-protocol.md)
-- [Concept](docs/concept.md)
-- [Competitive Landscape](docs/competitive.md)
-- [Cost Model](docs/cost-model.md)
-- [MCP Server](docs/mcp-server.md)
-- [User Interface](docs/user-interface.md)
-- [Open Questions](docs/open-questions.md)
-- [Naming](docs/naming.md)
-- [Autonomy Model](docs/autonomy-model.md)
-- [User Profile](docs/user-profile.md)
-- [Intent Verification Protocol](docs/intent-verification.md)
-- [Project Lifecycle](docs/project-lifecycle.md)
-- [Multi-Session Safety](docs/multi-session-safety.md)
-- [Decision Records](docs/decisions/)
-- [Samverk Overlay Spec](overlay/README.md)
-- [DevKit Boundary Contract](https://github.com/HerbHall/devkit/blob/main/docs/samverk-boundary.md)
-- [Unified Execution Plan](docs/unified-execution-plan.md)
-- [Gitea Migration Plan](docs/gitea-migration-plan.md)
-- [Adaptive Scaling Plan](docs/adaptive-scaling-plan.md)
+## Acceptance Criteria
+
+- [ ] All pipeline stage strings are constants
+- [ ] No hardcoded stage strings remain in pipeline.go
+- [ ] All existing tests pass unchanged
+- [ ] make ci passes
+
