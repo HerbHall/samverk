@@ -99,9 +99,10 @@ func classifyByHeuristic(issue *forge.Issue) models.AgentType {
 // that should be used for provider selection, along with a human-readable reason.
 //
 // Priority (highest first):
+//  0. agent-type overrides — docs/test agents have fixed chains regardless of title
 //  1. complex  — critical priority, high complexity, or architectural title keywords
 //  2. local    — boilerplate/scaffold labels, or "chore:" title prefix
-//  3. triage   — low priority label, docs agent type, or short body (< 200 words)
+//  3. triage   — low priority label or short prose body (< 200 words, excluding frontmatter)
 //  4. default  — everything else
 func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, reason string) {
 	labels := make(map[string]bool, len(issue.Labels))
@@ -109,6 +110,16 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 		labels[l] = true
 	}
 	lower := strings.ToLower(issue.Title)
+
+	// Agent-type overrides: docs and test agents have fixed chains regardless
+	// of title keywords. This prevents a docs issue with "architecture" in the
+	// title from being routed to the expensive complex chain (#263).
+	if agentType == models.AgentTypeDocs {
+		return "triage", "agent type docs"
+	}
+	if agentType == models.AgentTypeTest {
+		return "default", "agent type test"
+	}
 
 	// Complex: critical priority, high complexity, or architectural title keywords.
 	if labels["priority:critical"] {
@@ -140,18 +151,37 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 		return "qc", "agent type qc (cross-model validation)"
 	}
 
-	// Triage: low priority, docs agent, or short issue body.
+	// Triage: low priority or short prose body (excluding YAML frontmatter).
 	if labels["priority:low"] {
 		return "triage", "label priority:low"
 	}
-	if agentType == models.AgentTypeDocs {
-		return "triage", "agent type docs"
-	}
-	if wordCount := len(strings.Fields(issue.Body)); wordCount < 200 {
+	proseBody := stripFrontmatter(issue.Body)
+	if wordCount := len(strings.Fields(proseBody)); wordCount < 200 {
 		return "triage", fmt.Sprintf("short issue body (%d words)", wordCount)
 	}
 
 	return "default", "default routing"
+}
+
+// stripFrontmatter removes YAML frontmatter (between --- markers) from the
+// issue body so word counts reflect actual prose content, not metadata (#264).
+func stripFrontmatter(body string) string {
+	const marker = "---"
+	start := strings.Index(body, marker)
+	if start == -1 {
+		return body
+	}
+	// Only strip if the marker is at the start of the body (possibly after whitespace).
+	prefix := strings.TrimSpace(body[:start])
+	if prefix != "" {
+		return body
+	}
+	end := strings.Index(body[start+len(marker):], marker)
+	if end == -1 {
+		return body
+	}
+	// Return everything after the closing --- marker.
+	return body[start+len(marker)+end+len(marker):]
 }
 
 // route assigns the issue to the agent pool matching agentType.

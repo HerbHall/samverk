@@ -689,7 +689,9 @@ func (r *Runner) commitWorkspaceChanges(ctx context.Context, task Task, workDir 
 }
 
 // filePathRe matches file paths in issue bodies that look like project source files.
-var filePathRe = regexp.MustCompile(`(?:^|\s)((?:internal|cmd|pkg|docs)/[\w/.\-]+\.\w+)`)
+// It handles paths in prose (preceded by whitespace) and in YAML frontmatter lists
+// (preceded by "- "). Recognized directory prefixes cover all standard project paths.
+var filePathRe = regexp.MustCompile(`(?:^|[\s\-])((?:internal|cmd|pkg|docs|scripts|web|overlay|\.samverk|\.github|\.gitea)/[\w/.\-]+\.\w+)`)
 
 // extractFileContext scans the issue body for file paths matching project
 // source directories and returns a map of path to content. When a workspace
