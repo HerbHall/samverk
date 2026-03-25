@@ -324,6 +324,96 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 }
 
+func TestConfigFromEnv_AuthToken(t *testing.T) {
+	t.Setenv("SYNAPSET_AUTH_TOKEN", "test-secret-token")
+	cfg := ConfigFromEnv(Config{})
+	if cfg.AuthToken != "test-secret-token" {
+		t.Errorf("AuthToken = %q, want test-secret-token", cfg.AuthToken)
+	}
+
+	// Explicit default should be overridden by env.
+	cfg = ConfigFromEnv(Config{AuthToken: "default-token"})
+	if cfg.AuthToken != "test-secret-token" {
+		t.Errorf("AuthToken = %q, want test-secret-token (env override)", cfg.AuthToken)
+	}
+}
+
+func TestAuthTokenSentInRequests(t *testing.T) {
+	var receivedAuth atomic.Value
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth.Store(r.Header.Get("Authorization"))
+
+		var req jsonRPCRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "auth-test-session")
+			resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{}`)}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{"tools":[]}`)}
+			_ = json.NewEncoder(w).Encode(resp)
+		default:
+			resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)}
+			_ = json.NewEncoder(w).Encode(resp)
+		}
+	}))
+	defer ts.Close()
+
+	client := New(Config{URL: ts.URL, Pool: "test", AuthToken: "my-secret"}, zap.NewNop())
+	_, _ = client.SearchMemory(context.Background(), "test-pool", "test", 5)
+
+	auth, _ := receivedAuth.Load().(string)
+	if auth != "Bearer my-secret" {
+		t.Errorf("Authorization header = %q, want 'Bearer my-secret'", auth)
+	}
+}
+
+func TestNoAuthTokenWhenEmpty(t *testing.T) {
+	var receivedAuth atomic.Value
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth.Store(r.Header.Get("Authorization"))
+
+		var req jsonRPCRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "noauth-test-session")
+			resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{}`)}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{"tools":[]}`)}
+			_ = json.NewEncoder(w).Encode(resp)
+		default:
+			resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)}
+			_ = json.NewEncoder(w).Encode(resp)
+		}
+	}))
+	defer ts.Close()
+
+	client := New(Config{URL: ts.URL, Pool: "test"}, zap.NewNop())
+	_, _ = client.SearchMemory(context.Background(), "test-pool", "test", 5)
+
+	auth, _ := receivedAuth.Load().(string)
+	if auth != "" {
+		t.Errorf("Authorization header = %q, want empty (no auth)", auth)
+	}
+}
+
 func TestParseMemoriesWrapper(t *testing.T) {
 	// Test the wrapper format: {"memories": [...]}
 	text := `{"memories":[{"id":"1","content":"wrapped memory","category":"pattern"}]}`

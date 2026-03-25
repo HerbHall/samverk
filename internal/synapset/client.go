@@ -52,8 +52,9 @@ type Memory struct {
 
 // Config holds Synapset client configuration.
 type Config struct {
-	URL  string // MCP endpoint URL
-	Pool string // default pool for agent memories
+	URL       string // MCP endpoint URL
+	Pool      string // default pool for agent memories
+	AuthToken string // Bearer token for authenticated endpoints; empty = no auth
 }
 
 // ConfigFromEnv builds a Config from environment variables, falling back
@@ -71,6 +72,9 @@ func ConfigFromEnv(defaults Config) Config {
 	if defaults.Pool == "" {
 		defaults.Pool = DefaultPool
 	}
+	if env := os.Getenv("SYNAPSET_AUTH_TOKEN"); env != "" {
+		defaults.AuthToken = env
+	}
 	return defaults
 }
 
@@ -78,6 +82,7 @@ func ConfigFromEnv(defaults Config) Config {
 type Client struct {
 	baseURL    string
 	pool       string
+	authToken  string // Bearer token; empty = no auth header
 	httpClient *http.Client
 	logger     *zap.Logger
 
@@ -98,8 +103,9 @@ func New(cfg Config, logger *zap.Logger) *Client {
 		cfg.Pool = DefaultPool
 	}
 	return &Client{
-		baseURL: cfg.URL,
-		pool:    cfg.Pool,
+		baseURL:   cfg.URL,
+		pool:      cfg.Pool,
+		authToken: cfg.AuthToken,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -285,6 +291,9 @@ func (c *Client) doRequestWithSession(ctx context.Context, rpcReq jsonRPCRequest
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
+	if c.authToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
 	if session != "" {
 		httpReq.Header.Set("Mcp-Session-Id", session)
 	}
