@@ -52,10 +52,43 @@ function Get-AuthHeaders {
 
 function Get-AgentID {
     # Use the machine hostname as a stable, human-readable agent identifier.
-    return $env:COMPUTERNAME.ToLower()
+    # $env:COMPUTERNAME is not set on Linux; fall back to the hostname command.
+    $name = $env:COMPUTERNAME
+    if (-not $name) {
+        $name = (hostname).Trim()
+    }
+    return $name.ToLower()
 }
 
 function Get-CPUPercent {
+    if ($IsLinux) {
+        try {
+            # Read /proc/stat twice with a 1-second interval to compute CPU%.
+            $line1 = (Get-Content -Path '/proc/stat' -TotalCount 1) -split '\s+'
+            Start-Sleep -Seconds 1
+            $line2 = (Get-Content -Path '/proc/stat' -TotalCount 1) -split '\s+'
+
+            # Fields: cpu user nice system idle iowait irq softirq steal
+            $idle1  = [long]$line1[4] + [long]$line1[5]  # idle + iowait
+            $idle2  = [long]$line2[4] + [long]$line2[5]
+            $total1 = [long]0
+            $total2 = [long]0
+            for ($i = 1; $i -le 8; $i++) {
+                $total1 += [long]$line1[$i]
+                $total2 += [long]$line2[$i]
+            }
+
+            $deltaTotal = $total2 - $total1
+            $deltaIdle  = $idle2 - $idle1
+            if ($deltaTotal -gt 0) {
+                return [Math]::Round((1.0 - ($deltaIdle / $deltaTotal)) * 100.0, 1)
+            }
+        } catch {
+            # Non-fatal -- fall through to return 0.
+        }
+        return 0.0
+    }
+
     try {
         $sample = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
             Measure-Object -Property LoadPercentage -Average
@@ -69,6 +102,29 @@ function Get-CPUPercent {
 }
 
 function Get-MemoryPercent {
+    if ($IsLinux) {
+        try {
+            $meminfo = Get-Content -Path '/proc/meminfo' -TotalCount 8
+            $total     = 0
+            $available = 0
+            foreach ($line in $meminfo) {
+                if ($line -match '^MemTotal:\s+(\d+)') {
+                    $total = [long]$Matches[1]
+                }
+                if ($line -match '^MemAvailable:\s+(\d+)') {
+                    $available = [long]$Matches[1]
+                }
+            }
+            if ($total -gt 0) {
+                $used = $total - $available
+                return [Math]::Round(($used / $total) * 100.0, 1)
+            }
+        } catch {
+            # Non-fatal -- fall through to return 0.
+        }
+        return 0.0
+    }
+
     try {
         $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
         if ($os -and $os.TotalVisibleMemorySize -gt 0) {
@@ -138,16 +194,18 @@ function Register-PCAgent {
         [string]$WorkspaceRoot = 'D:\bots'
     )
 
+    $agentID = Get-AgentID
+
     $body = @{
-        agent_id       = Get-AgentID
-        hostname       = $env:COMPUTERNAME
+        agent_id       = $agentID
+        hostname       = $agentID
         capabilities   = $Capabilities
         max_concurrent = $MaxConcurrent
         workspace_root = $WorkspaceRoot
     }
 
     $status = Invoke-RegistrationRequest -Path '/api/v1/workers/register' -Body $body
-    Write-Host "[registration] Registered with Samverk server (HTTP $status). agent_id=$(Get-AgentID)"
+    Write-Host "[registration] Registered with Samverk server (HTTP $status). agent_id=$agentID"
 }
 
 function Send-Heartbeat {
@@ -224,12 +282,36 @@ function Start-HeartbeatLoop {
     $serverURL     = Get-ServerURL
     $authToken     = $env:SAMVERK_AUTH_TOKEN
     $agentID       = Get-AgentID
-    $hostname      = $env:COMPUTERNAME
+    $isLinuxHost   = [bool]$IsLinux
 
     $script:HeartbeatJob = Start-ThreadJob -ScriptBlock {
-        param($interval, $wsRoot, $serverURL, $authToken, $agentID, $hostname)
+        param($interval, $wsRoot, $serverURL, $authToken, $agentID, $isLinuxHost)
 
         function hb-cpu {
+            if ($isLinuxHost) {
+                try {
+                    $line1 = (Get-Content -Path '/proc/stat' -TotalCount 1) -split '\s+'
+                    Start-Sleep -Seconds 1
+                    $line2 = (Get-Content -Path '/proc/stat' -TotalCount 1) -split '\s+'
+
+                    $idle1  = [long]$line1[4] + [long]$line1[5]
+                    $idle2  = [long]$line2[4] + [long]$line2[5]
+                    $total1 = [long]0
+                    $total2 = [long]0
+                    for ($i = 1; $i -le 8; $i++) {
+                        $total1 += [long]$line1[$i]
+                        $total2 += [long]$line2[$i]
+                    }
+
+                    $deltaTotal = $total2 - $total1
+                    $deltaIdle  = $idle2 - $idle1
+                    if ($deltaTotal -gt 0) {
+                        return [Math]::Round((1.0 - ($deltaIdle / $deltaTotal)) * 100.0, 1)
+                    }
+                } catch {}
+                return 0.0
+            }
+
             try {
                 $s = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
                     Measure-Object -Property LoadPercentage -Average
@@ -239,6 +321,27 @@ function Start-HeartbeatLoop {
         }
 
         function hb-mem {
+            if ($isLinuxHost) {
+                try {
+                    $meminfo = Get-Content -Path '/proc/meminfo' -TotalCount 8
+                    $total     = 0
+                    $available = 0
+                    foreach ($line in $meminfo) {
+                        if ($line -match '^MemTotal:\s+(\d+)') {
+                            $total = [long]$Matches[1]
+                        }
+                        if ($line -match '^MemAvailable:\s+(\d+)') {
+                            $available = [long]$Matches[1]
+                        }
+                    }
+                    if ($total -gt 0) {
+                        $used = $total - $available
+                        return [Math]::Round(($used / $total) * 100.0, 1)
+                    }
+                } catch {}
+                return 0.0
+            }
+
             try {
                 $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
                 if ($os -and $os.TotalVisibleMemorySize -gt 0) {
@@ -292,7 +395,7 @@ function Start-HeartbeatLoop {
                 hb-send -status 'idle' -currentTask $null
             }
         }
-    } -ArgumentList $interval, $wsRoot, $serverURL, $authToken, $agentID, $hostname
+    } -ArgumentList $interval, $wsRoot, $serverURL, $authToken, $agentID, $isLinuxHost
 
     Write-Host "[registration] Heartbeat loop started (interval=${interval}s)."
 }
