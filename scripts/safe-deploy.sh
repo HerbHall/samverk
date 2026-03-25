@@ -90,6 +90,40 @@ scp deploy/samverk-serve.service deploy/samverk-dispatch.service "root@${HOST}:/
 scp deploy/install.sh "root@${HOST}:/tmp/install.sh"
 ssh "root@${HOST}" 'sed -i "s/\r$//" /tmp/install.sh && bash /tmp/install.sh'
 
+# Step 4b: Sync samverk config files and restart dispatcher if changed.
+CONFIG_DIR="/var/lib/samverk/.samverk"
+CONFIG_CHANGED=0
+
+sync_config() {
+    local src="$1"
+    local filename
+    filename=$(basename "$src")
+    local dest="${CONFIG_DIR}/${filename}"
+
+    if [ ! -f "$src" ]; then
+        echo "    Skipping ${filename} (not found in repo)"
+        return
+    fi
+
+    local remote_hash
+    remote_hash=$(ssh "root@${HOST}" "md5sum '${dest}' 2>/dev/null | cut -d' ' -f1" || echo "")
+    local local_hash
+    local_hash=$(md5sum "$src" | cut -d' ' -f1)
+
+    if [ "$local_hash" = "$remote_hash" ]; then
+        echo "    ${filename}: unchanged"
+    else
+        ssh "root@${HOST}" "mkdir -p '${CONFIG_DIR}'"
+        scp "$src" "root@${HOST}:${dest}"
+        echo "    ${filename}: updated"
+        CONFIG_CHANGED=1
+    fi
+}
+
+echo "--- Syncing config files..."
+sync_config ".samverk/providers.yaml"
+sync_config ".samverk/project.yaml"
+
 # Step 5: Start services.
 echo "--- Starting services..."
 ssh "root@${HOST}" 'systemctl start samverk-serve samverk-dispatch'
@@ -103,4 +137,10 @@ else
     echo "=== WARNING: Health check failed! ==="
     echo "Check logs: ssh root@${HOST} journalctl -u samverk-serve -n 20"
     exit 1
+fi
+
+if [ "$CONFIG_CHANGED" -eq 1 ]; then
+    echo "--- Config changed: restarting dispatcher..."
+    ssh "root@${HOST}" 'systemctl restart samverk-dispatch'
+    echo "    Dispatcher restarted."
 fi
