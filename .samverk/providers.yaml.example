@@ -38,6 +38,7 @@ providers:
 routing:
   triage:   [claude-haiku, claude-sonnet]
   default:  [claude-sonnet]
+  code-gen: [claude-sonnet, claude-haiku]    # CLI-capable only (produces file changes)
   complex:  [claude-opus, claude-sonnet]
   local:    [ollama-coder, claude-sonnet]
   frontend: [claude-sonnet]

@@ -104,9 +104,9 @@ func TestSelectProviderKey(t *testing.T) {
 
 		// --- triage tier ---
 		{
-			name:      "label priority:low → triage",
+			name:      "label priority:low → triage (research agent)",
 			issue:     &forge.Issue{Title: "fix: minor thing", Body: longBody, Labels: []string{"priority:low"}},
-			agentType: models.AgentTypeCodeGen,
+			agentType: models.AgentTypeResearch,
 			wantKey:   "triage",
 			wantReason: "priority:low",
 		},
@@ -118,9 +118,9 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "agent type docs",
 		},
 		{
-			name:      "short body < 200 words → triage",
+			name:      "short body < 200 words → triage (research agent)",
 			issue:     &forge.Issue{Title: "fix: something", Body: "short body"},
-			agentType: models.AgentTypeCodeGen,
+			agentType: models.AgentTypeResearch,
 			wantKey:   "triage",
 			wantReason: "short issue body",
 		},
@@ -148,11 +148,11 @@ func TestSelectProviderKey(t *testing.T) {
 
 		// --- default tier ---
 		{
-			name:      "no signals → default",
+			name:      "code-gen with no signals → code-gen chain (#269)",
 			issue:     &forge.Issue{Title: "feat: add feature", Body: longBody},
 			agentType: models.AgentTypeCodeGen,
-			wantKey:   "default",
-			wantReason: "default routing",
+			wantKey:   "code-gen",
+			wantReason: "agent type code-gen (requires CLI provider)",
 		},
 		{
 			name:      "research agent with long body → default",
@@ -211,24 +211,25 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "chore:",
 		},
 		{
-			// 200-word boundary: exactly 200 words is NOT short
-			name: "body with exactly 200 words → default (not triage)",
+			// 200-word boundary: exactly 200 words is NOT short.
+			// Code-gen agent routes to code-gen chain regardless of body length.
+			name: "code-gen with 200-word body → code-gen chain (#269)",
 			issue: &forge.Issue{
 				Title: "feat: something",
 				Body:  strings.Repeat("word ", 200),
 			},
 			agentType: models.AgentTypeCodeGen,
-			wantKey:   "default",
-			wantReason: "default routing",
+			wantKey:   "code-gen",
+			wantReason: "agent type code-gen (requires CLI provider)",
 		},
 		{
-			// 199 words IS short
-			name: "body with 199 words → triage",
+			// 199 words IS short (research agent falls through to triage)
+			name: "body with 199 words → triage (research agent)",
 			issue: &forge.Issue{
 				Title: "feat: something",
 				Body:  strings.Repeat("word ", 199),
 			},
-			agentType: models.AgentTypeCodeGen,
+			agentType: models.AgentTypeResearch,
 			wantKey:   "triage",
 			wantReason: "short issue body",
 		},
@@ -245,26 +246,26 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "agent type docs",
 		},
 		{
-			name: "test agent → default (#263)",
+			name: "test agent → code-gen chain (CLI-capable, #269)",
 			issue: &forge.Issue{
 				Title: "test: add forge interface tests",
 				Body:  longBody,
 			},
 			agentType: models.AgentTypeTest,
-			wantKey:   "default",
-			wantReason: "agent type test",
+			wantKey:   "code-gen",
+			wantReason: "agent type test (requires CLI provider)",
 		},
 
 		// --- frontmatter word count tests (#264) ---
 		{
-			name: "short prose but rich frontmatter → default not triage (#264)",
+			name: "code-gen with rich frontmatter → code-gen chain not triage (#264, #269)",
 			issue: &forge.Issue{
 				Title: "feat: add worker status",
 				Body: "---\nschema_version: \"1.1.0\"\ntype: task\nagent_type: code-gen\npriority: high\nestimated_tokens: 12000\nhandoff_ready: true\nfile_context:\n  - internal/api/api.go\n  - internal/api/workers.go\nconstraints:\n  - do not modify existing endpoints\n  - run make ci before finishing\n---\n\n## Summary\n\n" + strings.Repeat("word ", 200),
 			},
 			agentType: models.AgentTypeCodeGen,
-			wantKey:   "default",
-			wantReason: "default routing",
+			wantKey:   "code-gen",
+			wantReason: "agent type code-gen (requires CLI provider)",
 		},
 	}
 

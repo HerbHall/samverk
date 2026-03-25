@@ -111,14 +111,11 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 	}
 	lower := strings.ToLower(issue.Title)
 
-	// Agent-type overrides: docs and test agents have fixed chains regardless
-	// of title keywords. This prevents a docs issue with "architecture" in the
-	// title from being routed to the expensive complex chain (#263).
+	// Agent-type overrides: docs agents have a fixed chain regardless of title
+	// keywords. This prevents docs issues with "architecture" in the title
+	// from being routed to the expensive complex chain (#263).
 	if agentType == models.AgentTypeDocs {
 		return "triage", "agent type docs"
-	}
-	if agentType == models.AgentTypeTest {
-		return "default", "agent type test"
 	}
 
 	// Complex: critical priority, high complexity, or architectural title keywords.
@@ -149,6 +146,18 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 	// Checked after complex/local so critical QC issues still get the complex chain.
 	if agentType == models.AgentTypeQC {
 		return "qc", "agent type qc (cross-model validation)"
+	}
+
+	// Code-gen and test agents require CLI-capable providers that can produce
+	// file changes (EDIT blocks or worktree commits). Ollama providers return
+	// prose only, wasting sessions (#269, #270). Route to "code-gen" chain
+	// which contains only CLI providers.
+	//
+	// Placed after complex/local so critical/high-complexity code-gen issues
+	// still get the complex chain (which is already CLI-only). But before
+	// triage/default to prevent code-gen from falling into Ollama-first chains.
+	if agentType == models.AgentTypeCodeGen || agentType == models.AgentTypeTest {
+		return "code-gen", "agent type " + string(agentType) + " (requires CLI provider)"
 	}
 
 	// Triage: low priority or short prose body (excluding YAML frontmatter).

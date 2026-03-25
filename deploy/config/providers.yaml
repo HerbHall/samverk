@@ -60,6 +60,7 @@ providers:
 routing:
   triage:   [ollama-cmasus, ollama-vm300, claude-haiku]
   default:  [ollama-nzxt, claude-sonnet]
+  code-gen: [claude-sonnet, claude-haiku]
   complex:  [claude-opus, claude-sonnet]
   local:    [ollama-nzxt, ollama-vm300, ollama-cmasus, claude-sonnet]
   frontend:  [claude-sonnet]
