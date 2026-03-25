@@ -33,7 +33,7 @@ jobs:
           restore-keys: ${{ gitea.runner.os }}-go-lint-
 
       - name: golangci-lint
-        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6 run ./...
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1 run ./...
 
   build:
     name: Build
@@ -51,7 +51,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - uses: actions/cache@v4
         with:
@@ -92,7 +92,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Build SPA
         working-directory: web

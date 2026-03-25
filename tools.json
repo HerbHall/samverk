@@ -1,0 +1,12 @@
+{
+  "description": "Pinned tool versions -- single source of truth for CI, local dev, and deploy.",
+  "tools": {
+    "go": "1.26.1",
+    "node": "22",
+    "pnpm": "10",
+    "golangci-lint": "v2.10.1",
+    "govulncheck": "v1.1.4",
+    "markdownlint-cli2": "0.22.0",
+    "swag": "v1.16.4"
+  }
+}

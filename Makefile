@@ -1,8 +1,13 @@
 .PHONY: build test test-race test-coverage test-integration test-all lint lint-md lint-all ci hooks run clean web dev-web \
-       cross-build cross-build-full deploy deploy-force deploy-staging redeploy ssh ssh-staging
+       cross-build cross-build-full deploy deploy-force deploy-staging redeploy ssh ssh-staging version-check
 
 # Binary
 BIN=samverk
+
+# Tool versions from tools.json (single source of truth)
+GOLANGCI_LINT_VERSION ?= $(shell grep '"golangci-lint"' tools.json 2>/dev/null | sed 's/.*: *"\(.*\)".*/\1/' || echo "v2.10.1")
+GOVULNCHECK_VERSION   ?= $(shell grep '"govulncheck"' tools.json 2>/dev/null | sed 's/.*: *"\(.*\)".*/\1/' || echo "latest")
+SWAG_VERSION          ?= $(shell grep '"swag"' tools.json 2>/dev/null | sed 's/.*: *"\(.*\)".*/\1/' || echo "v1.16.4")
 
 # Version injection
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -41,7 +46,7 @@ test-integration:
 test-all: test test-integration
 
 lint:
-	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1 run ./...
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
 
 lint-md:
 	npx markdownlint-cli2 "**/*.md" "#node_modules" "#web/node_modules" "#CHANGELOG.md" "#.samverk"
@@ -109,3 +114,21 @@ ssh-staging:
 clean:
 	rm -rf bin/ coverage.out
 	go clean
+
+# Check local tool versions against tools.json (advisory, does not fail)
+version-check:
+	@echo "=== Tool Version Check (tools.json) ==="
+	@EXPECTED_GO=$$(cat .go-version 2>/dev/null || echo "?"); \
+	ACTUAL_GO=$$(go version 2>/dev/null | sed 's/.*go\([0-9.]*\).*/\1/' || echo "not found"); \
+	if [ "$$EXPECTED_GO" = "$$ACTUAL_GO" ]; then echo "  Go:             $$ACTUAL_GO (ok)"; \
+	else echo "  Go:             $$ACTUAL_GO (expected $$EXPECTED_GO)"; fi
+	@EXPECTED_NODE=$$(cat .nvmrc 2>/dev/null || echo "?"); \
+	ACTUAL_NODE=$$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || echo "not found"); \
+	if [ "$$EXPECTED_NODE" = "$$ACTUAL_NODE" ]; then echo "  Node:           $$ACTUAL_NODE (ok)"; \
+	else echo "  Node:           $$ACTUAL_NODE (expected $$EXPECTED_NODE)"; fi
+	@ACTUAL_PNPM=$$(pnpm --version 2>/dev/null | sed 's/\([0-9]*\).*/\1/' || echo "not found"); \
+	echo "  pnpm:           $$ACTUAL_PNPM (major)"
+	@echo "  golangci-lint:  $(GOLANGCI_LINT_VERSION)"
+	@echo "  govulncheck:    $(GOVULNCHECK_VERSION)"
+	@echo "  swag:           $(SWAG_VERSION)"
+	@echo "=== Done ==="

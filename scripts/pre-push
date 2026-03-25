@@ -5,6 +5,9 @@ set -euo pipefail
 
 echo "==> pre-push: running CI checks..."
 
+# Read tool versions from tools.json (single source of truth)
+GOLANGCI_VERSION=$(grep '"golangci-lint"' tools.json 2>/dev/null | sed 's/.*: *"\(.*\)".*/\1/' || echo "v2.10.1")
+
 echo "--- go build"
 go build ./...
 
@@ -12,7 +15,7 @@ echo "--- go test"
 go test ./...
 
 echo "--- golangci-lint"
-go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1 run ./...
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_VERSION} run ./...
 
 echo "--- markdownlint"
 npx --yes markdownlint-cli2 "**/*.md" "#node_modules" "#web/node_modules" "#CHANGELOG.md" "#.samverk" "#.claude" "#**/.claude"
