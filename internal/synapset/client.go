@@ -69,9 +69,38 @@ type Memory struct {
 	ID         FlexID   `json:"id"`
 	Content    string   `json:"content"`
 	Category   string   `json:"category"`
-	Tags       []string `json:"tags"`
+	Tags       FlexTags `json:"tags"`
 	Source     string   `json:"source"`
 	Similarity float64  `json:"similarity"`
+}
+
+// FlexTags handles Synapset's tags field which may be a JSON array of strings
+// or a single comma-separated string (e.g., "go,pattern,lint").
+type FlexTags []string
+
+// UnmarshalJSON implements json.Unmarshaler for FlexTags.
+func (ft *FlexTags) UnmarshalJSON(data []byte) error {
+	// Try array first.
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*ft = arr
+		return nil
+	}
+	// Fall back to comma-separated string.
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	if s == "" {
+		*ft = nil
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	*ft = parts
+	return nil
 }
 
 // Config holds Synapset client configuration.

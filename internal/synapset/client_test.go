@@ -343,6 +343,53 @@ func TestConfigFromEnv_AuthToken(t *testing.T) {
 	}
 }
 
+func TestFlexTags_UnmarshalJSON(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  FlexTags
+	}{
+		{"array of strings", `["go","lint","pattern"]`, FlexTags{"go", "lint", "pattern"}},
+		{"comma-separated string", `"go,lint,pattern"`, FlexTags{"go", "lint", "pattern"}},
+		{"comma-separated with spaces", `"go, lint, pattern"`, FlexTags{"go", "lint", "pattern"}},
+		{"single tag string", `"go"`, FlexTags{"go"}},
+		{"empty string", `""`, nil},
+		{"empty array", `[]`, FlexTags{}},
+		{"null", `null`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var got FlexTags
+			if err := json.Unmarshal([]byte(tt.input), &got); err != nil {
+				t.Fatalf("UnmarshalJSON(%s) error: %v", tt.input, err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("len = %d, want %d (got %v)", len(got), len(tt.want), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestFlexTags_InMemoryStruct(t *testing.T) {
+	t.Parallel()
+	// Simulates the actual Synapset response that was failing: tags as comma string.
+	raw := `{"id":788,"content":"test","category":"pattern","tags":"go,lint","source":"samverk","similarity":0.95}`
+	var m Memory
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("Unmarshal Memory with string tags: %v", err)
+	}
+	if len(m.Tags) != 2 || m.Tags[0] != "go" || m.Tags[1] != "lint" {
+		t.Errorf("Tags = %v, want [go lint]", m.Tags)
+	}
+}
+
 func TestAuthTokenSentInRequests(t *testing.T) {
 	var receivedAuth atomic.Value
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
