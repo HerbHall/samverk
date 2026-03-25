@@ -221,6 +221,58 @@ func TestCommitAndPush(t *testing.T) {
 	}
 }
 
+func TestCommitAndPush_RestoresCLAUDEMD(t *testing.T) {
+	repoDir := setupTestRepoWithRemote(t)
+
+	// Seed a CLAUDE.md in the repo so the worktree inherits it.
+	originalContent := "# My Project\n\nBuild with `make build`.\n"
+	if err := os.WriteFile(filepath.Join(repoDir, "CLAUDE.md"), []byte(originalContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, repoDir, "add", "CLAUDE.md")
+	mustGit(t, repoDir, "commit", "-m", "add CLAUDE.md")
+
+	wsPath, cleanup, err := CreateWorkspace(repoDir, "restore-test", 99, zap.NewNop())
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+	defer cleanup()
+
+	// Simulate what the runner does: overwrite CLAUDE.md with task prompt.
+	agentPrompt := "# Agent Task\n\nDo something.\n"
+	if err := os.WriteFile(filepath.Join(wsPath, "CLAUDE.md"), []byte(agentPrompt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Also add a real change so the commit isn't empty.
+	if err := os.WriteFile(filepath.Join(wsPath, "feature.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := CommitAndPush(wsPath, "agent: resolve issue #99")
+	if err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true")
+	}
+
+	// Verify CLAUDE.md in the commit matches the original, not the agent prompt.
+	committed := mustGit(t, wsPath, "show", "HEAD:CLAUDE.md")
+	if committed != originalContent {
+		t.Errorf("CLAUDE.md was not restored.\ngot:  %q\nwant: %q", committed, originalContent)
+	}
+
+	// Verify the real change IS in the commit.
+	files := mustGit(t, wsPath, "diff", "--name-only", "HEAD~1")
+	if !strings.Contains(files, "feature.go") {
+		t.Errorf("feature.go should be in the commit, got: %q", files)
+	}
+	if strings.Contains(files, "CLAUDE.md") {
+		t.Error("CLAUDE.md should NOT be in the commit diff (it was restored)")
+	}
+}
+
 func TestPruneStaleWorktrees(t *testing.T) {
 	// Create a fake stale worktree directory.
 	staleDir := filepath.Join(os.TempDir(), worktreePrefix+"stale-test-prune")

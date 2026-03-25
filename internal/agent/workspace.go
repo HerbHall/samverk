@@ -140,6 +140,13 @@ func PruneStaleWorktrees(logger *zap.Logger) {
 // given message, and pushes to origin. Returns true if changes were committed,
 // false if the workspace was clean.
 func CommitAndPush(workDir, commitMsg string) (changed bool, err error) {
+	// Restore files injected by the runner (CLAUDE.md, MCP config) before
+	// staging. Without this, the agent's commit includes the runner-generated
+	// CLAUDE.md which replaces the project's real CLAUDE.md with task
+	// instructions -- a corruption that triggers "bad output" validation
+	// failures and wastes retry cycles.
+	restoreInjectedFiles(workDir)
+
 	out, err := gitExec(workDir, "status", "--porcelain")
 	if err != nil {
 		return false, fmt.Errorf("git status: %w", err)
@@ -161,6 +168,22 @@ func CommitAndPush(workDir, commitMsg string) (changed bool, err error) {
 	}
 
 	return true, nil
+}
+
+// restoreInjectedFiles reverts files that the runner wrote into the worktree
+// before the agent ran. These are scaffolding files (CLAUDE.md, MCP config)
+// that should not appear in the agent's commit. We use `git checkout` to
+// restore the original content from the branch's base commit.
+func restoreInjectedFiles(workDir string) {
+	// CLAUDE.md is overwritten by GenerateAgentCLAUDEMD in runner.go.
+	// .claude/ directory is written by WriteMCPConfig.
+	for _, path := range []string{"CLAUDE.md", ".claude"} {
+		// git checkout -- <path> restores from HEAD (the worktree base).
+		// Errors are ignored: the file may not have existed originally
+		// (e.g., .claude/ in repos without Claude config), or the agent
+		// may have legitimately modified it.
+		_, _ = gitExec(workDir, "checkout", "--", path)
+	}
 }
 
 // ChangedFiles returns the list of files changed in the most recent commit
