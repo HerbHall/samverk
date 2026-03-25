@@ -119,7 +119,7 @@ func TestPipelineStages_Classification(t *testing.T) {
 // TestPipelineStages_Response verifies the overall response shape, stage ordering,
 // totals, and throughput_24h calculation.
 func TestPipelineStages_Response(t *testing.T) {
-	now := time.Date(2026, 3, 22, 0, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	recent := now.Add(-1 * time.Hour) // within the 24h window
 
 	openIssues := []*forge.Issue{
