@@ -158,15 +158,26 @@ func TestClassifyFailure(t *testing.T) {
 			input: "insufficient_quota on model claude-3-5-sonnet",
 			want:  models.FailureClassBudget,
 		},
+		// rate_limit is transient throttling, classified as provider_down (retryable).
 		{
-			name:  "rate_limit is budget",
+			name:  "rate_limit is provider_down",
 			input: "rate_limit hit, slow down",
-			want:  models.FailureClassBudget,
+			want:  models.FailureClassProviderDown,
 		},
 		{
-			name:  "budget: case-insensitive RATE_LIMIT",
-			input: "RATE_LIMIT exceeded",
-			want:  models.FailureClassBudget,
+			name:  "429 is provider_down",
+			input: "HTTP 429 Too Many Requests",
+			want:  models.FailureClassProviderDown,
+		},
+		{
+			name:  "too many requests is provider_down",
+			input: "too many requests, please retry later",
+			want:  models.FailureClassProviderDown,
+		},
+		{
+			name:  "overloaded is provider_down",
+			input: "provider overloaded, please try again",
+			want:  models.FailureClassProviderDown,
 		},
 		{
 			name:  "budget: case-insensitive BUDGET EXCEEDED",
@@ -417,16 +428,16 @@ func TestClassifyFailure(t *testing.T) {
 		// --- priority ordering: auth checked before budget ---
 		// A message with "401" and "rate_limit" should be auth (auth checked first).
 		{
-			name:  "auth wins over budget when 401 and rate_limit co-occur",
+			name:  "auth wins over rate_limit when 401 and rate_limit co-occur",
 			input: "received 401 after rate_limit window",
 			want:  models.FailureClassAuth,
 		},
 
-		// --- priority ordering: budget checked before permanent ---
-		// A message with "rate_limit" and "model not found" should be budget.
+		// --- priority ordering: budget checked before rate_limit ---
+		// A message with "budget exceeded" and "rate_limit" should be budget.
 		{
-			name:  "budget wins over permanent when rate_limit and model not found co-occur",
-			input: "rate_limit exceeded for model not found tier",
+			name:  "budget wins over rate_limit when budget exceeded and rate_limit co-occur",
+			input: "budget exceeded after rate_limit retry",
 			want:  models.FailureClassBudget,
 		},
 
@@ -528,6 +539,62 @@ func TestClassifyFailure(t *testing.T) {
 			name:  "hung no output 60s after timeout reduction",
 			input: "provider chat: claude-cli: hung: no output for 60s: output: ",
 			want:  models.FailureClassProviderDown,
+		},
+
+		// --- new network/transient patterns ---
+		{
+			name:  "connection reset is provider_down",
+			input: "read tcp: connection reset by peer",
+			want:  models.FailureClassProviderDown,
+		},
+		{
+			name:  "broken pipe is provider_down",
+			input: "write tcp: broken pipe",
+			want:  models.FailureClassProviderDown,
+		},
+		{
+			name:  "eof is provider_down",
+			input: "unexpected EOF",
+			want:  models.FailureClassProviderDown,
+		},
+		{
+			name:  "host unreachable is provider_down",
+			input: "dial tcp: host unreachable",
+			want:  models.FailureClassProviderDown,
+		},
+		{
+			name:  "network is unreachable is provider_down",
+			input: "dial tcp: network is unreachable",
+			want:  models.FailureClassProviderDown,
+		},
+		{
+			name:  "tls handshake failure is provider_down",
+			input: "tls handshake timeout",
+			want:  models.FailureClassProviderDown,
+		},
+
+		// --- context canceled ---
+		{
+			name:  "context canceled is timeout",
+			input: "context canceled",
+			want:  models.FailureClassTimeout,
+		},
+
+		// --- format_error and output rejected ---
+		{
+			name:  "format_error is post_process",
+			input: "format_error: agent did not produce EDIT blocks after retry",
+			want:  models.FailureClassPostProcess,
+		},
+		{
+			name:  "output rejected is post_process",
+			input: "output rejected: agent only modified project config files",
+			want:  models.FailureClassPostProcess,
+		},
+		{
+			name:  "edit block validation is post_process",
+			input: "EDIT block validation: response contains no EDIT blocks",
+			want:  models.FailureClassPostProcess,
 		},
 	}
 
