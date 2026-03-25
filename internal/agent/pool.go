@@ -80,7 +80,8 @@ type Pool struct {
 	onComplete atomic.Pointer[func(TaskResult)]   // callback to notify dispatcher; atomic to avoid mu deadlock
 	workerQuit chan struct{}                        // each send causes one worker to exit after its current task
 	synapset   *synapset.Client                    // optional Synapset memory client; nil disables enrichment
-	repoDir    string                               // local git clone path for worktree creation; empty disables
+	repoDir    string                               // default git clone path; used when no per-project dir is set
+	repoDirs   map[string]string                    // per-project repo dirs keyed by "owner/repo"
 	fetchMu    sync.Mutex                           // serializes FetchLatest calls to avoid concurrent git index locks
 	spawnMu    sync.Mutex                           // serializes CLI process spawns to avoid overwhelming the system
 	lastSpawn  time.Time                            // timestamp of the last provider spawn for stagger enforcement
@@ -297,23 +298,43 @@ func (p *Pool) SetSynapset(sc *synapset.Client) {
 	p.synapset = sc
 }
 
-// SetRepoDir configures the local git repository path used to create isolated
-// worktrees for agent sessions. When set, code-gen and test agents get their
-// own worktree branched from the latest origin/main.
+// SetRepoDir configures the default git repository path used to create
+// isolated worktrees for agent sessions when no per-project dir is configured.
 func (p *Pool) SetRepoDir(dir string) {
 	p.repoDir = dir
 }
 
-// fetchLatest pulls the latest code from origin into the shared clone.
+// SetRepoDirFor configures the git repository path for a specific project.
+// When set, tasks for this owner/repo use this path instead of the default.
+func (p *Pool) SetRepoDirFor(owner, repo, dir string) {
+	if p.repoDirs == nil {
+		p.repoDirs = make(map[string]string)
+	}
+	p.repoDirs[owner+"/"+repo] = dir
+}
+
+// repoDirFor returns the repo directory for the given owner/repo, falling
+// back to the default repoDir if no per-project directory is configured.
+func (p *Pool) repoDirFor(owner, repo string) string {
+	if p.repoDirs != nil {
+		if dir, ok := p.repoDirs[owner+"/"+repo]; ok {
+			return dir
+		}
+	}
+	return p.repoDir
+}
+
+// fetchLatestFor pulls the latest code from origin for the given project.
 // Serialized via fetchMu to prevent concurrent git operations on the same
 // clone directory (git uses index locks that cause failures on concurrent access).
-func (p *Pool) fetchLatest() {
-	if p.repoDir == "" {
+func (p *Pool) fetchLatestFor(owner, repo string) {
+	dir := p.repoDirFor(owner, repo)
+	if dir == "" {
 		return
 	}
 	p.fetchMu.Lock()
 	defer p.fetchMu.Unlock()
-	FetchLatest(p.repoDir, p.logger)
+	FetchLatest(dir, p.logger)
 }
 
 // RegistryRouting returns the routing table from the underlying provider registry.
@@ -407,8 +428,11 @@ func (p *Pool) processTask(task Task) {
 		return
 	}
 
+	// Resolve per-project repo directory for workspace isolation.
+	taskRepoDir := p.repoDirFor(task.Owner, task.Repo)
+
 	// Fetch latest code before creating a runner (serialized across workers).
-	p.fetchLatest()
+	p.fetchLatestFor(task.Owner, task.Repo)
 
 	// Stagger CLI spawns to avoid overwhelming the system when multiple
 	// workers start tasks simultaneously.
@@ -427,7 +451,7 @@ func (p *Pool) processTask(task Task) {
 	runner := NewRunner(prov, model, taskTracker, p.store, p.costs, p.logger)
 	runner.cleanupCtx = cleanupCtx
 	runner.synapset = p.synapset
-	runner.SetRepoDir(p.repoDir)
+	runner.SetRepoDir(taskRepoDir)
 	start := time.Now()
 	runErr := runner.Run(ctx, task)
 	duration := time.Since(start)
@@ -465,7 +489,7 @@ func (p *Pool) processTask(task Task) {
 			fallbackRunner := NewRunner(nextProv, nextModel, taskTracker, p.store, p.costs, p.logger)
 			fallbackRunner.cleanupCtx = cleanupCtx
 			fallbackRunner.synapset = p.synapset
-			fallbackRunner.SetRepoDir(p.repoDir)
+			fallbackRunner.SetRepoDir(taskRepoDir)
 
 			logger.Info("failover: retrying task with next provider",
 				zap.String("provider", nextProv.Name()),

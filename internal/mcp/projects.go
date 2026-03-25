@@ -30,6 +30,7 @@ type Project struct {
 	Tags      []string                 `json:"tags,omitempty" yaml:"tags"`
 	ForgeType string                   `json:"forge_type,omitempty" yaml:"-"` // "github" or "gitea"
 	ForgeURL  string                   `json:"forge_url,omitempty" yaml:"-"`  // base URL of the forge
+	RepoDir   string                   `json:"repo_dir,omitempty" yaml:"-"`   // local git clone path for worktree isolation
 	Tracker   forge.IssueTracker       `json:"-" yaml:"-"`
 	Reader    forge.RepoReader         `json:"-" yaml:"-"`
 	Writer    forge.RepoWriter         `json:"-" yaml:"-"`
@@ -163,6 +164,25 @@ func (r *ProjectRegistry) PhaseFor(owner, repo string) (string, bool) {
 	return "", false
 }
 
+// RepoDirFor returns the local git clone path for the project matching the
+// given owner/repo pair. Returns ("", false) if no matching project is
+// registered or the project has no repo_dir configured.
+// This method satisfies the dispatcher.ProjectResolver interface.
+func (r *ProjectRegistry) RepoDirFor(owner, repo string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, p := range r.projects {
+		if p.Owner == owner && p.Repo == repo {
+			if p.RepoDir == "" {
+				return "", false
+			}
+			return p.RepoDir, true
+		}
+	}
+	return "", false
+}
+
 // SetConfigPath records the path to the server.yaml file so that SetPhase
 // can persist phase changes back to disk. Call this after loading configs.
 func (r *ProjectRegistry) SetConfigPath(path string) {
@@ -260,6 +280,7 @@ type ProjectConfig struct {
 	GiteaToken string   `yaml:"gitea_token"` // optional; falls back to GITEA_TOKEN env var
 	Phase      string   `yaml:"phase"`       // lifecycle phase; defaults to "development"
 	Tags       []string `yaml:"tags"`        // optional classification tags
+	RepoDir    string   `yaml:"repo_dir"`    // local git clone path for worktree isolation; empty disables
 }
 
 // projectsFileConfig is the top-level YAML structure for the projects config file.

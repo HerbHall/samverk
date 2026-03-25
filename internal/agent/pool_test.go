@@ -931,7 +931,7 @@ func TestPoolFetchLatest_EmptyRepoDir(t *testing.T) {
 	defer pool.Shutdown()
 
 	// Should be a no-op, not panic.
-	pool.fetchLatest()
+	pool.fetchLatestFor("test", "repo")
 }
 
 // --- mock types for pool tests ---
