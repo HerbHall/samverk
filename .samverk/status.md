@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-25T04:45:00Z
+updated: 2026-03-25T14:00:00Z
 updated_by: claude-code
 ---
 
@@ -33,21 +33,21 @@ Multi-project dispatch now operational. Critical routing fix needed (#270).
 
 ## Blocking Issue
 
-**#270 (CRITICAL)**: Ollama cannot produce EDIT blocks for code-gen. 19 issues blocked.
-Needs user decision on routing fix (config change affects cost). Options in issue.
-
 ## Open Issues Summary
 
-| Status | Samverk | DevKit | Synapset |
-|--------|---------|--------|----------|
-| needs-human | 5 | 4 | 1 |
-| blocked (on #270) | 19 | 1 | 0 |
-| blocked (deps) | 10 | 0 | 0 |
+| Status | Count | Notes |
+|--------|-------|-------|
+| queued | ~17 | Re-queued with code-gen chain + reset failure counts |
+| needs-human | 4 | Genuinely blocked: #70, #74, #128, #218 |
+| needs-qc | 7 | Agent branches needing review (#225, #247, #257 + others) |
+| blocked (deps) | 11 | Waiting on #247 label chain |
 
-### PRs Awaiting Review
+### Recommended Next Session
 
-- PR #268 -- per-project repo directories (feature, deployed)
-- PR #271 -- Synapset auth token + FlexID (fix, deployed)
+1. Investigate Claude CLI startup hangs on CT 202 (~30% of sessions produce 0 output)
+2. Review the 3 needs-qc branches with real work (#225, #247, #257)
+3. Address #218 (CF Access OAuth proxy) when ready for focused session
+4. Observe pipeline throughput after today's fixes take effect
 
 ### Planned Next Waves
 
@@ -57,6 +57,44 @@ Needs user decision on routing fix (config change affects cost). Options in issu
 | B | #57 Option B | Structured JSON output for Ollama code-gen |
 | C | #70 sub-issues (#64, #67, #69) | MCP parity tools |
 | D | #72 Phase 1+2 | WebSocket hub + expanded API |
+
+## Session Summary (2026-03-25, session 2)
+
+Pipeline health overhaul. 8 PRs merged, 17 issues unblocked, 3 critical bugs fixed.
+
+### PRs Merged
+
+- **#277** -- EDIT block format validation for code-gen agents
+- **#278** -- govulncheck dep bump (MCP SDK v1.4.1, x/crypto v0.45.0) + time-dependent test fix
+- **#280** -- Dispatcher skips closed issues, needs-qc, and prevents escalation label race
+- **#281** -- Failure classifier: 12 new patterns (connection reset, EOF, 429, context canceled, etc.)
+- **#285** -- Tool version standardization: golangci-lint v2.10.1 everywhere, pnpm v10, tools.json, .nvmrc, .go-version
+- **#290** -- Code-gen routing to CLI-only chain (free-first preserved, Ollama stays default for non-code tasks)
+- **#291** -- Synapset test env isolation (TestConfigFromEnv passes on CT 202)
+- **#292** -- Synapset FlexTags: handle comma-separated string tags from server
+
+### Pipeline Fixes
+
+- Dispatcher state validation: stops retrying closed and escalated issues (was 506 failures/week)
+- Failure count reset + re-labeling: 17 issues moved from needs-human to queued
+- Routing config deployed to CT 202: code-gen chain [claude-sonnet, claude-haiku]
+- providers.yaml sync gap identified (filed #289)
+
+### Issues Filed
+
+- #274-276 -- Dashboard follow-ups from #72 closure (approve/reject, MCP chat, action confirm)
+- #279 -- Auto-merge pipeline + conditional autonomy tiers
+- #282 -- Adaptive timeout based on complexity
+- #283 -- CLAUDE.md-only output prompt hardening
+- #284 -- Auto-merge agent branches after QC
+- #286-288 -- Version management Phase 3/4 (Renovate, quarterly review, fleet versions)
+- #289 -- Deploy script config sync gap
+
+### Remaining Issues
+
+- Claude CLI intermittent startup hangs (~30% of sessions, 0 output, 5m timeout kills them)
+- "Output too short" quality gate failures on some Claude sessions
+- #218 (CF Access OAuth) deferred to focused session
 
 ## Session Summary (2026-03-24/25)
 
