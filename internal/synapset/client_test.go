@@ -305,6 +305,11 @@ func TestSessionReconnection(t *testing.T) {
 }
 
 func TestConfigFromEnv(t *testing.T) {
+	// Clear env vars so the test is isolated from host environment.
+	// Without this, SYNAPSET_URL on CT 202 overrides DefaultURL.
+	t.Setenv("SYNAPSET_URL", "")
+	t.Setenv("SYNAPSET_POOL", "")
+
 	// With defaults.
 	cfg := ConfigFromEnv(Config{})
 	if cfg.URL != DefaultURL {
