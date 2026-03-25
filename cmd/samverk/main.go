@@ -265,6 +265,7 @@ func serveCmd() *cobra.Command {
 								Tags:      pc.Tags,
 								ForgeType: "gitea",
 								ForgeURL:  pc.GiteaURL,
+								RepoDir:   pc.RepoDir,
 								Tracker:   gtClient,
 								Reader:    gtClient,
 								PRManager: gtClient,
@@ -288,6 +289,7 @@ func serveCmd() *cobra.Command {
 								Tags:      pc.Tags,
 								ForgeType: "github",
 								ForgeURL:  "https://github.com",
+								RepoDir:   pc.RepoDir,
 								Tracker:   ghExtra,
 								Reader:    ghExtra,
 								PRManager: ghExtra,
@@ -588,6 +590,7 @@ func dispatchCmd() *cobra.Command {
 								Tags:      pc.Tags,
 								ForgeType: "gitea",
 								ForgeURL:  pc.GiteaURL,
+								RepoDir:   pc.RepoDir,
 								Tracker:   gtClient,
 								PRManager: gtClient,
 							}
@@ -615,6 +618,7 @@ func dispatchCmd() *cobra.Command {
 								Tags:      pc.Tags,
 								ForgeType: "github",
 								ForgeURL:  "https://github.com",
+								RepoDir:   pc.RepoDir,
 								Tracker:   ghClient,
 								PRManager: ghClient,
 							}
@@ -763,13 +767,26 @@ func dispatchCmd() *cobra.Command {
 				}
 			}
 
-			// Wire repo directory for worktree-based workspace isolation.
+			// Wire repo directories for worktree-based workspace isolation.
+			// Per-project repo_dir from config takes precedence; the global
+			// --repo-dir / SAMVERK_REPO_DIR flag is the fallback default.
 			if pool != nil && repoDir == "" {
 				repoDir = os.Getenv("SAMVERK_REPO_DIR")
 			}
 			if pool != nil && repoDir != "" {
 				pool.SetRepoDir(repoDir)
-				logger.Info("workspace isolation enabled", zap.String("repo_dir", repoDir))
+				logger.Info("workspace isolation enabled (default)", zap.String("repo_dir", repoDir))
+			}
+			if pool != nil {
+				for _, p := range registry.List() {
+					if p.RepoDir != "" {
+						pool.SetRepoDirFor(p.Owner, p.Repo, p.RepoDir)
+						logger.Info("workspace isolation enabled (project)",
+							zap.String("project", p.Name),
+							zap.String("repo_dir", p.RepoDir),
+						)
+					}
+				}
 			}
 
 			// Wire Synapset memory client if configured (optional, best-effort).
