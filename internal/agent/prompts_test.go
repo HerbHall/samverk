@@ -18,7 +18,7 @@ func TestBuildSystemPrompt(t *testing.T) {
 		{
 			name:      "code-gen includes edit format",
 			agentType: models.AgentTypeCodeGen,
-			contains:  []string{"code generation agent", "EDIT <filepath>", "PR_TITLE:", "#42", "fix widget"},
+			contains:  []string{"code generation agent", "EDIT <filepath>", "PR_TITLE:", "#42", "fix widget", "Do NOT modify CLAUDE.md"},
 		},
 		{
 			name:      "test includes table-driven",

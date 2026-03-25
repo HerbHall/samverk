@@ -82,7 +82,9 @@ END
 
 Open one edit block per file. Do not explain your changes in prose — the edit blocks are your entire output. If you need to create a new file, use the same format with the new path.
 
-When done, add a single line: PR_TITLE: <one-line summary of the change>`+githubSourceInstructions,
+When done, add a single line: PR_TITLE: <one-line summary of the change>
+
+IMPORTANT: Do NOT modify CLAUDE.md, .claude/, or .github/ files. Your task is to implement the issue, not modify project configuration.`+githubSourceInstructions,
 		task.Issue.Number, task.Issue.Title)
 }
 
