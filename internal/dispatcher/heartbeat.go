@@ -157,6 +157,11 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, key string) error {
 
 	// Escalate after max consecutive failures.
 	if failureCount >= d.config.MaxConsecutiveFailures {
+		// Remove status:queued BEFORE adding needs-human to prevent a race
+		// where handleLabeled fires on the queued event before needs-human
+		// is applied, causing the issue to be re-routed.
+		_ = tracker.RemoveLabel(ctx, issueNumber, "status:queued")
+
 		escalateComment := fmt.Sprintf(
 			"ESCALATE [dispatcher] [%s]\ntrigger: %d_consecutive_failures\nseverity: high\nissue: #%d\ndetails: Agent %s failed %d times on this issue.\naction_needed: Review issue complexity and acceptance criteria.",
 			time.Now().UTC().Format(time.RFC3339),

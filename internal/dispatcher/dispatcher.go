@@ -595,7 +595,9 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 	for _, l := range issue.Labels {
 		labels[l] = true
 	}
-	if labels["status:needs-human"] || labels["status:human-pending"] || labels["status:blocked"] || labels["status:claimed"] || labels["status:in-progress"] {
+	if labels["status:needs-human"] || labels["status:human-pending"] ||
+		labels["status:blocked"] || labels["status:claimed"] ||
+		labels["status:in-progress"] || labels["status:needs-qc"] {
 		d.logger.Debug("skipping issue with terminal status", zap.Int("issue", issue.Number))
 		return nil
 	}
@@ -682,13 +684,21 @@ func (d *Dispatcher) handleLabeled(ctx context.Context, ev forge.Event) error {
 		return fmt.Errorf("get issue #%d: %w", ev.IssueNumber, err)
 	}
 
+	// Never re-route closed issues.
+	if issue.State == forge.StateClosed {
+		d.logger.Debug("skipping closed re-queued issue", zap.Int("issue", issue.Number))
+		_ = tracker.RemoveLabel(ctx, issue.Number, "status:queued")
+		return nil
+	}
+
 	labels := make(map[string]bool, len(issue.Labels))
 	for _, l := range issue.Labels {
 		labels[l] = true
 	}
-	// Skip if already actively worked on or awaiting human.
+	// Skip if already actively worked on, awaiting human, or in QC.
 	if labels["status:needs-human"] || labels["status:human-pending"] ||
-		labels["status:blocked"] || labels["status:claimed"] || labels["status:in-progress"] {
+		labels["status:blocked"] || labels["status:claimed"] ||
+		labels["status:in-progress"] || labels["status:needs-qc"] {
 		d.logger.Debug("skipping re-queued issue with active status", zap.Int("issue", issue.Number))
 		return nil
 	}

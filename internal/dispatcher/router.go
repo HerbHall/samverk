@@ -198,6 +198,14 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		return fmt.Errorf("no tracker for %s/%s", owner, repo)
 	}
 
+	// State gate: never route closed issues. This prevents the
+	// claim-fail-requeue loop when a closed issue has status:queued.
+	if issue.State == forge.StateClosed {
+		d.logger.Info("skipping closed issue", zap.Int("issue", issue.Number))
+		_ = tracker.RemoveLabel(ctx, issue.Number, "status:queued")
+		return nil
+	}
+
 	// Pre-flight health gate: check if the routing chain has any healthy
 	// provider before claiming the issue. This prevents the tight
 	// claim-fail-requeue loop when all providers are down.

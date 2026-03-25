@@ -1682,3 +1682,129 @@ func TestRun_BackoffProgression(t *testing.T) {
 	cancel()
 	<-errCh
 }
+
+func TestRoute_SkipsClosedIssue(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[50] = &forge.Issue{
+		Number: 50,
+		Title:  "Closed issue with queued label",
+		Body:   "---\nagent_type: code-gen\n---\nBody.",
+		State:  forge.StateClosed,
+		Labels: []string{"status:queued"},
+	}
+	tracker.mu.Unlock()
+
+	err := d.route(context.Background(), "", "", tracker.issues[50], models.AgentTypeCodeGen, nil)
+	if err != nil {
+		t.Fatalf("route returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	issue := tracker.issues[50]
+	tracker.mu.Unlock()
+
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("closed issue should not be claimed")
+	}
+	if hasLabel(issue.Labels, "status:queued") {
+		t.Error("status:queued should be removed from closed issue")
+	}
+}
+
+func TestHandleLabeled_SkipsClosedIssue(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[51] = &forge.Issue{
+		Number: 51,
+		Title:  "Closed issue re-queued",
+		Body:   "---\nagent_type: code-gen\n---\nBody.",
+		State:  forge.StateClosed,
+		Labels: []string{"status:queued"},
+	}
+	tracker.mu.Unlock()
+
+	err := d.handleLabeled(context.Background(), forge.Event{
+		Type:        forge.EventIssueLabeled,
+		IssueNumber: 51,
+		Label:       "status:queued",
+	})
+	if err != nil {
+		t.Fatalf("handleLabeled returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	issue := tracker.issues[51]
+	tracker.mu.Unlock()
+
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("closed issue should not be claimed via handleLabeled")
+	}
+}
+
+func TestHandleLabeled_SkipsNeedsQC(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[52] = &forge.Issue{
+		Number: 52,
+		Title:  "Issue in QC with queued label",
+		Body:   "---\nagent_type: code-gen\n---\nBody.",
+		State:  forge.StateOpen,
+		Labels: []string{"status:queued", "status:needs-qc"},
+	}
+	tracker.mu.Unlock()
+
+	err := d.handleLabeled(context.Background(), forge.Event{
+		Type:        forge.EventIssueLabeled,
+		IssueNumber: 52,
+		Label:       "status:queued",
+	})
+	if err != nil {
+		t.Fatalf("handleLabeled returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	issue := tracker.issues[52]
+	tracker.mu.Unlock()
+
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("needs-qc issue should not be claimed via handleLabeled")
+	}
+}
+
+func TestHandleOpened_SkipsNeedsQC(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[53] = &forge.Issue{
+		Number: 53,
+		Title:  "Issue in QC",
+		Body:   "Some body",
+		State:  forge.StateOpen,
+		Labels: []string{"status:needs-qc"},
+	}
+	tracker.mu.Unlock()
+
+	err := d.handleOpened(context.Background(), forge.Event{
+		Type:        forge.EventIssueOpened,
+		IssueNumber: 53,
+	})
+	if err != nil {
+		t.Fatalf("handleOpened returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	issue := tracker.issues[53]
+	tracker.mu.Unlock()
+
+	if hasLabel(issue.Labels, "status:claimed") {
+		t.Error("needs-qc issue should not be claimed")
+	}
+}
