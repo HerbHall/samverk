@@ -32,20 +32,26 @@ Dispatcher -> Runner -> claudecli.Client.Chat()
                             stdout: text response (parsed for EDIT blocks)
 ```
 
-### Current CLI invocation
+### Current CLI invocation (after PR #298)
 
 ```go
-// internal/provider/claudecli/claudecli.go:91
-args := []string{"--print", "--dangerously-skip-permissions"}
+// internal/provider/claudecli/claudecli.go
+args := []string{
+    "--print",
+    "--dangerously-skip-permissions",
+    "--no-session-persistence",
+    "--output-format", "stream-json",
+    "--verbose",
+}
 ```
 
-### Limitations
+### Resolved Limitations (as of 2026-03-25)
 
-1. **No tool use**: `--print` without `--allowedTools` runs text-only
-2. **No codebase awareness**: Agent cannot read files to understand context
-3. **No self-verification**: Agent cannot run `go build`, `go test`, or lint
-4. **Brittle EDIT blocks**: Text-based file edits parsed via regex are error-prone
-5. **Single turn**: No iterative problem-solving or error recovery
+1. **Tool use**: `--allowedTools "Bash,Read,Edit,Write,Glob,Grep"` enables full agentic mode
+2. **Codebase awareness**: Agent reads files, searches code via Glob/Grep
+3. **Self-verification**: Agent runs `go build`, `go test`, lint via Bash tool
+4. **Direct file edits**: Agent uses Edit/Write tools in isolated worktrees
+5. **Multi-turn**: `--max-turns 25` allows iterative problem-solving
 
 ## Proposed Solution
 
@@ -73,52 +79,73 @@ claude -p "task prompt" \
 | `--max-budget-usd 5` | Cost guard (optional, may not apply to Max plan) |
 | `--fallback-model` | Auto-fallback if primary model is overloaded |
 
-### Architecture after change
+### Current Architecture (implemented)
 
 ```text
 Dispatcher -> Runner -> claudecli.Client.Chat()
                             |
                             v
-                    exec: claude -p --dangerously-skip-permissions
+                    exec: claude --print --dangerously-skip-permissions
+                         --no-session-persistence
+                         --output-format stream-json --verbose
                          --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
-                         --output-format stream-json
-                         --max-turns 25
+                         --max-turns 25 --model <model>
                             |
-                            stdin: system prompt + user prompt
-                            stdout: stream-json (tool calls, results, final answer)
+                            stdin: system prompt + user prompt (issue body)
+                            stdout: stream-json events (one JSON line per event)
                             |
                             v
-                    Parse stream-json for final assistant message
+                    streamOutput() parses JSON lines via bufio.Scanner
+                    Each line resets activity timer (proof-of-life)
+                    Final result extracted from {"type":"result"} event
 ```
 
-### What changes in the codebase
+### stream-json Event Flow
 
-1. **`internal/provider/claudecli/claudecli.go`**: Add `--allowedTools`, `--output-format`,
-   and `--max-turns` to the CLI args. Parse `stream-json` output to extract the final
-   assistant message (or fall back to raw text if format is `text`).
+The CLI emits one JSON object per line as events occur:
 
-2. **`internal/provider/provider.go`**: Consider extending `ProviderConfig` with
-   `allowed_tools` and `max_turns` fields so these are configurable per provider entry
-   in the YAML config.
+| Event | When | Key Fields |
+|-------|------|-----------|
+| `{"type":"system","subtype":"init"}` | Startup (~2s) | session_id, tools, mcp_servers |
+| `{"type":"assistant"}` | Each LLM turn | message content, tool_use |
+| `{"type":"user"}` | Tool results | tool_use_id, content |
+| `{"type":"rate_limit_event"}` | After API call | rate_limit_info |
+| `{"type":"result"}` | Session end | result (final text), is_error, duration_ms |
 
-3. **Provider config YAML**: Add configuration for the new flags:
+### Why stream-json (not plain --print)
 
-   ```yaml
-   providers:
-     claude-max:
-       type: claude-cli
-       default_model: "claude-sonnet-4-20250514"
-       timeout_seconds: 600
-       allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
-       max_turns: 25
-   ```
+Plain `--print` mode buffers ALL stdout until the session ends. A multi-turn
+agentic session produces exactly 0 bytes on stdout for minutes, then one final
+`write(1,...)` syscall. This caused a 56% "startup timeout" failure rate because
+our activity timer saw no output and killed active sessions.
 
-### What does NOT change
+With `--output-format stream-json --verbose`, events stream in real-time. The
+`init` event arrives in ~2 seconds, and each subsequent turn/tool-call produces
+events. The activity timer resets on every JSON line.
 
-- The `Provider` interface stays the same (Chat, Healthy, Name)
-- The `Runner` still calls `provider.Chat()` and gets a `ChatResponse`
-- The routing, registry, and dispatcher are unaffected
-- Ollama and Claude API providers are unaffected
+**Requires `--verbose`** -- stream-json without it produces an error.
+
+### Timeout Configuration
+
+| Timeout | Value | Rationale |
+|---------|-------|-----------|
+| startupTimeout | 30s | Init event arrives in ~2s; 30s catches real crashes |
+| staleOutputTimeout | 120s | API round-trips between events can take 30-60s |
+| Provider timeout | 600s (configurable) | Overall session limit from providers.yaml |
+
+Previously startupTimeout was 300s (to accommodate plain --print buffering).
+
+### Provider config YAML
+
+```yaml
+providers:
+  claude-sonnet:
+    type: claude-cli
+    default_model: claude-sonnet-4-6
+    timeout_seconds: 600
+    allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
+    max_turns: 25
+```
 
 ## Prerequisites
 
@@ -261,13 +288,12 @@ Result: File created on disk with correct content. Verified with `cat`.
 4. **No JSON output tested yet**: `--output-format json` and `stream-json` need testing
    for structured response parsing in the Go provider.
 
-### Remaining Tests
+### Remaining Tests (all resolved 2026-03-25)
 
-- [ ] `--output-format json` response structure
-- [ ] `--output-format stream-json` streaming behavior
-- [ ] `--max-turns` enforcement
-- [ ] `go test` execution via Bash tool
-- [ ] Full end-to-end: dispatcher -> runner -> claude-cli with tools -> PR
+- [x] `--output-format stream-json` streaming behavior -- implemented in PR #298
+- [x] `--max-turns` enforcement -- configured per-provider in providers.yaml
+- [x] `go test` execution via Bash tool -- agents run `make ci` in worktrees
+- [x] Full end-to-end: dispatcher -> runner -> claude-cli with tools -> PR -- verified with issue #299
 
 ## Root Cause Confirmed (2026-03-15)
 
@@ -293,29 +319,33 @@ Issues are classified as `provider_down` and not counted toward per-issue
 escalation (fix from #482), so they stay `status:queued` and retry after the
 15-minute cooldown -- but they fail again in the same way.
 
-### Why the CLI hangs
+### Why the CLI appeared to hang (resolved 2026-03-25)
 
-The systemd service runs `claude --print --dangerously-skip-permissions` but the
-CLI produces nothing. Manual testing as the `samverk` user (same user as the
-systemd service) confirms the flag works interactively. The hang in systemd
-context is likely caused by:
+The systemd service ran `claude --print` which buffers ALL stdout until the
+entire agentic session ends. A session running 25 tool-call turns for 5+ minutes
+produces exactly 0 bytes on stdout during execution -- one final `write(1,...)`
+syscall at the very end. Confirmed via strace.
 
-1. Missing TTY or terminal allocation in the systemd unit
-2. The CLI attempting an interactive prompt that silently blocks without a TTY
-3. Possible `--dangerously-skip-permissions` behavior difference in non-interactive contexts
+The 300-second startup timeout killed these active-but-buffering sessions,
+classifying them as "hung". This was a 56% failure rate (26 hangs in 48h).
 
-The fix (`--allowedTools` with explicit tool list) pre-approves tools so the CLI
-never prompts, eliminating the hang regardless of TTY availability.
+**Root cause was NOT**: TTY, interactive prompts, OAuth contention, or concurrency.
+Controlled tests showed hangs occurred even with zero other active CLI processes.
 
-## Open Questions
+**Fix**: `--output-format stream-json --verbose` (PR #298). Events stream in
+real-time during execution. The init event arrives in ~2s, immediately satisfying
+the startup timeout. Each subsequent turn produces events that reset the stale
+timer. Startup timeout reduced from 300s to 30s.
 
-1. Does `--max-budget-usd` work with Max plan, or only API billing?
-2. Can `--allowedTools` accept MCP tool names for Samverk's own tools?
-3. Should we set `--working-directory` to the repo checkout path?
-4. Do we need `--no-session-persistence` to avoid filling disk with session files?
-5. Should `--fallback-model` be configured to fall back to a cheaper model?
-6. Should the repo be cloned to `/var/lib/samverk/repos/samverk` for full codebase access?
-7. Should we also try `--permission-mode bypassPermissions` as an alternative?
+## Open Questions (resolved)
+
+1. ~~Does `--max-budget-usd` work with Max plan?~~ -- Not used; Max plan has no per-session billing
+2. ~~Can `--allowedTools` accept MCP tool names?~~ -- Yes, but MCP servers configured in .claude.json load automatically
+3. ~~Should we set `--working-directory`?~~ -- Yes, `cmd.Dir` is set to the worktree path by the runner
+4. ~~Do we need `--no-session-persistence`?~~ -- Yes, prevents session file accumulation (456 files observed)
+5. ~~Should `--fallback-model` be configured?~~ -- No, failover is handled by the routing chain in the dispatcher
+6. ~~Should the repo be cloned for full codebase access?~~ -- Yes, per-project repo dirs at `/var/lib/samverk/repo`, `/var/lib/samverk/devkit-repo`, `/var/lib/samverk/synapset-repo` (PR #268)
+7. ~~Should we use `--permission-mode bypassPermissions`?~~ -- No, `--dangerously-skip-permissions` is equivalent and simpler
 
 ## References
 

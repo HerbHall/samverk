@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-25T14:00:00Z
+updated: 2026-03-25T20:30:00Z
 updated_by: claude-code
 ---
 
@@ -33,21 +33,23 @@ Multi-project dispatch now operational. Critical routing fix needed (#270).
 
 ## Blocking Issue
 
+None -- two critical pipeline bugs fixed this session.
+
 ## Open Issues Summary
 
 | Status | Count | Notes |
 |--------|-------|-------|
-| queued | ~17 | Re-queued with code-gen chain + reset failure counts |
+| queued | ~17 | Most have failure count caps from pre-fix era; may need reset |
 | needs-human | 4 | Genuinely blocked: #70, #74, #128, #218 |
-| needs-qc | 7 | Agent branches needing review (#225, #247, #257 + others) |
-| blocked (deps) | 11 | Waiting on #247 label chain |
+| needs-qc | 4 | Remaining agent branches (3 reviewed and merged this session) |
+| blocked (deps) | 11 | Waiting on #247 label chain (now merged) |
 
 ### Recommended Next Session
 
-1. Investigate Claude CLI startup hangs on CT 202 (~30% of sessions produce 0 output)
-2. Review the 3 needs-qc branches with real work (#225, #247, #257)
+1. Reset failure counts on queued issues so dispatcher retries with fixed code
+2. Observe pipeline throughput -- two root cause fixes should dramatically reduce failures
 3. Address #218 (CF Access OAuth proxy) when ready for focused session
-4. Observe pipeline throughput after today's fixes take effect
+4. Complete #247 follow-up: migrate hardcoded label strings to generated constants
 
 ### Planned Next Waves
 
@@ -57,6 +59,38 @@ Multi-project dispatch now operational. Critical routing fix needed (#270).
 | B | #57 Option B | Structured JSON output for Ollama code-gen |
 | C | #70 sub-issues (#64, #67, #69) | MCP parity tools |
 | D | #72 Phase 1+2 | WebSocket hub + expanded API |
+
+## Session Summary (2026-03-25, session 3)
+
+Pipeline reliability overhaul. Two root cause bugs fixed, 5 PRs merged, 3 agent branches reviewed.
+
+### PRs Merged
+
+- **#294** -- Pipeline stage constants (#257, cherry-picked from agent branch)
+- **#295** -- Linux worker support (#225, cherry-picked from agent branch)
+- **#296** -- Label constants generator infra (#247, cherry-picked from agent branch)
+- **#297** -- CLAUDE.md corruption fix (restoreInjectedFiles before commit)
+- **#298** -- Stream-json activity detection (eliminates false startup timeouts)
+
+### Root Cause Fixes
+
+**1. CLAUDE.md corruption (PR #297)**: Runner wrote task prompt into CLAUDE.md in worktrees. CommitAndPush staged it. Validator caught it as "unknown" and retried in a loop. Root cause of 55% of all failures (167/302 in 48h). Fix: `restoreInjectedFiles()` runs `git checkout -- CLAUDE.md` before staging.
+
+**2. CLI startup timeout (PR #298)**: `--print` mode buffers ALL stdout until session ends. Multi-turn agentic sessions produce 0 bytes for minutes. Our 300s startup timeout killed active sessions. Root cause of 56% of CLI failures (26 hangs in 48h). Fix: `--output-format stream-json --verbose` streams JSON events in real-time. Init event arrives in ~2s. Startup timeout reduced to 30s.
+
+### Investigation Findings
+
+- Concurrency was NOT the cause (17/26 hangs had 0 other active processes)
+- OAuth token expiry was NOT the cause (token set to never expire)
+- Ollama models also "hung" (same stdout buffering behavior)
+- Confirmed via strace: one `write(1,...)` syscall at session end
+- Upstream issues found: #24317 (OAuth race), #37402 (token wipe), #38667 (v2.1.83 regression -- do NOT upgrade from v2.1.81)
+
+### Issues Filed
+
+- #299 -- Stream-json verification test (closed, verified)
+- DevKit #563 -- CLI stream-json pattern for rules files
+- DevKit #564 -- CLAUDE.md corruption pattern for rules files
 
 ## Session Summary (2026-03-25, session 2)
 
