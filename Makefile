@@ -1,5 +1,5 @@
 .PHONY: build test test-race test-coverage test-integration test-all lint lint-md lint-all ci hooks run clean web dev-web \
-       cross-build cross-build-full deploy deploy-force deploy-staging redeploy ssh ssh-staging version-check
+       cross-build cross-build-full deploy deploy-config deploy-force deploy-staging redeploy ssh ssh-staging version-check
 
 # Binary
 BIN=samverk
@@ -86,6 +86,10 @@ deploy: cross-build-full
 # One-step redeploy to production with safety gate.
 redeploy:
 	$(MAKE) deploy DEPLOY_HOST=192.168.1.162
+
+# Config-only deploy: sync providers.yaml and project.yaml without rebuilding the binary.
+deploy-config:
+	bash scripts/deploy-config.sh $(DEPLOY_HOST)
 
 # Unsafe deploy (skips idle wait). Use only for emergency hotfixes.
 deploy-force: cross-build-full
