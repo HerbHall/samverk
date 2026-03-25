@@ -242,6 +242,49 @@ func ValidateWorkspaceOutput(workDir string, logger *zap.Logger) *ValidationResu
 	return nil
 }
 
+// ValidateEditBlocks checks that a code-gen/test agent response contains at
+// least one EDIT/END block. Ollama models often return prose or markdown code
+// blocks instead of the required EDIT format, resulting in comment-only output
+// with zero PRs. This validation catches that and triggers a format retry.
+//
+// Only applies when: (a) agent is code-gen or test, (b) no workspace directory
+// is set (API flow). When a workspace exists, the CLI flow handles changes via
+// the filesystem, not EDIT blocks. Returns nil when validation is not applicable.
+func ValidateEditBlocks(agentType models.AgentType, response string, hasWorkDir bool) *ValidationResult {
+	// Only validate code-gen and test agents.
+	switch agentType {
+	case models.AgentTypeCodeGen, models.AgentTypeTest:
+		// OK, continue.
+	default:
+		return nil
+	}
+
+	// If a workspace directory exists, the CLI flow handles changes via
+	// the filesystem, not EDIT blocks. Skip validation.
+	if hasWorkDir {
+		return nil
+	}
+
+	parsed := ParseEditBlocks(response)
+	if len(parsed.Edits) > 0 {
+		return nil // Has EDIT blocks, all good.
+	}
+
+	return &ValidationResult{
+		Pass:      false,
+		Retryable: true,
+		Errors: []ValidationError{
+			{
+				Phase: "format",
+				Message: "response contains no EDIT blocks. Code-gen output must use the format:\n" +
+					"EDIT <filepath>\n<complete file contents>\nEND\n\n" +
+					"One block per file. Do not use markdown code fences. " +
+					"The EDIT/END markers must be on their own lines.",
+			},
+		},
+	}
+}
+
 // truncate returns at most maxLen characters from s.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
