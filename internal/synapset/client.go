@@ -78,7 +78,7 @@ type Memory struct {
 type Config struct {
 	URL       string // MCP endpoint URL
 	Pool      string // default pool for agent memories
-	AuthToken string // Bearer token for authenticated endpoints; empty = no auth
+	AuthToken string `json:"-"` //nolint:gosec // G117: not a hardcoded credential; populated from env var
 }
 
 // ConfigFromEnv builds a Config from environment variables, falling back
