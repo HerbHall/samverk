@@ -318,8 +318,8 @@ func (p *Prober) syncToSynapset(ctx context.Context, result ProbeResult) error {
 		// Update the existing memory.
 		p.logger.Info("updating synapset memory",
 			zap.String("source", source),
-			zap.String("memory_id", mem.ID))
-		return p.synapset.UpdateMemory(ctx, pool, mem.ID, map[string]interface{}{
+			zap.String("memory_id", mem.ID.String()))
+		return p.synapset.UpdateMemory(ctx, pool, mem.ID.String(), map[string]interface{}{
 			"content": summary,
 		})
 	}
