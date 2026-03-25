@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-21T14:30:00Z
+updated: 2026-03-25T04:45:00Z
 updated_by: claude-code
 ---
 
@@ -9,16 +9,16 @@ updated_by: claude-code
 ## Phase
 
 Agent Autonomy -- getting Samverk to run itself. Infrastructure complete.
-All critical and high autonomy gaps now have fixes in PRs or merged.
+Multi-project dispatch now operational. Critical routing fix needed (#270).
 
 ## What Is Running
 
 - Samverk server: CT 202 (192.168.1.162:8080) -- healthy
-- MCP-only listener: CT 202 port 8081 (no SPA, no auth)
-- Claude.ai Custom Connector: `https://samverk.herbhall.net/mcp` -- CONNECTED
-- Dispatcher: RUNNING (1-5 workers, 6 providers, free-first routing)
-- Health monitor: 60s probes, WoL for sleeping hosts
-- Watcher: auto-restart with backoff (no more silent hangs)
+- Dispatcher: RUNNING (1-5 workers, 6 providers, 3 projects, per-project workspace isolation)
+- Projects: samverk, devkit, synapset (all Gitea, all with dedicated repo clones)
+- Synapset memory: AUTHENTICATED (was 401, fixed #266)
+- Go 1.24.1: INSTALLED on CT 202 (agent worktree validation now runs go build/test)
+- GITHUB_TOKEN: DISABLED (commented out, all forge ops via Gitea)
 - Dashboard: unified with Synapset native + DevKit iframe
 - Gitea CI: CT 200 (80GB disk, daily cleanup cron at 3am)
 - Cloudflare Tunnel: e86ba6e3 (samverk + synapset + mcp subdomains)
@@ -27,15 +27,27 @@ All critical and high autonomy gaps now have fixes in PRs or merged.
 
 | Host | GPU | Model | Routing |
 |------|-----|-------|---------|
-| HDH-NZXT | RTX 5090 32GB | qwen3-coder:30b | triage, docs, research |
-| VM 300 | RTX 3090 Ti 24GB | qwen2.5-coder:14b | triage, docs, research |
+| HDH-NZXT | RTX 5090 32GB | qwen3-coder:30b | default, local |
+| VM 300 | RTX 3090 Ti 24GB | qwen2.5-coder:32b | triage, local |
 | CM-ASUS | RTX 2080 Ti 11GB | qwen2.5-coder:7b | triage |
 
-Note: qwen3-coder:30b promoted to code-gen routing (PR #134, #113). Runtime validator is the protection.
+## Blocking Issue
 
-## Open Issues
+**#270 (CRITICAL)**: Ollama cannot produce EDIT blocks for code-gen. 19 issues blocked.
+Needs user decision on routing fix (config change affects cost). Options in issue.
 
-Remaining: agent:human (#57, #70, #72, #74). Wave 12 + CF auth housekeeping complete.
+## Open Issues Summary
+
+| Status | Samverk | DevKit | Synapset |
+|--------|---------|--------|----------|
+| needs-human | 5 | 4 | 1 |
+| blocked (on #270) | 19 | 1 | 0 |
+| blocked (deps) | 10 | 0 | 0 |
+
+### PRs Awaiting Review
+
+- PR #268 -- per-project repo directories (feature, deployed)
+- PR #271 -- Synapset auth token + FlexID (fix, deployed)
 
 ### Planned Next Waves
 
@@ -45,6 +57,49 @@ Remaining: agent:human (#57, #70, #72, #74). Wave 12 + CF auth housekeeping comp
 | B | #57 Option B | Structured JSON output for Ollama code-gen |
 | C | #70 sub-issues (#64, #67, #69) | MCP parity tools |
 | D | #72 Phase 1+2 | WebSocket hub + expanded API |
+
+## Session Summary (2026-03-24/25)
+
+Major infrastructure session: multi-project dispatch, pipeline unblocking, quality triage.
+
+### Deployed Changes
+
+- **Per-project repo directories** (PR #268): Each project gets its own git clone for agent worktrees. DevKit and Synapset issues no longer fail from wrong repo.
+- **Synapset auth token** (PR #271): Client sends Bearer token. Agents get memory enrichment.
+- **Go 1.24.1 on CT 202**: Agent worktree validation now runs go build and go test.
+- **Multi-project dispatcher**: Switched from legacy --owner/--repo (devkit only) to --projects-config (all 3 projects).
+- **GITHUB_TOKEN disabled**: All forge ops through Gitea.
+
+### Issues Filed
+
+- #266 (closed) -- Synapset auth token (implemented)
+- #267 (closed) -- Go install on CT 202 (implemented)
+- #269 -- Ollama code-gen EDIT block quality problem
+- #270 (CRITICAL) -- Route code-gen to Claude CLI chains (needs user cost decision)
+- DevKit #50 -- Autolearn: time-dependent test pattern
+
+### Pipeline Findings
+
+- 21 tasks completed after re-queue, but all via Ollama = comment-only output
+- Root cause: Ollama chat API cannot produce EDIT blocks or modify files
+- All 19 code-gen issues blocked on #270 routing fix
+- 3 already-fixed issues (#262-264) closed
+- Docs issues also comment-only (Ollama claims changes but doesn't make them)
+
+### Needs-Human Queue (your review)
+
+| Issue | Project | What's Needed |
+|-------|---------|---------------|
+| #270 | samverk | **CRITICAL**: Approve routing cost (Claude vs Ollama for code-gen) |
+| #218 | samverk | CF Access OAuth session persistence bug |
+| #128 | samverk | Tauri 2 DevKit scaffolding design |
+| #74 | samverk | Homelab security overhaul (physical access) |
+| #72 | samverk | Dashboard decomposition (large umbrella) |
+| #70 | samverk | MCP/dashboard parity (large umbrella) |
+| #30 | devkit | CI audit risk acceptance |
+| #20 | devkit | VS Code workspace convention |
+| #16, #15 | devkit | CF Access e2e tests (physical machines) |
+| #149 | synapset | CI audit risk acceptance |
 
 ## Gaps to Full Autonomy
 
