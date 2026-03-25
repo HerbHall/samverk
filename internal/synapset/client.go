@@ -40,14 +40,38 @@ const postInitDelay = 150 * time.Millisecond
 // body when reporting parse errors, for diagnostic purposes.
 const bodyPreviewLen = 200
 
+// FlexID accepts both JSON string and number values, storing as string.
+// Synapset returns numeric IDs in API responses but tests use string IDs.
+type FlexID string
+
+// UnmarshalJSON accepts both JSON strings ("mem-1") and numbers (779).
+func (f *FlexID) UnmarshalJSON(data []byte) error {
+	// Try string first.
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = FlexID(s)
+		return nil
+	}
+	// Fall back to number.
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err == nil {
+		*f = FlexID(n.String())
+		return nil
+	}
+	return fmt.Errorf("FlexID: cannot unmarshal %s", string(data))
+}
+
+// String returns the ID as a string.
+func (f FlexID) String() string { return string(f) }
+
 // Memory represents a single memory entry returned by Synapset.
 type Memory struct {
-	ID         string  `json:"id"`
-	Content    string  `json:"content"`
-	Category   string  `json:"category"`
+	ID         FlexID   `json:"id"`
+	Content    string   `json:"content"`
+	Category   string   `json:"category"`
 	Tags       []string `json:"tags"`
-	Source     string  `json:"source"`
-	Similarity float64 `json:"similarity"`
+	Source     string   `json:"source"`
+	Similarity float64  `json:"similarity"`
 }
 
 // Config holds Synapset client configuration.
