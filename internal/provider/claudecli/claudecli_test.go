@@ -2,6 +2,7 @@ package claudecli
 
 import (
 	"context"
+	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -251,6 +252,105 @@ func TestChatOmitsOptionalFlags(t *testing.T) {
 	}
 	if strings.Contains(content, "--max-turns") {
 		t.Errorf("output should not contain --max-turns when not configured, got: %s", content)
+	}
+}
+
+// TestChatIncludesStreamJSON verifies --output-format stream-json --verbose
+// are always present in CLI args.
+func TestChatIncludesStreamJSON(t *testing.T) {
+	c := &Client{
+		claudeBin: "echo",
+		model:     "",
+		timeout:   defaultTimeout,
+	}
+
+	resp, err := c.Chat(context.Background(), provider.ChatRequest{
+		Messages: []provider.Message{
+			{Role: provider.RoleUser, Content: "test"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	content := resp.Message.Content
+	if !strings.Contains(content, "--output-format") {
+		t.Errorf("output missing --output-format flag, got: %s", content)
+	}
+	if !strings.Contains(content, "stream-json") {
+		t.Errorf("output missing stream-json value, got: %s", content)
+	}
+	if !strings.Contains(content, "--verbose") {
+		t.Errorf("output missing --verbose flag, got: %s", content)
+	}
+}
+
+// TestStreamOutputParsesResultEvent verifies that streamOutput extracts
+// the result text from a stream-json {"type":"result"} event.
+func TestStreamOutputParsesResultEvent(t *testing.T) {
+	// Simulate a stream-json session with init + assistant + result events.
+	jsonLines := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"test-123"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"thinking..."}]}}`,
+		`{"type":"result","subtype":"success","result":"The answer is 42.","is_error":false}`,
+	}, "\n") + "\n"
+
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+
+	go func() {
+		_, _ = stdoutW.Write([]byte(jsonLines))
+		_ = stdoutW.Close()
+	}()
+	go func() {
+		_ = stderrW.Close()
+	}()
+
+	var output strings.Builder
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	c := &Client{}
+	err := c.streamOutput(ctx, cancel, &output, stdoutR, stderrR)
+	if err != nil {
+		t.Fatalf("streamOutput() error = %v", err)
+	}
+
+	result := strings.TrimSpace(output.String())
+	if result != "The answer is 42." {
+		t.Errorf("result = %q, want %q", result, "The answer is 42.")
+	}
+}
+
+// TestStreamOutputHandlesNonJSON verifies fallback behavior when the CLI
+// produces non-JSON output (e.g. error messages or old CLI versions).
+func TestStreamOutputHandlesNonJSON(t *testing.T) {
+	plainText := "This is plain text output\nfrom the CLI\n"
+
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+
+	go func() {
+		_, _ = stdoutW.Write([]byte(plainText))
+		_ = stdoutW.Close()
+	}()
+	go func() {
+		_ = stderrW.Close()
+	}()
+
+	var output strings.Builder
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	c := &Client{}
+	err := c.streamOutput(ctx, cancel, &output, stdoutR, stderrR)
+	if err != nil {
+		t.Fatalf("streamOutput() error = %v", err)
+	}
+
+	// Non-JSON lines accumulate as raw text.
+	if !strings.Contains(output.String(), "This is plain text output") {
+		t.Errorf("expected raw text in output, got: %q", output.String())
 	}
 }
 

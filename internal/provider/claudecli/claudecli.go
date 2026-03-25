@@ -4,7 +4,9 @@
 package claudecli
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -28,27 +30,23 @@ const (
 	// oversized GitHub issue comments and avoid leaking unrelated terminal output.
 	maxErrOutputBytes = 2048
 
-	// startupTimeout is how long Chat waits for the first byte of output after
-	// spawning the process. If nothing arrives within this window, the process
-	// is assumed to have failed to start (e.g. OAuth hang, binary crash).
+	// startupTimeout is how long Chat waits for the first JSON event after
+	// spawning the process. With --output-format stream-json --verbose, the
+	// CLI emits a {"type":"system","subtype":"init"} event within 1-3 seconds
+	// of startup. 30s is generous enough for slow machines while catching
+	// true startup failures (OAuth hang, binary crash, missing .git dir).
 	//
-	// Must be long enough to allow claude-cli's first agentic round-trip
-	// (prompt → API → tool call → API → first output) to complete.
-	// In --print mode the CLI buffers all output until the session ends, so
-	// the first byte may not arrive until after multiple tool-call iterations.
-	// Complex code-gen issues on claude-sonnet regularly exceed 120s before
-	// producing any output (observed: devkit#7 timed out 3x at 120s). 300s
-	// still catches true crashes which close the pipe long before the timer.
-	startupTimeout = 300 * time.Second
+	// Previously 300s when using plain --print (which buffers ALL output).
+	startupTimeout = 30 * time.Second
 
-	// staleOutputTimeout is how long Chat waits for new bytes before treating
-	// the process as hung. Must be shorter than the dispatcher heartbeat timeout.
-	// 30s provides fast hang detection while still allowing brief pauses between
-	// tool calls (typically <15s).
-	staleOutputTimeout = 30 * time.Second
+	// staleOutputTimeout is how long Chat waits between JSON events before
+	// treating the process as hung. With stream-json, the CLI emits events
+	// for each assistant turn, tool call, and tool result, so gaps between
+	// events correspond to actual API round-trip time (typically 5-30s).
+	// 120s accommodates long-running tool calls and slow API responses
+	// while still detecting genuine hangs.
+	staleOutputTimeout = 120 * time.Second
 
-	// streamBufSize is the read buffer for pipe-based streaming.
-	streamBufSize = 4096
 )
 
 // Client invokes the claude CLI binary for chat completions.
@@ -104,12 +102,16 @@ func (c *Client) SetOnActivity(fn func()) {
 	c.onActivity = fn
 }
 
-// Chat builds a prompt from the request messages, invokes `claude --print`,
-// and returns the CLI output as the assistant response.
+// Chat builds a prompt from the request messages, invokes `claude --print`
+// with `--output-format stream-json --verbose`, and returns the final result.
 //
-// Output is read incrementally via pipes instead of CombinedOutput so that
-// the onActivity callback fires as bytes arrive and hung processes are
-// detected early (no output for staleOutputTimeout → cancel).
+// The stream-json format emits one JSON object per line as events occur
+// (init, assistant turns, tool calls, tool results, rate limits, final result).
+// This enables real-time activity detection: each JSON line resets the stale
+// timer, preventing false "hung process" kills during long agentic sessions
+// where plain --print mode would buffer ALL output until the session ends.
+//
+// The final result text is extracted from the {"type":"result"} event.
 //
 // IMPORTANT: The prompt MUST be sent via stdin, not as a CLI argument.
 // Passing the prompt as an argument causes the CLI to hang indefinitely.
@@ -135,7 +137,13 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		log = zap.NewNop()
 	}
 
-	args := []string{"--print", "--dangerously-skip-permissions", "--no-session-persistence"}
+	args := []string{
+		"--print",
+		"--dangerously-skip-permissions",
+		"--no-session-persistence",
+		"--output-format", "stream-json",
+		"--verbose",
+	}
 	if c.allowedTools != "" {
 		args = append(args, "--allowedTools", c.allowedTools)
 	}
@@ -229,9 +237,14 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		return nil, fmt.Errorf("claude-cli: exec: %w: output: %s", waitErr, strings.TrimSpace(snippet))
 	}
 
+	// output now contains the result text extracted from the stream-json
+	// {"type":"result"} event. If stream-json parsing failed or the CLI
+	// produced plain text, output contains the raw accumulated text.
+	resultText := strings.TrimSpace(output.String())
+
 	log.Info("claude-cli chat response",
 		zap.String("model", c.model),
-		zap.Int("output_bytes", output.Len()),
+		zap.Int("result_bytes", len(resultText)),
 		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
 	)
 
@@ -239,7 +252,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		Model: c.model,
 		Message: provider.Message{
 			Role:    provider.RoleAssistant,
-			Content: strings.TrimSpace(output.String()),
+			Content: resultText,
 		},
 	}, nil
 }
@@ -279,105 +292,182 @@ func (c *Client) buildEnv() []string {
 	return env
 }
 
-// streamOutput reads from stdout and stderr concurrently, writing to output.
-// It fires onActivity on each read and cancels the context if no bytes arrive
-// within the timeout window. Two phases:
-//   - Startup: waits startupTimeout for the first byte (fast-fail on launch issues)
-//   - Stale: after first byte, waits staleOutputTimeout between subsequent reads
+// streamEvent is the minimal structure of a stream-json event from the CLI.
+// Only fields needed for activity detection and result extraction are decoded.
+type streamEvent struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype,omitempty"`
+	Result  string `json:"result,omitempty"`
+	IsError bool   `json:"is_error,omitempty"`
+}
+
+// streamOutput reads stream-json events from stdout, line by line.
+// Each JSON line resets the activity timer so the dispatcher knows the
+// session is alive. The final result text is extracted from the
+// {"type":"result"} event and written to output.
 //
-// Returns *provider.ErrProviderTimeout on timeout so the pool can retry with
-// the next provider in the routing chain.
+// Stderr is drained separately to prevent pipe deadlocks but is not
+// used for activity detection (the CLI produces no stderr in --print mode).
+//
+// Two timeout phases:
+//   - Startup: waits startupTimeout for the first JSON line (~2s expected)
+//   - Stale: after first line, waits staleOutputTimeout between lines
+//
+// Returns *provider.ErrProviderTimeout on timeout so the pool can retry
+// with the next provider in the routing chain.
 func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, output *strings.Builder, stdout, stderr io.ReadCloser) error {
-	// Merge stdout and stderr via a pipe so we can read from a single source.
-	pr, pw := io.Pipe()
+	log := c.logger
+	if log == nil {
+		log = zap.NewNop()
+	}
 
+	// Drain stderr in background to prevent pipe deadlock.
+	var stderrBuf strings.Builder
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(pw, stdout)
-	}()
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(pw, stderr)
-	}()
-	go func() {
-		wg.Wait()
-		_ = pw.Close()
+		_, _ = io.Copy(&stderrBuf, stderr)
 	}()
 
-	buf := make([]byte, streamBufSize)
+	scanner := bufio.NewScanner(stdout)
+	// stream-json events can be large (full assistant messages with tool results).
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
-	// Start with the startup timeout; switch to stale after first byte.
-	gotFirstByte := false
+	gotFirstLine := false
 	timer := time.NewTimer(startupTimeout)
 	defer timer.Stop()
 
-	for {
-		// Use a channel to make Read interruptible by the timer.
-		type readResult struct {
-			n   int
-			err error
-		}
-		ch := make(chan readResult, 1)
-		go func() {
-			n, readErr := pr.Read(buf)
-			ch <- readResult{n, readErr}
-		}()
+	// Use a channel to make Scan interruptible by the timer.
+	type scanResult struct {
+		line string
+		ok   bool
+	}
+	lineCh := make(chan scanResult, 1)
 
+	scanNext := func() {
+		go func() {
+			ok := scanner.Scan()
+			if ok {
+				lineCh <- scanResult{line: scanner.Text(), ok: true}
+			} else {
+				lineCh <- scanResult{ok: false}
+			}
+		}()
+	}
+
+	var resultText string
+	var numTurns int
+
+	scanNext()
+	for {
 		select {
 		case <-ctx.Done():
+			wg.Wait()
 			return ctx.Err()
+
 		case <-timer.C:
-			cancel() // kill the subprocess
+			cancel()
 			timeoutType := provider.TimeoutStartup
 			dur := startupTimeout
-			if gotFirstByte {
+			if gotFirstLine {
 				timeoutType = provider.TimeoutStale
 				dur = staleOutputTimeout
 			}
-			c.logger.Error("claude-cli timeout",
+			log.Error("claude-cli timeout",
 				zap.String("provider", c.Name()),
 				zap.String("model", c.model),
 				zap.String("timeout_type", string(timeoutType)),
 				zap.Duration("duration", dur),
+				zap.Int("turns_completed", numTurns),
 			)
+			wg.Wait()
 			return &provider.ErrProviderTimeout{
 				Provider:    c.Name(),
 				Model:       c.model,
 				TimeoutType: timeoutType,
 				Duration:    dur,
 			}
-		case res := <-ch:
-			if res.n > 0 {
-				output.Write(buf[:res.n])
-				// Reset timer — process is alive.
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
+
+		case res := <-lineCh:
+			if !res.ok {
+				// Scanner finished (EOF or error).
+				wg.Wait()
+				if err := scanner.Err(); err != nil {
+					return fmt.Errorf("read stream: %w", err)
 				}
-				// After first byte, switch to stale output timeout.
-				if !gotFirstByte {
-					gotFirstByte = true
-					timer.Reset(staleOutputTimeout)
-				} else {
-					timer.Reset(staleOutputTimeout)
+				// If we got a result from the stream, use it.
+				// Otherwise fall back to raw output (non-json CLI or error).
+				if resultText != "" {
+					output.Reset()
+					output.WriteString(resultText)
+				} else if output.Len() == 0 && stderrBuf.Len() > 0 {
+					// No stdout at all -- surface stderr as the output.
+					output.WriteString(stderrBuf.String())
 				}
-				// Signal activity to the dispatcher heartbeat.
-				if c.onActivity != nil {
-					c.onActivity()
+				return nil
+			}
+
+			line := res.line
+
+			// Reset timer on every line -- the process is alive.
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
 				}
 			}
-			if res.err != nil {
-				if res.err == io.EOF {
-					return nil
-				}
-				return fmt.Errorf("read output: %w", res.err)
+			if !gotFirstLine {
+				gotFirstLine = true
+				log.Debug("claude-cli first event received",
+					zap.String("model", c.model),
+				)
 			}
+			timer.Reset(staleOutputTimeout)
+
+			// Signal activity to the dispatcher heartbeat.
+			if c.onActivity != nil {
+				c.onActivity()
+			}
+
+			// Parse the JSON event to extract type and result.
+			var event streamEvent
+			if err := json.Unmarshal([]byte(line), &event); err != nil {
+				// Not valid JSON -- accumulate as raw output (fallback).
+				output.WriteString(line)
+				output.WriteByte('\n')
+				scanNext()
+				continue
+			}
+
+			switch event.Type {
+			case "assistant":
+				numTurns++
+			case "result":
+				resultText = event.Result
+				if event.IsError {
+					log.Warn("claude-cli session ended with error",
+						zap.String("model", c.model),
+						zap.String("result", truncate(resultText, 200)),
+					)
+				}
+			}
+
+			// Also accumulate raw lines so output has full context on error.
+			output.WriteString(line)
+			output.WriteByte('\n')
+
+			scanNext()
 		}
 	}
+}
+
+// truncate returns s truncated to n bytes with "..." appended if truncated.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // Healthy returns true if the claude binary is found and responds to --version.
