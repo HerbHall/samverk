@@ -61,6 +61,52 @@ A $50/month bill that ships a product in 12 months instead of never is the cheap
 - Maximum throughput with minimum per-task cost
 - Estimated $50-100/month (local absorbs most volume)
 
+## Provider Token Policy
+
+### MAX Plan First (Design Standard)
+
+All Claude providers in production use `type: claude-cli`, which spawns the Claude CLI
+process authenticated via OAuth token (MAX plan subscription). The CLI explicitly strips
+`ANTHROPIC_API_KEY` from the subprocess environment to prevent accidental API credit
+consumption.
+
+**Rules:**
+
+1. **Claude CLI (MAX plan) is the only authorized Claude provider type in production.**
+   The `type: claude` (API) provider exists in code but must not be configured in
+   `providers.yaml` without an approved cost plan.
+2. **API keys are disabled by default.** `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are
+   commented out in the production env file with intent documentation. Re-enabling
+   requires project owner approval and a documented cost justification.
+3. **Ollama (free) handles volume.** Code-gen, docs, research, QC triage -- anything
+   the local models can do at acceptable quality runs on Ollama first.
+4. **Claude CLI handles complexity.** Tasks that exceed Ollama capability (complex
+   architecture, multi-file refactors, cross-system reasoning) route to Claude CLI
+   via the `complex` chain.
+5. **MAX plan tokens are a budget.** They are cheaper than API tokens but not free.
+   Use the lowest-cost provider that produces acceptable quality for each task type.
+
+### Priority Tree
+
+```text
+Quality > Cost > Speed
+```
+
+Speed is only a factor when delay causes further harm (e.g., a broken pipeline
+blocking all other work). Otherwise, slow and correct beats fast and wasteful.
+
+### Future API Use
+
+API credits (Anthropic, OpenAI) may be enabled in the future if:
+
+- The project generates revenue that covers the cost
+- A specific feature requires API-only capabilities (e.g., streaming, function calling
+  patterns not available via CLI)
+- A documented cost plan is approved showing expected spend and ROI
+
+Until then, all AI provider spend is covered by subscriptions (MAX plan) and
+local hardware (Ollama GPU fleet).
+
 ## Cost Transparency
 
 Cost must be a first-class concern in the UI:
