@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/store"
 )
 
 // pipelineIssueRef is a minimal issue reference within a pipeline stage.
@@ -39,28 +40,28 @@ type pipelineResponse struct {
 // Open issues with no recognised status label → "open" (unrouted).
 func classifyStage(iss *forge.Issue) string {
 	if iss.State == forge.StateClosed {
-		return "done"
+		return store.StageDone
 	}
 	for _, label := range iss.Labels {
 		switch label {
 		case "status:queued":
-			return "queued"
+			return store.StageQueued
 		case "status:claimed":
-			return "claimed"
+			return store.StageClaimed
 		case "status:in-progress":
-			return "in_progress"
+			return store.StageInProgress
 		case "status:needs-qc":
-			return "needs_qc"
+			return store.StageNeedsQC
 		case "status:needs-human":
-			return "needs_human"
+			return store.StageNeedsHuman
 		case "status:blocked":
-			return "blocked"
+			return store.StageBlocked
 		case "status:failed":
-			return "failed"
+			return store.StageFailed
 		}
 	}
 	// Open with no status label — unrouted.
-	return "open"
+	return store.StageOpen
 }
 
 // handlePipelineStages handles GET /api/v1/pipeline/stages.
@@ -99,7 +100,7 @@ func (a *API) handlePipelineStages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ordered stage names used in the response.
-	stageOrder := []string{"open", "queued", "claimed", "in_progress", "needs_qc", "needs_human", "blocked", "done", "failed"}
+	stageOrder := store.StageOrder
 
 	// Accumulate issues per stage.
 	stageMap := make(map[string][]pipelineIssueRef, len(stageOrder))
@@ -118,7 +119,7 @@ func (a *API) handlePipelineStages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, iss := range closedIssues {
-		stageMap["done"] = append(stageMap["done"], pipelineIssueRef{
+		stageMap[store.StageDone] = append(stageMap[store.StageDone], pipelineIssueRef{
 			Number: iss.Number,
 			Title:  iss.Title,
 		})

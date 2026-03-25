@@ -6,6 +6,28 @@ import (
 	"time"
 )
 
+// PipelineStageName is a typed string for pipeline stage identifiers.
+type PipelineStageName = string
+
+// Pipeline stage name constants used across the application.
+const (
+	StageOpen       PipelineStageName = "open"
+	StageQueued     PipelineStageName = "queued"
+	StageClaimed    PipelineStageName = "claimed"
+	StageInProgress PipelineStageName = "in_progress"
+	StageNeedsQC    PipelineStageName = "needs_qc"
+	StageNeedsHuman PipelineStageName = "needs_human"
+	StageBlocked    PipelineStageName = "blocked"
+	StageDone       PipelineStageName = "done"
+	StageFailed     PipelineStageName = "failed"
+)
+
+// StageOrder is the canonical ordering of pipeline stages for display.
+var StageOrder = []PipelineStageName{
+	StageOpen, StageQueued, StageClaimed, StageInProgress,
+	StageNeedsQC, StageNeedsHuman, StageBlocked, StageDone, StageFailed,
+}
+
 // RecordPipelineEvent inserts a pipeline stage transition event.
 func (s *SQLiteStore) RecordPipelineEvent(ctx context.Context, e PipelineEvent) error {
 	_, err := s.db.ExecContext(ctx,
