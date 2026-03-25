@@ -406,6 +406,100 @@ func TestValidateWorkspaceOutput_CLAUDEMDOnlyIsNonRetryable(t *testing.T) {
 	}
 }
 
+func TestValidateEditBlocks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		agentType         models.AgentType
+		response          string
+		hasWorkDir bool
+		wantNil           bool // true = validation not applicable
+		wantPass          bool
+	}{
+		{
+			name:      "code-gen with valid EDIT blocks passes",
+			agentType: models.AgentTypeCodeGen,
+			response:  "EDIT internal/foo.go\npackage foo\nEND\n\nPR_TITLE: add foo",
+			wantPass:  true,
+		},
+		{
+			name:      "code-gen with no EDIT blocks fails",
+			agentType: models.AgentTypeCodeGen,
+			response:  "Here is my analysis of the code. I would suggest changing the function to...",
+			wantPass:  false,
+		},
+		{
+			name:      "code-gen with markdown code blocks but no EDIT blocks fails",
+			agentType: models.AgentTypeCodeGen,
+			response:  "```go\npackage foo\n\nfunc Bar() {}\n```\n\nThis should fix the issue.",
+			wantPass:  false,
+		},
+		{
+			name:              "code-gen with workspace changes skips validation",
+			agentType:         models.AgentTypeCodeGen,
+			response:          "no EDIT blocks here",
+			hasWorkDir: true,
+			wantNil:           true,
+		},
+		{
+			name:      "test agent with no EDIT blocks fails",
+			agentType: models.AgentTypeTest,
+			response:  "Here are the tests I would write...",
+			wantPass:  false,
+		},
+		{
+			name:      "docs agent skips validation",
+			agentType: models.AgentTypeDocs,
+			response:  "no EDIT blocks needed for docs",
+			wantNil:   true,
+		},
+		{
+			name:      "research agent skips validation",
+			agentType: models.AgentTypeResearch,
+			response:  "no EDIT blocks needed for research",
+			wantNil:   true,
+		},
+		{
+			name:      "code-gen with multiple EDIT blocks passes",
+			agentType: models.AgentTypeCodeGen,
+			response:  "EDIT a.go\npackage a\nEND\n\nEDIT b.go\npackage b\nEND\n\nPR_TITLE: refactor",
+			wantPass:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := ValidateEditBlocks(tt.agentType, tt.response, tt.hasWorkDir)
+			if tt.wantNil {
+				if result != nil {
+					t.Errorf("expected nil result, got %+v", result)
+				}
+				return
+			}
+			if result == nil {
+				if !tt.wantPass {
+					t.Error("expected non-nil failing result, got nil")
+				}
+				return
+			}
+			if result.Pass != tt.wantPass {
+				t.Errorf("Pass = %v, want %v", result.Pass, tt.wantPass)
+			}
+			if !tt.wantPass && !result.Retryable {
+				t.Error("format failures should be retryable")
+			}
+			if !tt.wantPass && len(result.Errors) == 0 {
+				t.Error("expected at least one error")
+			}
+			if !tt.wantPass && result.Errors[0].Phase != "format" {
+				t.Errorf("error phase = %q, want %q", result.Errors[0].Phase, "format")
+			}
+		})
+	}
+}
+
 // writeGoFiles creates a minimal Go module in dir with go.mod, main.go, and
 // optionally main_test.go (when testContent is non-empty).
 func writeGoFiles(t *testing.T, dir, goMod, mainContent, testContent string) {

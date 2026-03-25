@@ -359,6 +359,30 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		resp = retryResp // use the retry response for postProcess
 	}
 
+	// Step 6d: Validate EDIT block format for code-gen/test agents (#269).
+	// Ollama models often return prose instead of structured EDIT blocks.
+	// Without this check, the response falls through to postComment() and
+	// produces comment-only output with zero PRs.
+	//
+	// Only applies when: (a) no workspace (API flow, not CLI), and
+	// (b) repo writer + PR manager are configured (EDIT blocks can create PRs).
+	canUsePRPath := workDir == "" && r.repoWriter != nil && r.prManager != nil
+	editVal := ValidateEditBlocks(task.AgentType, resp.Message.Content, !canUsePRPath)
+	if editVal != nil && !editVal.Pass {
+		r.logger.Warn("EDIT block validation failed, retrying with format guidance",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("agent", string(task.AgentType)),
+		)
+		retryResp, retryErr := r.retryWithValidationErrors(ctx, task, req, workDir, editVal)
+		if retryErr != nil {
+			r.failTaskWithClass(ctx, task,
+				fmt.Sprintf("format validation failed: agent did not produce EDIT blocks after retry: %v", retryErr),
+				"format_error")
+			return fmt.Errorf("EDIT block validation: %w", retryErr)
+		}
+		resp = retryResp
+	}
+
 	// Step 7: Post-process response based on agent type.
 	if err = r.postProcess(ctx, task, resp.Message.Content, workDir); err != nil {
 		r.failTask(ctx, task, fmt.Sprintf("post-process error: %v", err))
