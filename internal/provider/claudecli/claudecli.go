@@ -147,8 +147,13 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	if c.allowedTools != "" {
 		args = append(args, "--allowedTools", c.allowedTools)
 	}
-	if c.maxTurns > 0 {
-		args = append(args, "--max-turns", strconv.Itoa(c.maxTurns))
+	// Per-request MaxTurns overrides client default when > 0.
+	effectiveMaxTurns := c.maxTurns
+	if req.MaxTurns > 0 {
+		effectiveMaxTurns = req.MaxTurns
+	}
+	if effectiveMaxTurns > 0 {
+		args = append(args, "--max-turns", strconv.Itoa(effectiveMaxTurns))
 	}
 	if c.model != "" {
 		args = append(args, "--model", c.model)
@@ -159,7 +164,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		zap.Int("message_count", len(req.Messages)),
 		zap.Int("prompt_bytes", prompt.Len()),
 		zap.String("allowed_tools", c.allowedTools),
-		zap.Int("max_turns", c.maxTurns),
+		zap.Int("max_turns", effectiveMaxTurns),
 		zap.Duration("timeout", c.timeout),
 	)
 
@@ -199,7 +204,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 	// Read stdout and stderr concurrently, merging into a single buffer.
 	var output strings.Builder
-	streamErr := c.streamOutput(ctx, cancel, &output, stdout, stderr)
+	meta, streamErr := c.streamOutput(ctx, cancel, &output, stdout, stderr)
 
 	// Wait for the process to exit after pipes are drained.
 	waitErr := cmd.Wait()
@@ -254,6 +259,8 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 			Role:    provider.RoleAssistant,
 			Content: resultText,
 		},
+		MaxTurnsHit: meta.ResultError && meta.NumTurns >= effectiveMaxTurns,
+		TurnsUsed:   meta.NumTurns,
 	}, nil
 }
 
@@ -301,6 +308,12 @@ type streamEvent struct {
 	IsError bool   `json:"is_error,omitempty"`
 }
 
+// streamMeta carries metadata extracted from the stream-json session.
+type streamMeta struct {
+	NumTurns    int  // number of assistant turns completed
+	ResultError bool // true if the result event had is_error=true (e.g., max-turns reached)
+}
+
 // streamOutput reads stream-json events from stdout, line by line.
 // Each JSON line resets the activity timer so the dispatcher knows the
 // session is alive. The final result text is extracted from the
@@ -315,7 +328,7 @@ type streamEvent struct {
 //
 // Returns *provider.ErrProviderTimeout on timeout so the pool can retry
 // with the next provider in the routing chain.
-func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, output *strings.Builder, stdout, stderr io.ReadCloser) error {
+func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, output *strings.Builder, stdout, stderr io.ReadCloser) (streamMeta, error) {
 	log := c.logger
 	if log == nil {
 		log = zap.NewNop()
@@ -358,13 +371,14 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 
 	var resultText string
 	var numTurns int
+	var resultIsError bool
 
 	scanNext()
 	for {
 		select {
 		case <-ctx.Done():
 			wg.Wait()
-			return ctx.Err()
+			return streamMeta{NumTurns: numTurns, ResultError: resultIsError}, ctx.Err()
 
 		case <-timer.C:
 			cancel()
@@ -382,7 +396,7 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 				zap.Int("turns_completed", numTurns),
 			)
 			wg.Wait()
-			return &provider.ErrProviderTimeout{
+			return streamMeta{NumTurns: numTurns}, &provider.ErrProviderTimeout{
 				Provider:    c.Name(),
 				Model:       c.model,
 				TimeoutType: timeoutType,
@@ -394,7 +408,7 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 				// Scanner finished (EOF or error).
 				wg.Wait()
 				if err := scanner.Err(); err != nil {
-					return fmt.Errorf("read stream: %w", err)
+					return streamMeta{NumTurns: numTurns, ResultError: resultIsError}, fmt.Errorf("read stream: %w", err)
 				}
 				// If we got a result from the stream, use it.
 				// Otherwise fall back to raw output (non-json CLI or error).
@@ -405,7 +419,7 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 					// No stdout at all -- surface stderr as the output.
 					output.WriteString(stderrBuf.String())
 				}
-				return nil
+				return streamMeta{NumTurns: numTurns, ResultError: resultIsError}, nil
 			}
 
 			line := res.line
@@ -445,6 +459,7 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 				numTurns++
 			case "result":
 				resultText = event.Result
+				resultIsError = event.IsError
 				if event.IsError {
 					log.Warn("claude-cli session ended with error",
 						zap.String("model", c.model),

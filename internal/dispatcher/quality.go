@@ -28,16 +28,18 @@ func checkOutputQuality(output string, agentType models.AgentType) QualityResult
 		return QualityResult{Pass: false, Reason: "output too short", Score: 0.0}
 	}
 
-	// Truncation markers (model hit token limit).
+	// Truncation markers: only match patterns that strongly indicate forced
+	// cutoff rather than natural language transitions. "I'll continue" and
+	// "Let me continue" produce false positives on normal agent prose.
 	truncationMarkers := []string{
-		"I'll continue",
-		"Let me continue",
 		"...truncated",
 		"output limit reached",
+		"maximum number of turns",
+		"reached the turn limit",
 	}
 	for _, marker := range truncationMarkers {
-		if strings.Contains(output, marker) {
-			return QualityResult{Pass: false, Reason: "output appears truncated", Score: 0.3}
+		if strings.Contains(strings.ToLower(output), strings.ToLower(marker)) {
+			return QualityResult{Pass: false, Reason: "output appears truncated: " + marker, Score: 0.3}
 		}
 	}
 

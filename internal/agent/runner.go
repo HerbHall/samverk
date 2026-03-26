@@ -273,6 +273,7 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		Model:      r.model,
 		Messages:   messages,
 		WorkingDir: workDir,
+		MaxTurns:   estimateMaxTurns(task),
 	}
 
 	// Step 5: Call provider (with heartbeat and streaming activity detection).
@@ -820,6 +821,47 @@ func (r *Runner) storePartialOutput(ctx context.Context, sessionID, output strin
 	session.PartialOutput = output
 	session.UpdatedAt = time.Now()
 	return r.store.UpdateSession(ctx, session)
+}
+
+// estimateMaxTurns computes an adaptive max-turns value based on task signals.
+// Each agentic turn is roughly one tool call + response. More complex tasks
+// need more turns for reading files, making edits, running builds, and fixing
+// errors. The base of 25 matches simple issues; complex ones can get up to 75.
+func estimateMaxTurns(task Task) int {
+	turns := 25 // base for simple tasks
+
+	if task.Frontmatter != nil {
+		// More files to read/modify = more tool calls needed.
+		fc := len(task.Frontmatter.FileContext)
+		if fc > 3 {
+			turns += 10
+		}
+		if fc > 6 {
+			turns += 10
+		}
+
+		// Higher token estimate = more complex work.
+		if task.Frontmatter.EstimatedTokens > 15000 {
+			turns += 10
+		}
+		if task.Frontmatter.EstimatedTokens > 30000 {
+			turns += 10
+		}
+	}
+
+	// Provider chain hints at complexity.
+	switch task.ProviderKey {
+	case "complex":
+		turns += 15
+	case "code-gen":
+		turns += 5
+	}
+
+	// Cap at 75 to prevent runaway sessions.
+	if turns > 75 {
+		turns = 75
+	}
+	return turns
 }
 
 // completeSession marks a session as completed with a finish timestamp.

@@ -311,7 +311,7 @@ func TestStreamOutputParsesResultEvent(t *testing.T) {
 	defer cancel()
 
 	c := &Client{}
-	err := c.streamOutput(ctx, cancel, &output, stdoutR, stderrR)
+	_, err := c.streamOutput(ctx, cancel, &output, stdoutR, stderrR)
 	if err != nil {
 		t.Fatalf("streamOutput() error = %v", err)
 	}
@@ -343,7 +343,7 @@ func TestStreamOutputHandlesNonJSON(t *testing.T) {
 	defer cancel()
 
 	c := &Client{}
-	err := c.streamOutput(ctx, cancel, &output, stdoutR, stderrR)
+	_, err := c.streamOutput(ctx, cancel, &output, stdoutR, stderrR)
 	if err != nil {
 		t.Fatalf("streamOutput() error = %v", err)
 	}

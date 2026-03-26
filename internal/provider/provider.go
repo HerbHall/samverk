@@ -25,6 +25,7 @@ type ChatRequest struct {
 	Messages   []Message `json:"messages"`
 	Stream     bool      `json:"stream"`      // always false for now
 	WorkingDir string    `json:"-"`            // workspace directory for CLI providers; not serialized
+	MaxTurns   int       `json:"-"`            // per-request max agentic turns; 0 = use provider default
 }
 
 // ChatResponse contains the result of a chat completion.
@@ -35,6 +36,13 @@ type ChatResponse struct {
 	// Token usage (if reported by provider).
 	PromptTokens     int `json:"prompt_eval_count,omitempty"`
 	CompletionTokens int `json:"eval_count,omitempty"`
+
+	// MaxTurnsHit is true when the session ended because it reached the
+	// --max-turns limit. The runner can use this to decide whether to
+	// increase max_turns on retry.
+	MaxTurnsHit bool `json:"-"`
+	// TurnsUsed is the number of assistant turns completed in this session.
+	TurnsUsed int `json:"-"`
 }
 
 // ActivityNotifier is an optional interface that providers may implement to
