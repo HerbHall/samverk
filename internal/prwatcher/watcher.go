@@ -148,7 +148,14 @@ func (w *Watcher) poll(ctx context.Context) error {
 			continue
 		}
 		if w.issueTracker != nil {
-			w.closeLinkedIssues(ctx, pr)
+			issueNums := w.closeLinkedIssues(ctx, pr)
+			// Unblock dependent issues for each closed issue.
+			for _, issueNum := range issueNums {
+				if err := w.unblockDependents(ctx, issueNum); err != nil {
+					w.log().Warn("pr-watcher: unblock dependents",
+						zap.Int("issue", issueNum), zap.Error(err))
+				}
+			}
 		}
 	}
 
@@ -361,12 +368,14 @@ func parseLinkedIssues(pr *forge.PullRequest) []int {
 }
 
 // closeLinkedIssues closes all issues referenced in the PR title or body and
-// replaces their status labels with "status:done".
-func (w *Watcher) closeLinkedIssues(ctx context.Context, pr *forge.PullRequest) {
+// replaces their status labels with "status:done". Returns the list of successfully
+// closed issue numbers.
+func (w *Watcher) closeLinkedIssues(ctx context.Context, pr *forge.PullRequest) []int {
 	issueNums := parseLinkedIssues(pr)
+	closed := make([]int, 0, len(issueNums))
 	for _, num := range issueNums {
-		closed := forge.StateClosed
-		_, err := w.issueTracker.UpdateIssue(ctx, num, &forge.UpdateIssueRequest{State: &closed})
+		closedState := forge.StateClosed
+		_, err := w.issueTracker.UpdateIssue(ctx, num, &forge.UpdateIssueRequest{State: &closedState})
 		if err != nil {
 			w.log().Warn("prwatcher: failed to close linked issue",
 				zap.Int("issue", num), zap.Int("pr", pr.Number), zap.Error(err))
@@ -378,7 +387,9 @@ func (w *Watcher) closeLinkedIssues(ctx context.Context, pr *forge.PullRequest) 
 			w.log().Warn("prwatcher: failed to set status:done on linked issue",
 				zap.Int("issue", num), zap.Error(err))
 		}
+		closed = append(closed, num)
 	}
+	return closed
 }
 
 // isEligible checks static PR attributes against merge policy.
@@ -442,4 +453,112 @@ func (w *Watcher) allChecksPassed(checks []forge.Check) bool {
 	}
 
 	return true
+}
+
+// unblockDependents scans blocked issues and transitions any whose dependencies
+// are all satisfied after closedIssueNumber was closed.
+// It removes status:blocked and adds status:queued for unblocked issues.
+func (w *Watcher) unblockDependents(ctx context.Context, closedIssueNumber int) error {
+	if w.issueTracker == nil {
+		return nil
+	}
+
+	blockedIssues, err := w.issueTracker.ListIssues(ctx, &forge.ListOptions{
+		State:   forge.StateOpen,
+		Labels:  []string{models.LabelStatusBlocked},
+		PerPage: 100,
+	})
+	if err != nil {
+		return fmt.Errorf("list blocked issues: %w", err)
+	}
+
+	for _, issue := range blockedIssues {
+		result, parseErr := models.ParseFrontmatter(issue.Body)
+		if parseErr != nil || result.Frontmatter == nil {
+			continue
+		}
+
+		// Check if this issue depends on the one that just closed.
+		dependsOnClosed := false
+		for _, dep := range result.Frontmatter.DependsOn {
+			// Only consider local (same-repo) dependencies.
+			if !dep.IsCrossProject() && dep.Number == closedIssueNumber {
+				dependsOnClosed = true
+				break
+			}
+		}
+		if !dependsOnClosed {
+			continue
+		}
+
+		// Check if ALL dependencies are now satisfied.
+		if blocked := w.checkAllDependenciesSatisfied(ctx, result.Frontmatter); blocked {
+			continue
+		}
+
+		// Unblock: remove status:blocked and add status:queued.
+		if removeErr := w.issueTracker.RemoveLabel(ctx, issue.Number, models.LabelStatusBlocked); removeErr != nil {
+			w.log().Warn("pr-watcher: remove status:blocked",
+				zap.Int("issue", issue.Number), zap.Error(removeErr))
+		}
+		if addErr := w.issueTracker.AddLabel(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
+			w.log().Warn("pr-watcher: add status:queued",
+				zap.Int("issue", issue.Number), zap.Error(addErr))
+		}
+
+		comment := fmt.Sprintf(
+			"UNBLOCKED [prwatcher] [%s]\nDependency #%d completed. All dependencies satisfied.\nTransitioning to status:queued for routing.",
+			time.Now().UTC().Format(time.RFC3339), closedIssueNumber,
+		)
+		if _, commentErr := w.issueTracker.AddComment(ctx, issue.Number, comment); commentErr != nil {
+			w.log().Warn("pr-watcher: add comment",
+				zap.Int("issue", issue.Number), zap.Error(commentErr))
+		}
+
+		w.log().Info("pr-watcher: unblocked issue",
+			zap.Int("issue", issue.Number), zap.Int("closed_dep", closedIssueNumber))
+	}
+
+	return nil
+}
+
+// checkAllDependenciesSatisfied verifies that all dependencies in the frontmatter
+// are satisfied (closed with status:done label). Only checks local dependencies.
+func (w *Watcher) checkAllDependenciesSatisfied(ctx context.Context, fm *models.IssueFrontmatter) bool {
+	if fm == nil || len(fm.DependsOn) == 0 {
+		return false // No dependencies to check.
+	}
+
+	for _, dep := range fm.DependsOn {
+		// Skip cross-project dependencies in this context.
+		if dep.IsCrossProject() {
+			continue
+		}
+
+		issue, err := w.issueTracker.GetIssue(ctx, dep.Number)
+		if err != nil {
+			w.log().Debug("pr-watcher: check dependency",
+				zap.Int("dep", dep.Number), zap.Error(err))
+			return true // If we can't check, assume blocked to be safe.
+		}
+
+		// Check if dependency is done (closed with status:done).
+		if issue.State != forge.StateClosed {
+			return true // Not done, still blocked.
+		}
+
+		hasDoneLabel := false
+		for _, label := range issue.Labels {
+			if label == models.LabelStatusDone {
+				hasDoneLabel = true
+				break
+			}
+		}
+		if !hasDoneLabel {
+			return true // No status:done label, still blocked.
+		}
+	}
+
+	// All dependencies satisfied.
+	return false
 }
