@@ -392,6 +392,11 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	// Step 7b: Store task outcome in Synapset memory (best-effort, non-fatal).
 	r.storeTaskMemory(r.safeCtx(ctx), task, resp.Message.Content)
 
+	// Step 7c: Store agent output in session for quality gate evaluation.
+	if storeErr := r.storePartialOutput(r.safeCtx(ctx), task.SessionID, resp.Message.Content); storeErr != nil {
+		r.logger.Warn("failed to store partial output", zap.Error(storeErr))
+	}
+
 	// Step 8: Mark session completed (use cleanup context to survive timeout).
 	if err = r.completeSession(r.safeCtx(ctx), task.SessionID); err != nil {
 		return fmt.Errorf("complete session: %w", err)
@@ -780,6 +785,17 @@ func (r *Runner) updateSessionStatus(ctx context.Context, sessionID string, stat
 	session.Error = errMsg
 	session.UpdatedAt = time.Now()
 
+	return r.store.UpdateSession(ctx, session)
+}
+
+// storePartialOutput saves agent output to the session for quality gate evaluation.
+func (r *Runner) storePartialOutput(ctx context.Context, sessionID, output string) error {
+	session, err := r.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	session.PartialOutput = output
+	session.UpdatedAt = time.Now()
 	return r.store.UpdateSession(ctx, session)
 }
 
