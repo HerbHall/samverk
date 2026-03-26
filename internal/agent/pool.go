@@ -80,6 +80,8 @@ type Pool struct {
 	onComplete atomic.Pointer[func(TaskResult)]   // callback to notify dispatcher; atomic to avoid mu deadlock
 	workerQuit chan struct{}                        // each send causes one worker to exit after its current task
 	synapset   *synapset.Client                    // optional Synapset memory client; nil disables enrichment
+	repoWriter forge.RepoWriter                     // optional; enables branch/file creation for agent PRs
+	prManager  forge.PullRequestManager             // optional; enables PR creation for agent output
 	repoDir    string                               // default git clone path; used when no per-project dir is set
 	repoDirs   map[string]string                    // per-project repo dirs keyed by "owner/repo"
 	fetchMu    sync.Mutex                           // serializes FetchLatest calls to avoid concurrent git index locks
@@ -298,6 +300,18 @@ func (p *Pool) SetSynapset(sc *synapset.Client) {
 	p.synapset = sc
 }
 
+// SetRepoWriter configures the file writer used by runners to create branches
+// and push file changes for agent-generated code.
+func (p *Pool) SetRepoWriter(rw forge.RepoWriter) {
+	p.repoWriter = rw
+}
+
+// SetPRManager configures the pull request manager used by runners to open PRs
+// for agent-generated changes.
+func (p *Pool) SetPRManager(pm forge.PullRequestManager) {
+	p.prManager = pm
+}
+
 // SetRepoDir configures the default git repository path used to create
 // isolated worktrees for agent sessions when no per-project dir is configured.
 func (p *Pool) SetRepoDir(dir string) {
@@ -452,6 +466,12 @@ func (p *Pool) processTask(task Task) {
 	runner.cleanupCtx = cleanupCtx
 	runner.synapset = p.synapset
 	runner.SetRepoDir(taskRepoDir)
+	if p.repoWriter != nil {
+		runner.SetRepoWriter(p.repoWriter)
+	}
+	if p.prManager != nil {
+		runner.SetPRManager(p.prManager)
+	}
 	start := time.Now()
 	runErr := runner.Run(ctx, task)
 	duration := time.Since(start)
@@ -490,6 +510,12 @@ func (p *Pool) processTask(task Task) {
 			fallbackRunner.cleanupCtx = cleanupCtx
 			fallbackRunner.synapset = p.synapset
 			fallbackRunner.SetRepoDir(taskRepoDir)
+			if p.repoWriter != nil {
+				fallbackRunner.SetRepoWriter(p.repoWriter)
+			}
+			if p.prManager != nil {
+				fallbackRunner.SetPRManager(p.prManager)
+			}
 
 			logger.Info("failover: retrying task with next provider",
 				zap.String("provider", nextProv.Name()),

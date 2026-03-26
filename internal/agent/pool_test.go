@@ -934,6 +934,56 @@ func TestPoolFetchLatest_EmptyRepoDir(t *testing.T) {
 	pool.fetchLatestFor("test", "repo")
 }
 
+func TestPoolSetRepoWriterAndPRManager(t *testing.T) {
+	mp := &mockProvider{
+		chatFn: func(_ context.Context, _ provider.ChatRequest) (*provider.ChatResponse, error) {
+			return &provider.ChatResponse{
+				Message: provider.Message{
+					Role:    provider.RoleAssistant,
+					Content: "done",
+				},
+			}, nil
+		},
+		healthyFn: func(_ context.Context) bool { return true },
+		nameFn:    func() string { return "test" },
+	}
+
+	pool := newTestPool(t, 1, mp)
+	defer pool.Shutdown()
+
+	// Verify fields are nil by default.
+	if pool.repoWriter != nil {
+		t.Fatal("repoWriter should be nil by default")
+	}
+	if pool.prManager != nil {
+		t.Fatal("prManager should be nil by default")
+	}
+
+	// Set them and verify.
+	mrw := &poolMockRepoWriter{}
+	mpm := &poolMockPRManager{}
+	pool.SetRepoWriter(mrw)
+	pool.SetPRManager(mpm)
+
+	if pool.repoWriter != mrw {
+		t.Fatal("SetRepoWriter did not set repoWriter")
+	}
+	if pool.prManager != mpm {
+		t.Fatal("SetPRManager did not set prManager")
+	}
+}
+
+// poolMockRepoWriter implements forge.RepoWriter for pool tests.
+type poolMockRepoWriter struct{}
+
+func (m *poolMockRepoWriter) CreateBranch(_ context.Context, _ string) error              { return nil }
+func (m *poolMockRepoWriter) CreateOrUpdateFile(_ context.Context, _, _, _, _ string) error { return nil }
+
+// poolMockPRManager implements forge.PullRequestManager for pool tests.
+type poolMockPRManager struct {
+	forge.PullRequestManager
+}
+
 // --- mock types for pool tests ---
 
 type mockProvider struct {

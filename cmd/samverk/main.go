@@ -268,6 +268,7 @@ func serveCmd() *cobra.Command {
 								RepoDir:   pc.RepoDir,
 								Tracker:   gtClient,
 								Reader:    gtClient,
+								Writer:    gtClient,
 								PRManager: gtClient,
 							}
 							logger.Info("registered Gitea project from config",
@@ -292,6 +293,7 @@ func serveCmd() *cobra.Command {
 								RepoDir:   pc.RepoDir,
 								Tracker:   ghExtra,
 								Reader:    ghExtra,
+								Writer:    ghExtra,
 								PRManager: ghExtra,
 							}
 							logger.Info("registered GitHub project from config",
@@ -646,6 +648,7 @@ func dispatchCmd() *cobra.Command {
 				if _, exists := registry.Get(repo); !exists {
 					var legacyTracker forge.IssueTracker
 					var legacyPRMgr forge.PullRequestManager
+					var legacyWriter forge.RepoWriter
 					var legacyForgeType, legacyForgeURL string
 					switch forgeName {
 					case "gitea":
@@ -665,6 +668,7 @@ func dispatchCmd() *cobra.Command {
 						}
 						legacyTracker = gtClient
 						legacyPRMgr = gtClient
+						legacyWriter = gtClient
 						legacyForgeType = "gitea"
 						legacyForgeURL = giteaURL
 					default: // "github" or empty
@@ -680,6 +684,7 @@ func dispatchCmd() *cobra.Command {
 						}
 						legacyTracker = ghClient
 						legacyPRMgr = ghClient
+						legacyWriter = ghClient
 						legacyForgeType = "github"
 						legacyForgeURL = "https://github.com"
 					}
@@ -692,6 +697,7 @@ func dispatchCmd() *cobra.Command {
 						ForgeURL:  legacyForgeURL,
 						Tracker:   legacyTracker,
 						PRManager: legacyPRMgr,
+						Writer:    legacyWriter,
 					}
 					if regErr := registry.Register(legacyProject); regErr != nil {
 						logger.Warn("could not register legacy project", zap.Error(regErr))
@@ -798,6 +804,24 @@ func dispatchCmd() *cobra.Command {
 					logger.Info("synapset memory enabled",
 						zap.String("url", synCfg.URL),
 						zap.String("pool", synCfg.Pool),
+					)
+				}
+			}
+
+			// Wire repo writer and PR manager from the active project so that
+			// pool runners can create branches and open PRs for agent output.
+			if pool != nil {
+				if activeProj, activeErr := registry.Active(); activeErr == nil {
+					if activeProj.Writer != nil {
+						pool.SetRepoWriter(activeProj.Writer)
+					}
+					if activeProj.PRManager != nil {
+						pool.SetPRManager(activeProj.PRManager)
+					}
+					logger.Info("pool forge wiring complete",
+						zap.String("project", activeProj.Name),
+						zap.Bool("repo_writer", activeProj.Writer != nil),
+						zap.Bool("pr_manager", activeProj.PRManager != nil),
 					)
 				}
 			}
