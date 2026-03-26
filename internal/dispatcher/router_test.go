@@ -12,6 +12,160 @@ import (
 // longBody is a body with > 200 words to avoid triggering the "short body → triage" rule.
 var longBody = strings.Repeat("word ", 210)
 
+func TestClassifyComplexity(t *testing.T) {
+	tests := []struct {
+		name         string
+		fm           *models.IssueFrontmatter
+		wantComplexity string
+	}{
+		{
+			name: "nil frontmatter → ambiguous",
+			fm:   nil,
+			wantComplexity: models.LabelComplexityAmbiguous,
+		},
+		{
+			name: "small tokens (5000) and 2 files → local",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 5000,
+				FileContext:     []string{"file1.go", "file2.go"},
+			},
+			wantComplexity: models.LabelComplexityLocal,
+		},
+		{
+			name: "small tokens (9999) and 3 files → local",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 9999,
+				FileContext:     []string{"file1.go", "file2.go", "file3.go"},
+			},
+			wantComplexity: models.LabelComplexityLocal,
+		},
+		{
+			name: "small tokens (1000) and 4 files → ambiguous",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 1000,
+				FileContext:     []string{"f1", "f2", "f3", "f4"},
+			},
+			wantComplexity: models.LabelComplexityAmbiguous,
+		},
+		{
+			name: "large tokens (35000) → cloud",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 35000,
+				FileContext:     []string{"file.go"},
+			},
+			wantComplexity: models.LabelComplexityCloud,
+		},
+		{
+			name: "many files (6) → cloud",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 5000,
+				FileContext: []string{
+					"f1.go", "f2.go", "f3.go", "f4.go", "f5.go", "f6.go",
+				},
+			},
+			wantComplexity: models.LabelComplexityCloud,
+		},
+		{
+			name: "medium tokens (20000) and 4 files → ambiguous",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 20000,
+				FileContext:     []string{"f1", "f2", "f3", "f4"},
+			},
+			wantComplexity: models.LabelComplexityAmbiguous,
+		},
+		{
+			name: "exactly 10000 tokens (not small) and 1 file → ambiguous",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 10000,
+				FileContext:     []string{"file.go"},
+			},
+			wantComplexity: models.LabelComplexityAmbiguous,
+		},
+		{
+			name: "exactly 30000 tokens (not large) and 1 file → ambiguous",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 30000,
+				FileContext:     []string{"file.go"},
+			},
+			wantComplexity: models.LabelComplexityAmbiguous,
+		},
+		{
+			name: "30001 tokens (large) → cloud",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 30001,
+				FileContext:     []string{"file.go"},
+			},
+			wantComplexity: models.LabelComplexityCloud,
+		},
+		{
+			name: "no tokens estimated, 2 files → ambiguous",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 0,
+				FileContext:     []string{"file.go", "file2.go"},
+			},
+			wantComplexity: models.LabelComplexityAmbiguous,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifyComplexity(tt.fm)
+			if got != tt.wantComplexity {
+				t.Errorf("classifyComplexity = %q, want %q", got, tt.wantComplexity)
+			}
+		})
+	}
+}
+
+func TestHasComplexityLabel(t *testing.T) {
+	tests := []struct {
+		name    string
+		labels  []string
+		wantHas bool
+	}{
+		{
+			name:    "no labels → false",
+			labels:  []string{},
+			wantHas: false,
+		},
+		{
+			name:    "complexity:local → true",
+			labels:  []string{models.LabelComplexityLocal},
+			wantHas: true,
+		},
+		{
+			name:    "complexity:cloud → true",
+			labels:  []string{models.LabelComplexityCloud},
+			wantHas: true,
+		},
+		{
+			name:    "complexity:ambiguous → true",
+			labels:  []string{models.LabelComplexityAmbiguous},
+			wantHas: true,
+		},
+		{
+			name:    "other labels → false",
+			labels:  []string{"type:bug", "priority:high"},
+			wantHas: false,
+		},
+		{
+			name:    "complexity:local with other labels → true",
+			labels:  []string{"type:bug", models.LabelComplexityLocal, "priority:high"},
+			wantHas: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := &forge.Issue{Labels: tt.labels}
+			got := hasComplexityLabel(issue)
+			if got != tt.wantHas {
+				t.Errorf("hasComplexityLabel = %v, want %v", got, tt.wantHas)
+			}
+		})
+	}
+}
+
 func TestSelectProviderKey(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -34,6 +188,13 @@ func TestSelectProviderKey(t *testing.T) {
 			agentType: models.AgentTypeCodeGen,
 			wantKey:   "complex",
 			wantReason: "complexity:high",
+		},
+		{
+			name:      "complexity:cloud → complex",
+			issue:     &forge.Issue{Title: "fix: something", Body: longBody, Labels: []string{models.LabelComplexityCloud}},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: models.LabelComplexityCloud,
 		},
 		{
 			name:      "title keyword 'refactor' → complex",
@@ -86,6 +247,13 @@ func TestSelectProviderKey(t *testing.T) {
 			agentType: models.AgentTypeCodeGen,
 			wantKey:   "local",
 			wantReason: "type:scaffold",
+		},
+		{
+			name:      "complexity:local → local",
+			issue:     &forge.Issue{Title: "fix: something", Body: longBody, Labels: []string{models.LabelComplexityLocal}},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "local",
+			wantReason: models.LabelComplexityLocal,
 		},
 		{
 			name:      "title prefix chore: with code-gen agent → local",
@@ -162,6 +330,15 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "default routing",
 		},
 
+		// --- complexity:ambiguous tests ---
+		{
+			name:      "complexity:ambiguous → default (research agent)",
+			issue:     &forge.Issue{Title: "research: investigate", Body: longBody, Labels: []string{models.LabelComplexityAmbiguous}},
+			agentType: models.AgentTypeResearch,
+			wantKey:   "default",
+			wantReason: "default routing",
+		},
+
 		// --- priority/precedence conflicts ---
 		{
 			// complex beats local: priority:critical takes precedence over type:boilerplate
@@ -174,6 +351,18 @@ func TestSelectProviderKey(t *testing.T) {
 			agentType: models.AgentTypeCodeGen,
 			wantKey:   "complex",
 			wantReason: models.LabelPriorityCritical,
+		},
+		{
+			// complex beats local: complexity:cloud takes precedence over complexity:local (not realistic, but testing precedence)
+			name: "complexity:cloud beats complexity:local",
+			issue: &forge.Issue{
+				Title:  "fix: something",
+				Body:   longBody,
+				Labels: []string{models.LabelComplexityCloud, models.LabelComplexityLocal},
+			},
+			agentType: models.AgentTypeCodeGen,
+			wantKey:   "complex",
+			wantReason: models.LabelComplexityCloud,
 		},
 		{
 			// complex beats triage: complexity:high takes precedence over priority:low

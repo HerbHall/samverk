@@ -95,13 +95,50 @@ func classifyByHeuristic(issue *forge.Issue) models.AgentType {
 	return ""
 }
 
+// classifyComplexity determines the complexity level based on estimated tokens and file context.
+// Returns one of complexity:local, complexity:cloud, or complexity:ambiguous.
+// Rules:
+//   - complexity:local if estimated_tokens < 10000 and file_context has <= 3 files
+//   - complexity:cloud if estimated_tokens > 30000 or file_context has > 5 files
+//   - complexity:ambiguous otherwise
+func classifyComplexity(fm *models.IssueFrontmatter) string {
+	if fm == nil {
+		return models.LabelComplexityAmbiguous
+	}
+
+	hasSmallTokens := fm.EstimatedTokens > 0 && fm.EstimatedTokens < 10000
+	hasSmallFileContext := len(fm.FileContext) <= 3
+	hasLargeTokens := fm.EstimatedTokens > 30000
+	hasLargeFileContext := len(fm.FileContext) > 5
+
+	if hasSmallTokens && hasSmallFileContext {
+		return models.LabelComplexityLocal
+	}
+	if hasLargeTokens || hasLargeFileContext {
+		return models.LabelComplexityCloud
+	}
+	return models.LabelComplexityAmbiguous
+}
+
+// hasComplexityLabel checks if the issue already has a complexity label.
+func hasComplexityLabel(issue *forge.Issue) bool {
+	for _, label := range issue.Labels {
+		if label == models.LabelComplexityLocal ||
+			label == models.LabelComplexityCloud ||
+			label == models.LabelComplexityAmbiguous {
+			return true
+		}
+	}
+	return false
+}
+
 // selectProviderKey examines issue signals and returns the routing chain key
 // that should be used for provider selection, along with a human-readable reason.
 //
 // Priority (highest first):
 //  0. agent-type overrides — docs/test agents have fixed chains regardless of title
-//  1. complex  — critical priority, high complexity, or architectural title keywords
-//  2. local    — boilerplate/scaffold labels, or "chore:" title prefix
+//  1. complex  — critical priority, high complexity, complexity:cloud, or architectural title keywords
+//  2. local    — boilerplate/scaffold labels, complexity:local, or "chore:" title prefix
 //  3. triage   — low priority label or short prose body (< 200 words, excluding frontmatter)
 //  4. default  — everything else
 func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, reason string) {
@@ -118,12 +155,15 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 		return "default", "agent type docs"
 	}
 
-	// Complex: critical priority, high complexity, or architectural title keywords.
+	// Complex: critical priority, high complexity, complexity:cloud, or architectural title keywords.
 	if labels[models.LabelPriorityCritical] {
 		return "complex", "label " + models.LabelPriorityCritical
 	}
 	if labels["complexity:high"] {
 		return "complex", "label complexity:high"
+	}
+	if labels[models.LabelComplexityCloud] {
+		return "complex", "label " + models.LabelComplexityCloud
 	}
 	for _, kw := range complexTitleKeywords {
 		if strings.Contains(lower, kw) {
@@ -131,12 +171,15 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 		}
 	}
 
-	// Local: boilerplate/scaffold labels or chore title prefix.
+	// Local: boilerplate/scaffold labels, complexity:local, or chore title prefix.
 	if labels["type:boilerplate"] {
 		return "local", "label type:boilerplate"
 	}
 	if labels["type:scaffold"] {
 		return "local", "label type:scaffold"
+	}
+	if labels[models.LabelComplexityLocal] {
+		return "local", "label " + models.LabelComplexityLocal
 	}
 	if strings.HasPrefix(lower, "chore:") {
 		return "local", "title prefix chore:"
@@ -269,6 +312,18 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 			zap.Int("issue", issue.Number),
 		)
 		return nil
+	}
+
+	// Auto-classify complexity if no complexity label exists.
+	if !hasComplexityLabel(issue) {
+		complexityLabel := classifyComplexity(fm)
+		if err := tracker.AddLabel(ctx, issue.Number, complexityLabel); err != nil {
+			// Best-effort: log but don't block routing
+			d.logger.Debug("add complexity label (non-fatal)", zap.Int("issue", issue.Number), zap.String("label", complexityLabel), zap.String("error", err.Error()))
+		} else {
+			// Update the in-memory issue with the new label for selectProviderKey
+			issue.Labels = append(issue.Labels, complexityLabel)
+		}
 	}
 
 	if err := tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusQueued); err != nil {
