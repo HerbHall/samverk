@@ -304,12 +304,13 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		priorFailures = memCount // in-memory may be ahead if store write lagged
 	}
 	d.claimed[key] = &claimedIssue{
-		AgentID:       string(agentType),
-		Owner:         owner,
-		Repo:          repo,
-		ClaimedAt:     now,
-		LastHeartbeat: now,
-		FailureCount:  priorFailures,
+		AgentID:          string(agentType),
+		Owner:            owner,
+		Repo:             repo,
+		ClaimedAt:        now,
+		LastHeartbeat:    now,
+		FailureCount:     priorFailures,
+		EstimatedTimeout: timeout,
 	}
 	d.mu.Unlock()
 
