@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // forgeClaimedIssue tracks in-memory claim state for interactive workers.
@@ -76,8 +77,8 @@ func (f *ForgeWorkCoordinator) ClaimIssue(ctx context.Context, owner, repo strin
 	}
 
 	// Transition labels.
-	_ = tracker.RemoveLabel(ctx, number, "status:queued")
-	if err := tracker.AddLabel(ctx, number, "status:claimed"); err != nil {
+	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusQueued)
+	if err := tracker.AddLabel(ctx, number, models.LabelStatusClaimed); err != nil {
 		return nil, fmt.Errorf("add claimed label to #%d: %w", number, err)
 	}
 
@@ -121,7 +122,7 @@ func (f *ForgeWorkCoordinator) RequestWork(ctx context.Context, workerID string,
 		return nil, nil, fmt.Errorf("no projects configured")
 	}
 
-	labels := []string{"status:queued"}
+	labels := []string{models.LabelStatusQueued}
 	if opts != nil {
 		if opts.Priority != "" {
 			labels = append(labels, "priority:"+opts.Priority)
@@ -199,9 +200,9 @@ func (f *ForgeWorkCoordinator) CompleteIssue(ctx context.Context, owner, repo st
 		return fmt.Errorf("no tracker for %s/%s", owner, repo)
 	}
 
-	_ = tracker.RemoveLabel(ctx, number, "status:claimed")
-	_ = tracker.RemoveLabel(ctx, number, "status:in-progress")
-	if err := tracker.AddLabel(ctx, number, "status:needs-qc"); err != nil {
+	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusClaimed)
+	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusInProgress)
+	if err := tracker.AddLabel(ctx, number, models.LabelStatusNeedsQc); err != nil {
 		f.logger.Warn("add needs-qc label", zap.Int("issue", number), zap.Error(err))
 	}
 
@@ -249,9 +250,9 @@ func (f *ForgeWorkCoordinator) ReleaseIssue(ctx context.Context, owner, repo str
 		return fmt.Errorf("no tracker for %s/%s", owner, repo)
 	}
 
-	_ = tracker.RemoveLabel(ctx, number, "status:claimed")
-	_ = tracker.RemoveLabel(ctx, number, "status:in-progress")
-	if err := tracker.AddLabel(ctx, number, "status:queued"); err != nil {
+	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusClaimed)
+	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusInProgress)
+	if err := tracker.AddLabel(ctx, number, models.LabelStatusQueued); err != nil {
 		f.logger.Warn("add queued label", zap.Int("issue", number), zap.Error(err))
 	}
 

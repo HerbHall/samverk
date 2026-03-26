@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // pipelineEventDTO is the JSON shape returned by GET /api/v1/pipeline/events.
@@ -101,7 +103,7 @@ func (a *API) handlePipelineThroughput(w http.ResponseWriter, r *http.Request) {
 
 	completedIssues := make(map[int]bool)
 	for i := range events {
-		if events[i].ToStage == "status:needs-qc" {
+		if events[i].ToStage == models.LabelStatusNeedsQc {
 			completedIssues[events[i].IssueNumber] = true
 		}
 	}
@@ -123,7 +125,7 @@ func (a *API) handlePipelineThroughput(w http.ResponseWriter, r *http.Request) {
 		if ev.OccurredAt.Before(it.firstAt) {
 			it.firstAt = ev.OccurredAt
 		}
-		if ev.ToStage == "status:needs-qc" && !it.completed {
+		if ev.ToStage == models.LabelStatusNeedsQc && !it.completed {
 			it.completedAt = ev.OccurredAt
 			it.completed = true
 		}

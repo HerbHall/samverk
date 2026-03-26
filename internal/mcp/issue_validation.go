@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // conventionalCommitPrefixRe matches a valid conventional commit prefix in an issue title.
@@ -21,14 +23,14 @@ var priorityLabelPrefixRe = regexp.MustCompile(`^priority:`)
 func agentTypeFromPrefix(title string) string {
 	m := conventionalCommitPrefixRe.FindStringSubmatch(title)
 	if len(m) == 0 {
-		return "agent:code-gen"
+		return models.LabelAgentCodeGen
 	}
 	switch m[1] {
 	case "docs":
-		return "agent:docs"
+		return models.LabelAgentDocs
 	default:
 		// feat, fix, chore, test, ci, style, refactor -> code-gen
-		return "agent:code-gen"
+		return models.LabelAgentCodeGen
 	}
 }
 
@@ -78,7 +80,7 @@ func validateAndEnrichIssue(title, body string, labels []string, frontmatter map
 		}
 	}
 	if !hasPriority {
-		out = append(out, "priority:normal")
+		out = append(out, models.LabelPriorityNormal)
 	}
 
 	// 4. Frontmatter prepend.
