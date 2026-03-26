@@ -304,12 +304,14 @@ func (p *Pool) SetSynapset(sc *synapset.Client) {
 // and push file changes for agent-generated code.
 func (p *Pool) SetRepoWriter(rw forge.RepoWriter) {
 	p.repoWriter = rw
+	p.logger.Info("pool: repoWriter configured (branch/file creation enabled)")
 }
 
 // SetPRManager configures the pull request manager used by runners to open PRs
 // for agent-generated changes.
 func (p *Pool) SetPRManager(pm forge.PullRequestManager) {
 	p.prManager = pm
+	p.logger.Info("pool: prManager configured (PR creation enabled)")
 }
 
 // SetRepoDir configures the default git repository path used to create
