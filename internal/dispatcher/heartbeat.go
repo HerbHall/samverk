@@ -58,15 +58,22 @@ func parseHeartbeat(body string) *Heartbeat {
 }
 
 // checkTimeouts iterates claimed issues and releases any that have timed out.
+// Uses per-issue EstimatedTimeout when available; falls back to the global
+// HeartbeatInterval * HeartbeatTimeoutMultiplier for issues claimed before
+// the adaptive timeout was wired (backwards compat).
 func (d *Dispatcher) checkTimeouts(ctx context.Context) error {
 	d.mu.Lock()
 	// Snapshot the claimed map to avoid holding the lock during tracker calls.
 	timedOut := make([]string, 0)
 	now := time.Now()
-	timeout := time.Duration(float64(d.config.HeartbeatInterval) * d.config.HeartbeatTimeoutMultiplier)
+	globalTimeout := time.Duration(float64(d.config.HeartbeatInterval) * d.config.HeartbeatTimeoutMultiplier)
 
 	for key, claimed := range d.claimed {
-		if now.Sub(claimed.LastHeartbeat) > timeout {
+		issueTimeout := claimed.EstimatedTimeout
+		if issueTimeout <= 0 {
+			issueTimeout = globalTimeout
+		}
+		if now.Sub(claimed.LastHeartbeat) > issueTimeout {
 			timedOut = append(timedOut, key)
 		}
 	}

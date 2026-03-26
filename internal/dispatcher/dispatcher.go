@@ -21,12 +21,13 @@ import (
 
 // claimedIssue tracks in-memory heartbeat state for a single routed issue.
 type claimedIssue struct {
-	AgentID       string
-	Owner         string // repository owner
-	Repo          string // repository name
-	ClaimedAt     time.Time
-	LastHeartbeat time.Time
-	FailureCount  int
+	AgentID          string
+	Owner            string // repository owner
+	Repo             string // repository name
+	ClaimedAt        time.Time
+	LastHeartbeat    time.Time
+	FailureCount     int
+	EstimatedTimeout time.Duration // per-issue timeout from router estimation
 }
 
 // TrackerEntry binds a forge.IssueTracker to its owner/repo identity.
