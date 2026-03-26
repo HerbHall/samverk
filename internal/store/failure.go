@@ -3,23 +3,56 @@ package store
 import (
 	"context"
 	"database/sql"
+	"regexp"
 	"time"
 
 	"github.com/herbhall/samverk/pkg/models"
 )
 
+var samverkPkgRe = regexp.MustCompile(`github\.com/herbhall/samverk/(\S+)`)
+
+func rcaCategoryForClass(fc models.FailureClass) string {
+	switch fc {
+	case models.FailureClassTimeout, models.FailureClassProviderDown, models.FailureClassOOMKill:
+		return "infrastructure"
+	case models.FailureClassAuth, models.FailureClassBudget, models.FailureClassPermanent:
+		return "configuration"
+	case models.FailureClassPostProcess, models.FailureClassPanic:
+		return "code_quality"
+	case models.FailureClassClassify, models.FailureClassCycle, models.FailureClassDecompose:
+		return "issue_quality"
+	case models.FailureClassShutdown, models.FailureClassUnknown:
+		return ""
+	default:
+		return ""
+	}
+}
+
+func autoPopulateRCA(e *models.FailureEvent) {
+	if e.RootCauseCategory == "" {
+		e.RootCauseCategory = rcaCategoryForClass(e.FailureClass)
+	}
+	if e.Component == "" {
+		if m := samverkPkgRe.FindStringSubmatch(e.ErrorMessage); len(m) > 1 {
+			e.Component = m[1]
+		}
+	}
+}
+
 // SaveFailureEvent inserts a failure event into the failure_events table.
 func (s *SQLiteStore) SaveFailureEvent(ctx context.Context, e *models.FailureEvent) error {
+	autoPopulateRCA(e)
 	if e.ID == "" {
 		e.ID = generateID()
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO failure_events (id, issue_number, session_id, failure_class, error_message, agent_type, provider, attempt_number, duration_ms, timestamp, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO failure_events (id, issue_number, session_id, failure_class, error_message, agent_type, provider, attempt_number, duration_ms, timestamp, created_at, root_cause_category, component)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.IssueNumber, e.SessionID, string(e.FailureClass), e.ErrorMessage,
 		e.AgentType, e.Provider, e.AttemptNumber,
 		e.Duration.Milliseconds(), e.Timestamp.UTC().Format(time.RFC3339), now,
+		e.RootCauseCategory, e.Component,
 	)
 	return err
 }

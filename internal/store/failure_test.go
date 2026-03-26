@@ -619,6 +619,80 @@ func TestIncrementAfterClear(t *testing.T) {
 	}
 }
 
+// TestRCACategoryForClass is a table-driven test covering ALL FailureClass values.
+func TestRCACategoryForClass(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		class models.FailureClass
+		want  string
+	}{
+		{models.FailureClassTimeout, "infrastructure"},
+		{models.FailureClassProviderDown, "infrastructure"},
+		{models.FailureClassOOMKill, "infrastructure"},
+		{models.FailureClassAuth, "configuration"},
+		{models.FailureClassBudget, "configuration"},
+		{models.FailureClassPermanent, "configuration"},
+		{models.FailureClassPostProcess, "code_quality"},
+		{models.FailureClassPanic, "code_quality"},
+		{models.FailureClassClassify, "issue_quality"},
+		{models.FailureClassCycle, "issue_quality"},
+		{models.FailureClassDecompose, "issue_quality"},
+		{models.FailureClassShutdown, ""},
+		{models.FailureClassUnknown, ""},
+		{models.FailureClass("invented"), ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.class), func(t *testing.T) {
+			t.Parallel()
+			got := rcaCategoryForClass(tt.class)
+			if got != tt.want {
+				t.Errorf("rcaCategoryForClass(%q) = %q, want %q", tt.class, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestAutoPopulateRCA_Component verifies component extraction from error messages
+// containing a samverk package path.
+func TestAutoPopulateRCA_Component(t *testing.T) {
+	t.Parallel()
+
+	e := &models.FailureEvent{
+		FailureClass: models.FailureClassPanic,
+		ErrorMessage: "panic in github.com/herbhall/samverk/internal/dispatcher send on closed channel",
+	}
+	autoPopulateRCA(e)
+
+	if e.RootCauseCategory != "code_quality" {
+		t.Errorf("RootCauseCategory = %q, want %q", e.RootCauseCategory, "code_quality")
+	}
+	if e.Component != "internal/dispatcher" {
+		t.Errorf("Component = %q, want %q", e.Component, "internal/dispatcher")
+	}
+}
+
+// TestAutoPopulateRCA_NoOverwrite verifies that existing non-empty RCA fields are preserved.
+func TestAutoPopulateRCA_NoOverwrite(t *testing.T) {
+	t.Parallel()
+
+	e := &models.FailureEvent{
+		FailureClass:      models.FailureClassTimeout,
+		ErrorMessage:      "github.com/herbhall/samverk/internal/agent timeout",
+		RootCauseCategory: "custom_category",
+		Component:         "custom_component",
+	}
+	autoPopulateRCA(e)
+
+	if e.RootCauseCategory != "custom_category" {
+		t.Errorf("RootCauseCategory = %q, want %q (should not overwrite)", e.RootCauseCategory, "custom_category")
+	}
+	if e.Component != "custom_component" {
+		t.Errorf("Component = %q, want %q (should not overwrite)", e.Component, "custom_component")
+	}
+}
+
 // TestGetFailureSummary_Since confirms the Since field on the returned summary
 // matches the argument passed to GetFailureSummary.
 func TestGetFailureSummary_SinceField(t *testing.T) {
