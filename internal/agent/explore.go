@@ -17,12 +17,13 @@ const (
 
 // ExploreContext reads project context files from the repo to enrich the
 // agent's understanding before code generation. It reads CLAUDE.md from the
-// repo root, extracts file paths from the issue body, and discovers sibling
-// .go files in the same packages as referenced files.
+// repo root, extracts file paths from the issue body AND frontmatter
+// file_context field, and discovers sibling .go files in the same packages
+// as referenced files.
 //
 // The returned map is keyed by relative path with file content as values.
 // Total content is capped at maxExploreBytes (64KB) to avoid prompt bloat.
-func ExploreContext(repoDir, issueBody string) map[string]string {
+func ExploreContext(repoDir, issueBody string, frontmatterPaths ...string) map[string]string {
 	if repoDir == "" {
 		return nil
 	}
@@ -37,21 +38,32 @@ func ExploreContext(repoDir, issueBody string) map[string]string {
 		totalBytes += len(claudeMD)
 	}
 
-	// Phase 2: Extract referenced file paths from issue body.
-	matches := filePathRe.FindAllStringSubmatch(issueBody, -1)
-	if len(matches) == 0 {
-		return result
+	// Phase 2: Collect file paths from frontmatter file_context (highest priority)
+	// and regex matches from issue body text.
+	seen := make(map[string]bool)
+	var referencedPaths []string
+
+	// Frontmatter file_context paths are explicit and always included first.
+	for _, p := range frontmatterPaths {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			seen[p] = true
+			referencedPaths = append(referencedPaths, p)
+		}
 	}
 
-	// Deduplicate and collect referenced paths.
-	seen := make(map[string]bool, len(matches))
-	var referencedPaths []string
+	// Regex matches from issue body text (supplementary discovery).
+	matches := filePathRe.FindAllStringSubmatch(issueBody, -1)
 	for _, m := range matches {
 		p := strings.TrimSpace(m[1])
 		if !seen[p] {
 			seen[p] = true
 			referencedPaths = append(referencedPaths, p)
 		}
+	}
+
+	if len(referencedPaths) == 0 {
+		return result
 	}
 
 	// Phase 3: Discover sibling .go files in the same directories.
@@ -107,7 +119,7 @@ func ExploreContext(repoDir, issueBody string) map[string]string {
 
 // ExploreFileList returns just the list of explored file paths without reading
 // content. This is used for CLI-based agents where the agent reads files itself.
-func ExploreFileList(repoDir, issueBody string) []string {
+func ExploreFileList(repoDir, issueBody string, frontmatterPaths ...string) []string {
 	if repoDir == "" {
 		return nil
 	}
@@ -119,10 +131,17 @@ func ExploreFileList(repoDir, issueBody string) []string {
 		paths = append(paths, "CLAUDE.md")
 	}
 
-	// Extract referenced file paths from issue body.
-	matches := filePathRe.FindAllStringSubmatch(issueBody, -1)
+	// Collect paths from frontmatter file_context (explicit) and issue body regex.
 	seen := map[string]bool{"CLAUDE.md": true}
 	var referencedPaths []string
+	for _, p := range frontmatterPaths {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			seen[p] = true
+			referencedPaths = append(referencedPaths, p)
+		}
+	}
+	matches := filePathRe.FindAllStringSubmatch(issueBody, -1)
 	for _, m := range matches {
 		p := strings.TrimSpace(m[1])
 		if !seen[p] {

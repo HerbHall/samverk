@@ -66,6 +66,7 @@ type Store interface {
 	SaveFailureEvent(ctx context.Context, e *models.FailureEvent) error
 	ListFailureEvents(ctx context.Context, since time.Time, limit int) ([]*models.FailureEvent, error)
 	CountFailuresByIssue(ctx context.Context, issueNumber int) (int, error)
+	RecentFailuresForIssue(ctx context.Context, issueNumber, limit int) ([]string, error)
 	GetFailureSummary(ctx context.Context, since time.Time) (*models.FailureSummary, error)
 	GetKPIReport(ctx context.Context) (*models.KPIReport, error)
 

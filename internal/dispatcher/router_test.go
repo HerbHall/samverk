@@ -95,10 +95,10 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "chore:",
 		},
 		{
-			name:      "docs agent overrides chore: prefix → triage (#263)",
+			name:      "docs agent overrides chore: prefix → default (#263)",
 			issue:     &forge.Issue{Title: "chore: update docs", Body: longBody},
 			agentType: models.AgentTypeDocs,
-			wantKey:   "triage",
+			wantKey:   "default",
 			wantReason: "agent type docs",
 		},
 
@@ -111,10 +111,10 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: models.LabelPriorityLow,
 		},
 		{
-			name:      "agent type docs → triage",
+			name:      "agent type docs → default",
 			issue:     &forge.Issue{Title: "update readme", Body: longBody},
 			agentType: models.AgentTypeDocs,
-			wantKey:   "triage",
+			wantKey:   "default",
 			wantReason: "agent type docs",
 		},
 		{
@@ -196,7 +196,7 @@ func TestSelectProviderKey(t *testing.T) {
 				Labels: []string{"type:scaffold"},
 			},
 			agentType: models.AgentTypeDocs,
-			wantKey:   "triage",
+			wantKey:   "default",
 			wantReason: "agent type docs",
 		},
 		{
@@ -236,13 +236,13 @@ func TestSelectProviderKey(t *testing.T) {
 
 		// --- agent-type override tests (#263) ---
 		{
-			name: "docs agent with architecture title → triage not complex (#263)",
+			name: "docs agent with architecture title → default not complex (#263)",
 			issue: &forge.Issue{
 				Title: "docs: update architecture.md with fleet topology",
 				Body:  longBody,
 			},
 			agentType: models.AgentTypeDocs,
-			wantKey:   "triage",
+			wantKey:   "default",
 			wantReason: "agent type docs",
 		},
 		{

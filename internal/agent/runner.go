@@ -206,11 +206,17 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	}
 
 	// Step 3d: Explore repo context (CLAUDE.md, sibling files) before prompt building.
+	// Frontmatter file_context paths are passed explicitly so the explorer reads
+	// them first (highest priority), supplemented by regex discovery from issue body.
 	exploreDir := workDir
 	if exploreDir == "" {
 		exploreDir = r.repoDir
 	}
-	exploreCtx := ExploreContext(exploreDir, task.Issue.Body)
+	var fmPaths []string
+	if task.Frontmatter != nil {
+		fmPaths = task.Frontmatter.FileContext
+	}
+	exploreCtx := ExploreContext(exploreDir, task.Issue.Body, fmPaths...)
 	if len(exploreCtx) > 0 {
 		r.logger.Info("explore phase complete",
 			zap.Int("issue", task.Issue.Number),
@@ -243,6 +249,23 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	// Step 4b: Enrich with Synapset memory context (best-effort, non-fatal).
 	if memoryContext := r.fetchMemoryContext(ctx, task); memoryContext != "" {
 		messages = append(messages, provider.Message{Role: provider.RoleSystem, Content: memoryContext})
+	}
+
+	// Step 4c: Include prior failure context so retries avoid the same mistakes.
+	if r.store != nil {
+		if priorErrors, fetchErr := r.store.RecentFailuresForIssue(ctx, task.Issue.Number, 3); fetchErr == nil && len(priorErrors) > 0 {
+			var failCtx strings.Builder
+			failCtx.WriteString("## Prior Failure Context\n\n")
+			failCtx.WriteString("Previous attempts on this issue failed. Avoid these mistakes:\n\n")
+			for i, msg := range priorErrors {
+				// Truncate long error messages to keep prompt manageable.
+				if len(msg) > 300 {
+					msg = msg[:300] + "..."
+				}
+				fmt.Fprintf(&failCtx, "%d. %s\n", i+1, msg)
+			}
+			messages = append(messages, provider.Message{Role: provider.RoleSystem, Content: failCtx.String()})
+		}
 	}
 
 	messages = append(messages, provider.Message{Role: provider.RoleUser, Content: task.Issue.Body})

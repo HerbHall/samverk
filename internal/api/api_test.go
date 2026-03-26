@@ -182,7 +182,8 @@ func (m *mockStore) SaveFailureEvent(_ context.Context, _ *models.FailureEvent) 
 func (m *mockStore) ListFailureEvents(_ context.Context, _ time.Time, _ int) ([]*models.FailureEvent, error) {
 	return nil, nil
 }
-func (m *mockStore) CountFailuresByIssue(_ context.Context, _ int) (int, error) { return 0, nil }
+func (m *mockStore) CountFailuresByIssue(_ context.Context, _ int) (int, error)       { return 0, nil }
+func (m *mockStore) RecentFailuresForIssue(_ context.Context, _, _ int) ([]string, error) { return nil, nil }
 func (m *mockStore) GetFailureSummary(_ context.Context, _ time.Time) (*models.FailureSummary, error) {
 	return &models.FailureSummary{ByClass: map[models.FailureClass]int{}}, nil
 }

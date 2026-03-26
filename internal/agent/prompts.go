@@ -45,6 +45,20 @@ func BuildSystemPrompt(task Task, fileContext map[string]string, patterns ...str
 		return ""
 	}
 
+	// Communicate time budget so the agent can prioritize.
+	if task.Timeout > 0 {
+		minutes := int(task.Timeout.Minutes())
+		base += fmt.Sprintf("\n\n## Time Budget\n\nYou have approximately %d minutes for this task. Prioritize the most critical acceptance criteria first. If time is limited, deliver a working partial solution over an incomplete full solution.", minutes)
+	}
+
+	// Communicate constraints from frontmatter if available.
+	if task.Frontmatter != nil && len(task.Frontmatter.Constraints) > 0 {
+		base += "\n\n## Constraints (from issue author)\n\n"
+		for _, c := range task.Frontmatter.Constraints {
+			base += "- " + c + "\n"
+		}
+	}
+
 	ctx := buildFileContext(fileContext)
 	if ctx != "" {
 		base += "\n\n" + ctx

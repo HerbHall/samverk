@@ -71,6 +71,33 @@ func (s *SQLiteStore) CountFailuresByIssue(ctx context.Context, issueNumber int)
 	return count, err
 }
 
+// RecentFailuresForIssue returns the most recent failure error messages for a
+// given issue, ordered newest first. Used to enrich agent prompts with prior
+// failure context so retries can avoid the same mistakes.
+func (s *SQLiteStore) RecentFailuresForIssue(ctx context.Context, issueNumber, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 3
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT error_message FROM failure_events WHERE issue_number = ? ORDER BY timestamp DESC LIMIT ?`,
+		issueNumber, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var messages []string
+	for rows.Next() {
+		var msg string
+		if scanErr := rows.Scan(&msg); scanErr != nil {
+			return nil, scanErr
+		}
+		messages = append(messages, msg)
+	}
+	return messages, rows.Err()
+}
+
 // GetFailureSummary builds an aggregated failure summary for the given period.
 func (s *SQLiteStore) GetFailureSummary(ctx context.Context, since time.Time) (*models.FailureSummary, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)

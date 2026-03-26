@@ -209,4 +209,7 @@ type IssueFrontmatter struct {
 	ActualTokens    int            `yaml:"actual_tokens,omitempty"`
 	ModelUsed       string         `yaml:"model_used,omitempty"`
 	TimeoutMinutes  int            `yaml:"timeout_minutes,omitempty"`
+	FileContext     []string       `yaml:"file_context,omitempty"`
+	Constraints     []string       `yaml:"constraints,omitempty"`
+	HandoffReady    bool           `yaml:"handoff_ready,omitempty"`
 }

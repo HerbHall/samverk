@@ -111,11 +111,11 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 	}
 	lower := strings.ToLower(issue.Title)
 
-	// Agent-type overrides: docs agents have a fixed chain regardless of title
-	// keywords. This prevents docs issues with "architecture" in the title
-	// from being routed to the expensive complex chain (#263).
+	// Agent-type overrides: docs agents use the default chain (which falls back
+	// to Claude Haiku). Triage chain (Ollama-only) has 100% failure rate for
+	// docs because Ollama produces empty/too-short output for prose tasks.
 	if agentType == models.AgentTypeDocs {
-		return "triage", "agent type docs"
+		return "default", "agent type docs"
 	}
 
 	// Complex: critical priority, high complexity, or architectural title keywords.

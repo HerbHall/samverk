@@ -1043,6 +1043,10 @@ func (m *mockStore) SaveFailureEvent(_ context.Context, _ *models.FailureEvent) 
 	return nil
 }
 
+func (m *mockStore) RecentFailuresForIssue(_ context.Context, _, _ int) ([]string, error) {
+	return nil, nil
+}
+
 func (m *mockStore) Close() error {
 	return nil
 }

@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"go.uber.org/zap"
@@ -52,8 +53,8 @@ func checkOutputQuality(output string, agentType models.AgentType) QualityResult
 }
 
 // checkCompletionQuality retrieves the session output from the store and
-// runs the quality gate. Results are logged but not acted on yet --
-// escalation to a higher-tier provider depends on #492 (multi-machine routing).
+// runs the quality gate. On failure, posts a comment and adds a quality-fail
+// label for visibility. On pass, logs success.
 func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.TaskResult) {
 	if d.store == nil || result.SessionID == "" {
 		return
@@ -77,5 +78,14 @@ func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.Ta
 			zap.Float64("score", qr.Score),
 			zap.String("provider", result.ProviderKey),
 		)
+		// Post quality failure as issue comment for visibility.
+		tracker := d.trackerFor(result.Owner, result.Repo)
+		if tracker != nil {
+			comment := fmt.Sprintf("**Quality gate failed** (score: %.1f): %s\n\nProvider: `%s` | Session: `%s`",
+				qr.Score, qr.Reason, result.ProviderKey, result.SessionID)
+			if _, commentErr := tracker.AddComment(ctx, result.IssueNumber, comment); commentErr != nil {
+				d.logger.Warn("quality gate: failed to post comment", zap.Error(commentErr))
+			}
+		}
 	}
 }
