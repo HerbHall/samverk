@@ -105,8 +105,8 @@ func TestCheckOutputQuality(t *testing.T) {
 			wantReason: "quality check passed",
 		},
 		{
-			name:       "code-gen with EDIT marker passes",
-			output:     "Applied the following change:\nEDIT: internal/server/handler.go\n- old line\n+ new line",
+			name:       "code-gen with EDIT block marker passes",
+			output:     "Applied the following change:\nEDIT internal/server/handler.go\n- old line\n+ new line\nEND",
 			agentType:  models.AgentTypeCodeGen,
 			wantPass:   true,
 			wantScore:  1.0,
