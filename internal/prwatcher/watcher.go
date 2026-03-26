@@ -19,6 +19,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // Watcher polls open PRs and auto-merges eligible ones.
@@ -157,12 +158,12 @@ func (w *Watcher) poll(ctx context.Context) error {
 // labelTier3 adds the status:needs-human label to a Tier 3 PR if not already present.
 func (w *Watcher) labelTier3(ctx context.Context, pr *forge.PullRequest) {
 	for _, l := range pr.Labels {
-		if l == "status:needs-human" {
+		if l == models.LabelStatusNeedsHuman {
 			return
 		}
 	}
 	if w.issueTracker != nil {
-		if err := w.issueTracker.AddLabel(ctx, pr.Number, "status:needs-human"); err != nil {
+		if err := w.issueTracker.AddLabel(ctx, pr.Number, models.LabelStatusNeedsHuman); err != nil {
 			w.logger.Error("pr-watcher: label tier-3 PR", zap.Int("pr", pr.Number), zap.Error(err))
 		}
 	}
@@ -175,7 +176,7 @@ func (w *Watcher) labelTier3(ctx context.Context, pr *forge.PullRequest) {
 func (w *Watcher) checkReviewComments(ctx context.Context, pr *forge.PullRequest) (bool, error) {
 	// Skip if PR already has status:needs-human label.
 	for _, l := range pr.Labels {
-		if l == "status:needs-human" {
+		if l == models.LabelStatusNeedsHuman {
 			return false, nil
 		}
 	}
@@ -225,7 +226,7 @@ func (w *Watcher) checkReviewComments(ctx context.Context, pr *forge.PullRequest
 	created, err := w.issueTracker.CreateIssue(ctx, &forge.CreateIssueRequest{
 		Title:  title,
 		Body:   body,
-		Labels: []string{"agent:code-gen", "priority:high", prLabel},
+		Labels: []string{models.LabelAgentCodeGen, models.LabelPriorityHigh, prLabel},
 	})
 	if err != nil {
 		return true, fmt.Errorf("create remediation issue for PR #%d: %w", pr.Number, err)
@@ -373,7 +374,7 @@ func (w *Watcher) closeLinkedIssues(ctx context.Context, pr *forge.PullRequest) 
 		}
 		w.log().Info("prwatcher: closed linked issue",
 			zap.Int("issue", num), zap.Int("pr", pr.Number))
-		if err = w.issueTracker.SetLabels(ctx, num, []string{"status:done"}); err != nil {
+		if err = w.issueTracker.SetLabels(ctx, num, []string{models.LabelStatusDone}); err != nil {
 			w.log().Warn("prwatcher: failed to set status:done on linked issue",
 				zap.Int("issue", num), zap.Error(err))
 		}

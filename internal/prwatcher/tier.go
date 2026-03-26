@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // PRTier represents the merge policy tier for a pull request.
@@ -50,7 +51,7 @@ func (t PRTier) Description() string {
 
 // tier3Labels are issue labels that force Tier 3 classification.
 var tier3Labels = []string{
-	"priority:critical",
+	models.LabelPriorityCritical,
 	"complexity:high",
 	"type:architecture",
 	"type:breaking",
@@ -61,7 +62,7 @@ var tier3TitleKeywords = []string{"breaking", "security", "deploy"}
 
 // tier1Labels are issue labels that indicate Tier 1.
 var tier1Labels = []string{
-	"agent:docs",
+	models.LabelAgentDocs,
 	"type:chore",
 	"autorelease: pending",
 }
@@ -117,7 +118,7 @@ func ClassifyPRTier(pr *forge.PullRequest, issueLabels []string) PRTier {
 			return PRTier2
 		}
 	}
-	if allLabels["agent:code-gen"] || allLabels["agent:test"] {
+	if allLabels[models.LabelAgentCodeGen] || allLabels[models.LabelAgentTest] {
 		return PRTier2
 	}
 

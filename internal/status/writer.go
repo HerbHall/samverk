@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // Writer generates status.md content by querying the forge tracker.
@@ -67,13 +68,13 @@ func (w *Writer) Generate(ctx context.Context) (content string, err error) {
 			labels[l] = true
 		}
 		switch {
-		case labels["status:in-progress"] || labels["status:claimed"]:
+		case labels[models.LabelStatusInProgress] || labels[models.LabelStatusClaimed]:
 			data.InProgress = append(data.InProgress, issue)
-		case labels["status:blocked"]:
+		case labels[models.LabelStatusBlocked]:
 			data.Blocked = append(data.Blocked, issue)
-		case labels["status:needs-human"] || labels["status:human-pending"]:
+		case labels[models.LabelStatusNeedsHuman] || labels["status:human-pending"]:
 			data.NeedsHuman = append(data.NeedsHuman, issue)
-		case labels["status:needs-qc"]:
+		case labels[models.LabelStatusNeedsQc]:
 			data.NeedsQC = append(data.NeedsQC, issue)
 		default:
 			data.Queued = append(data.Queued, issue)
