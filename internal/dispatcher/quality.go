@@ -43,13 +43,11 @@ func checkOutputQuality(output string, agentType models.AgentType) QualityResult
 		}
 	}
 
-	// Code-gen specific: check for actual code content.
-	// Match both fenced code blocks and EDIT blocks (parser accepts "EDIT <file>",
-	// not "EDIT:" -- the colon variant was a quality gate bug that caused false
-	// negatives on valid agent output like "EDIT renovate.json").
+	// Code-gen specific: check for actual code content using the shared
+	// format constants (agent.HasCodeOutput). This ensures the quality gate
+	// matches the same format the edit block parser accepts.
 	if agentType == models.AgentTypeCodeGen || agentType == models.AgentTypeTest {
-		hasCode := strings.Contains(output, "```") || strings.Contains(output, "\nEDIT ")
-		if !hasCode {
+		if !agent.HasCodeOutput(output) {
 			return QualityResult{Pass: false, Reason: "code agent produced no code blocks", Score: 0.2}
 		}
 	}

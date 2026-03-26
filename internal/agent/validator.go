@@ -275,11 +275,8 @@ func ValidateEditBlocks(agentType models.AgentType, response string, hasWorkDir 
 		Retryable: true,
 		Errors: []ValidationError{
 			{
-				Phase: "format",
-				Message: "response contains no EDIT blocks. Code-gen output must use the format:\n" +
-					"EDIT <filepath>\n<complete file contents>\nEND\n\n" +
-					"One block per file. Do not use markdown code fences. " +
-					"The EDIT/END markers must be on their own lines.",
+				Phase:   "format",
+				Message: "response contains no EDIT blocks.\n\n" + FormatInstructions(),
 			},
 		},
 	}

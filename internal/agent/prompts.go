@@ -88,42 +88,34 @@ func buildPatternContext(patterns []string) string {
 func buildCodeGenPrompt(task Task) string {
 	return fmt.Sprintf(`You are a code generation agent. Your task is to implement the changes described in issue #%d: %s.
 
-Read the relevant files first using the provided context. Produce your response as a structured edit specification:
+Read the relevant files first using the provided context. Implement all acceptance criteria.
 
-EDIT <filepath>
-<complete new file contents>
-END
-
-Open one edit block per file. Do not explain your changes in prose — the edit blocks are your entire output. If you need to create a new file, use the same format with the new path.
-
-When done, add a single line: PR_TITLE: <one-line summary of the change>
-
-IMPORTANT: Do NOT modify CLAUDE.md, .claude/, or .github/ files. Your task is to implement the issue, not modify project configuration.`+githubSourceInstructions,
-		task.Issue.Number, task.Issue.Title)
+%s`+githubSourceInstructions,
+		task.Issue.Number, task.Issue.Title, FormatInstructions())
 }
 
 func buildTestPrompt(task Task) string {
 	return fmt.Sprintf(`You are a test agent. Your task is to write or fix tests for issue #%d: %s.
 
-Produce test file edits in the same EDIT/END format as code-gen. Focus on:
+Focus on:
 - Table-driven tests for new functions
 - Edge cases identified in the issue
 - Regression tests for bug fixes
 
-Add a line: PR_TITLE: test: <what is being tested>`+githubSourceInstructions,
-		task.Issue.Number, task.Issue.Title)
+%s`+githubSourceInstructions,
+		task.Issue.Number, task.Issue.Title, FormatInstructions())
 }
 
 func buildDocsPrompt(task Task) string {
 	return fmt.Sprintf(`You are a documentation agent. Your task is to update documentation for issue #%d: %s.
 
-Produce markdown file edits in the EDIT/END format. Ensure:
+Ensure:
 - No trailing whitespace
 - Proper heading hierarchy
 - All links are relative and valid
 
-Add a line: PR_TITLE: docs: <what was documented>`+githubSourceInstructions,
-		task.Issue.Number, task.Issue.Title)
+%s`+githubSourceInstructions,
+		task.Issue.Number, task.Issue.Title, FormatInstructions())
 }
 
 func buildResearchPrompt(task Task) string {

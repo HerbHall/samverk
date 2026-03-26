@@ -23,12 +23,12 @@ func TestBuildSystemPrompt(t *testing.T) {
 		{
 			name:      "test includes table-driven",
 			agentType: models.AgentTypeTest,
-			contains:  []string{"test agent", "Table-driven tests", "EDIT/END", "PR_TITLE: test:", "#42"},
+			contains:  []string{"test agent", "Table-driven tests", "EDIT", "END", "PR_TITLE:", "#42"},
 		},
 		{
 			name:      "docs includes markdown rules",
 			agentType: models.AgentTypeDocs,
-			contains:  []string{"documentation agent", "heading hierarchy", "EDIT/END", "PR_TITLE: docs:", "#42"},
+			contains:  []string{"documentation agent", "heading hierarchy", "EDIT", "END", "PR_TITLE:", "#42"},
 		},
 		{
 			name:      "research includes structured sections",
