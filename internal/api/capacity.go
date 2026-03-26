@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/hostmetrics"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 type capacityApplyRequest struct {
@@ -68,7 +69,7 @@ func (a *API) handleCapacityApply(w http.ResponseWriter, r *http.Request) {
 	issue, err := a.tracker.CreateIssue(r.Context(), &forge.CreateIssueRequest{
 		Title:  title,
 		Body:   body,
-		Labels: []string{"agent:infra", "status:needs-human"},
+		Labels: []string{"agent:infra", models.LabelStatusNeedsHuman},
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create issue: "+err.Error())

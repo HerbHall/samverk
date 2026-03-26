@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // projectDTO is the JSON representation of a registered project.
@@ -81,9 +82,9 @@ func fetchIssueCounts(tracker forge.IssueTracker) (openIssues, needsHuman, inPro
 	for _, iss := range issues {
 		for _, label := range iss.Labels {
 			switch label {
-			case "status:needs-human":
+			case models.LabelStatusNeedsHuman:
 				needsHuman++
-			case "status:claimed":
+			case models.LabelStatusClaimed:
 				inProgress++
 			}
 		}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/store"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // pipelineIssueRef is a minimal issue reference within a pipeline stage.
@@ -44,17 +45,17 @@ func classifyStage(iss *forge.Issue) string {
 	}
 	for _, label := range iss.Labels {
 		switch label {
-		case "status:queued":
+		case models.LabelStatusQueued:
 			return store.StageQueued
-		case "status:claimed":
+		case models.LabelStatusClaimed:
 			return store.StageClaimed
-		case "status:in-progress":
+		case models.LabelStatusInProgress:
 			return store.StageInProgress
-		case "status:needs-qc":
+		case models.LabelStatusNeedsQc:
 			return store.StageNeedsQC
-		case "status:needs-human":
+		case models.LabelStatusNeedsHuman:
 			return store.StageNeedsHuman
-		case "status:blocked":
+		case models.LabelStatusBlocked:
 			return store.StageBlocked
 		case "status:failed":
 			return store.StageFailed
