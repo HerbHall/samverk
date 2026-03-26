@@ -215,6 +215,10 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		return nil
 	}
 
+	// Quality warning: check for missing file_context or constraints.
+	// This is advisory only and does not block dispatch.
+	d.postQualityWarningIfNeeded(ctx, tracker, issue.Number, fm)
+
 	// Pre-flight health gate: check if the routing chain has any healthy
 	// provider before claiming the issue. This prevents the tight
 	// claim-fail-requeue loop when all providers are down.
@@ -383,4 +387,69 @@ func (d *Dispatcher) parseFrontmatter(issue *forge.Issue) (*models.IssueFrontmat
 		return nil, err
 	}
 	return result.Frontmatter, nil
+}
+
+// hasQualityWarningComment checks if a quality warning comment already exists on the issue.
+// Returns true if a comment containing the quality warning marker is found.
+func hasQualityWarningComment(comments []*forge.Comment) bool {
+	const marker = "[dispatcher] Issue quality warning"
+	for _, c := range comments {
+		if strings.Contains(c.Body, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// postQualityWarningIfNeeded checks if file_context or constraints are missing
+// and posts a one-time warning comment if needed. Does not block dispatch.
+func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker forge.IssueTracker, issueNumber int, fm *models.IssueFrontmatter) {
+	if fm == nil {
+		return // No frontmatter to check
+	}
+
+	// Check if either field is missing
+	missingFileContext := len(fm.FileContext) == 0
+	missingConstraints := len(fm.Constraints) == 0
+
+	if !missingFileContext && !missingConstraints {
+		return // Both fields present, no warning needed
+	}
+
+	// Check if warning already exists
+	comments, err := tracker.ListComments(ctx, issueNumber)
+	if err != nil {
+		d.logger.Debug("quality check: failed to list comments",
+			zap.Int("issue", issueNumber),
+			zap.Error(err),
+		)
+		return // Best-effort: if we can't list comments, don't block
+	}
+
+	if hasQualityWarningComment(comments) {
+		return // Warning already posted
+	}
+
+	// Build warning message
+	var missing []string
+	if missingFileContext {
+		missing = append(missing, "`file_context`")
+	}
+	if missingConstraints {
+		missing = append(missing, "`constraints`")
+	}
+	missingStr := strings.Join(missing, " and ")
+
+	comment := fmt.Sprintf(
+		"**[dispatcher] Issue quality warning**: missing %s (agent will explore blind and/or have no guardrails). Consider adding these fields for better results.",
+		missingStr,
+	)
+
+	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
+		d.logger.Debug("quality check: failed to post warning",
+			zap.Int("issue", issueNumber),
+			zap.Error(err),
+		)
+		// Best-effort: don't block dispatch if comment posting fails
+	}
 }
