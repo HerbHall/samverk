@@ -78,6 +78,20 @@ type projectSummary struct {
 	LastActivity     string        `json:"last_activity,omitempty"`
 }
 
+// bulkRelabelInput is the typed input for the bulk_relabel tool.
+type bulkRelabelInput struct {
+	IssueNumbers []int    `json:"issue_numbers" jsonschema:"required,list of issue numbers to relabel"`
+	RemoveLabels []string `json:"remove_labels" jsonschema:"labels to remove from each issue"`
+	AddLabels    []string `json:"add_labels" jsonschema:"labels to add to each issue"`
+}
+
+// bulkRelabelResult is the structured output of bulk_relabel.
+type bulkRelabelResult struct {
+	Succeeded int                `json:"succeeded"`
+	Failed    int                `json:"failed"`
+	Details   []bulkUpdateResult `json:"details"`
+}
+
 // registerBulkTools adds bulk forge operation and project summary MCP tools to the server.
 func registerBulkTools(srv *gosdk.Server, h *Handler) {
 	gosdk.AddTool(srv, &gosdk.Tool{
@@ -99,6 +113,11 @@ func registerBulkTools(srv *gosdk.Server, h *Handler) {
 		Name:        "get_project_summary",
 		Description: "Get a structured snapshot of the project: open/closed issue counts by label bucket, open PR count, and last activity timestamp",
 	}, h.handleGetProjectSummary)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "bulk_relabel",
+		Description: "Remove and add labels on multiple issues in one call, preserving all other labels",
+	}, h.handleBulkRelabel)
 }
 
 // handleBulkUpdateIssues applies label, state, or title changes to multiple issues.
@@ -367,4 +386,75 @@ func (h *Handler) buildProjectSummary(ctx context.Context, tracker forge.IssueTr
 	}
 
 	return summary, nil
+}
+
+// handleBulkRelabel removes and adds labels on multiple issues, preserving other labels.
+func (h *Handler) handleBulkRelabel(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	input bulkRelabelInput,
+) (*gosdk.CallToolResult, any, error) {
+	if len(input.IssueNumbers) == 0 {
+		return nil, nil, fmt.Errorf("issue_numbers must not be empty")
+	}
+
+	tracker := h.activeTracker()
+	if tracker == nil {
+		return nil, nil, fmt.Errorf("no issue tracker configured")
+	}
+
+	details := make([]bulkUpdateResult, 0, len(input.IssueNumbers))
+	succeeded := 0
+	failed := 0
+
+	for _, num := range input.IssueNumbers {
+		r := bulkUpdateResult{IssueNumber: num}
+
+		if num <= 0 {
+			r.Status = "error"
+			r.Error = "issue_number must be greater than 0"
+			details = append(details, r)
+			failed++
+			continue
+		}
+
+		if err := applyRelabel(ctx, tracker, num, input.RemoveLabels, input.AddLabels); err != nil {
+			r.Status = "error"
+			r.Error = err.Error()
+			failed++
+		} else {
+			r.Status = "ok"
+			succeeded++
+			h.recorder.recordToolCall(ctx, "bulk_relabel", num)
+		}
+		details = append(details, r)
+	}
+
+	out, err := json.Marshal(bulkRelabelResult{
+		Succeeded: succeeded,
+		Failed:    failed,
+		Details:   details,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshalling bulk relabel results: %w", err)
+	}
+
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{&gosdk.TextContent{Text: string(out)}},
+	}, nil, nil
+}
+
+// applyRelabel removes then adds labels on a single issue.
+func applyRelabel(ctx context.Context, tracker forge.IssueTracker, issueNumber int, removeLabels, addLabels []string) error {
+	for i := range removeLabels {
+		if err := tracker.RemoveLabel(ctx, issueNumber, removeLabels[i]); err != nil {
+			return fmt.Errorf("removing label %q: %w", removeLabels[i], err)
+		}
+	}
+	for i := range addLabels {
+		if err := tracker.AddLabel(ctx, issueNumber, addLabels[i]); err != nil {
+			return fmt.Errorf("adding label %q: %w", addLabels[i], err)
+		}
+	}
+	return nil
 }

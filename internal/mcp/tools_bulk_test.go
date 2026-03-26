@@ -372,3 +372,121 @@ func TestGetProjectSummary_NilTracker(t *testing.T) {
 		t.Errorf("expected error when tracker is nil, got: %s", string(respBody))
 	}
 }
+
+func TestBulkRelabel(t *testing.T) {
+	tracker := &mockTracker{
+		issues: []*forge.Issue{
+			{Number: 10, Title: "Issue 10", State: forge.StateOpen, Labels: []string{"status:needs-qc", "priority:high", "bug"}},
+			{Number: 11, Title: "Issue 11", State: forge.StateOpen, Labels: []string{"status:needs-qc", "feat"}},
+		},
+	}
+	ts := newTestBulkServer(t, tracker)
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params: json.RawMessage(`{
+			"name": "bulk_relabel",
+			"arguments": {
+				"issue_numbers": [10, 11],
+				"remove_labels": ["status:needs-qc"],
+				"add_labels": ["status:queued"]
+			}
+		}`),
+	})
+
+	var rpcResp struct {
+		Result struct {
+			Content []struct{ Text string } `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	text := rpcResp.Result.Content[0].Text
+	var result map[string]any
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		t.Fatalf("parse result: %v", err)
+	}
+
+	if int(result["succeeded"].(float64)) != 2 {
+		t.Errorf("expected 2 succeeded, got %v", result["succeeded"])
+	}
+	if int(result["failed"].(float64)) != 0 {
+		t.Errorf("expected 0 failed, got %v", result["failed"])
+	}
+
+	// Verify remove calls: 2 issues × 1 label = 2 remove calls.
+	if len(tracker.removeLabelCalls) != 2 {
+		t.Fatalf("expected 2 removeLabel calls, got %d", len(tracker.removeLabelCalls))
+	}
+	for i, call := range tracker.removeLabelCalls {
+		if call.Label != "status:needs-qc" {
+			t.Errorf("call %d: expected remove label status:needs-qc, got %s", i, call.Label)
+		}
+	}
+
+	// Verify add calls: 2 issues × 1 label = 2 add calls.
+	if len(tracker.addLabelCalls) != 2 {
+		t.Fatalf("expected 2 addLabel calls, got %d", len(tracker.addLabelCalls))
+	}
+	for i, call := range tracker.addLabelCalls {
+		if call.Label != "status:queued" {
+			t.Errorf("call %d: expected add label status:queued, got %s", i, call.Label)
+		}
+	}
+}
+
+func TestBulkRelabel_EmptyIssueNumbers(t *testing.T) {
+	ts := newTestBulkServer(t, &mockTracker{})
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name": "bulk_relabel", "arguments": {"issue_numbers": [], "remove_labels": ["old"], "add_labels": ["new"]}}`),
+	})
+
+	if !strings.Contains(string(respBody), "error") && !strings.Contains(string(respBody), "must not be empty") {
+		t.Errorf("expected error for empty issue_numbers, got: %s", string(respBody))
+	}
+}
+
+func TestBulkRelabel_InvalidIssueNumber(t *testing.T) {
+	ts := newTestBulkServer(t, &mockTracker{})
+
+	respBody := postJSON(t, ts.URL, jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params: json.RawMessage(`{
+			"name": "bulk_relabel",
+			"arguments": {
+				"issue_numbers": [0],
+				"remove_labels": ["old"],
+				"add_labels": ["new"]
+			}
+		}`),
+	})
+
+	var rpcResp struct {
+		Result struct {
+			Content []struct{ Text string } `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	text := rpcResp.Result.Content[0].Text
+	var result map[string]any
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		t.Fatalf("parse result: %v", err)
+	}
+
+	if int(result["failed"].(float64)) != 1 {
+		t.Errorf("expected 1 failed, got %v", result["failed"])
+	}
+}
