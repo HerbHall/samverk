@@ -398,9 +398,9 @@ func TestGetDiff_Fallback(t *testing.T) {
 }
 
 func TestGetDiff_ExtractsPatches(t *testing.T) {
-	// Compare API returns JSON with a commit SHA; commit detail returns patch content.
+	// Compare API returns JSON with a commit SHA; web .diff endpoint returns unified diff.
 	compareJSON := `{"commits":[{"sha":"abc111"}]}`
-	commitJSON := `{"files":[{"filename":"main.go","patch":"diff --git a/main.go b/main.go\n@@ -1 +1,2 @@\n+// new line\n","additions":1,"deletions":0}]}`
+	commitDiff := "diff --git a/main.go b/main.go\n@@ -1 +1,2 @@\n+// new line\n"
 
 	handler := http.NewServeMux()
 	handler.HandleFunc("GET /api/v1/repos/owner/repo/compare/main...feature", func(w http.ResponseWriter, _ *http.Request) {
@@ -408,10 +408,10 @@ func TestGetDiff_ExtractsPatches(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(compareJSON))
 	})
-	handler.HandleFunc("GET /api/v1/repos/owner/repo/git/commits/abc111", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	handler.HandleFunc("GET /owner/repo/commit/abc111.diff", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(commitJSON))
+		_, _ = w.Write([]byte(commitDiff))
 	})
 
 	c, _ := newTestClient(t, handler)
@@ -428,10 +428,9 @@ func TestGetDiff_ExtractsPatches(t *testing.T) {
 	}
 }
 
-func TestGetDiff_FallbackToStats(t *testing.T) {
-	// Compare API returns a commit SHA but commit detail has empty patch fields.
+func TestGetDiff_FallbackWhenDiffEmpty(t *testing.T) {
+	// Compare API returns a commit SHA but the web .diff endpoint returns 404.
 	compareJSON := `{"commits":[{"sha":"bbb222"}]}`
-	commitJSON := `{"files":[{"filename":"README.md","patch":"","additions":3,"deletions":1}]}`
 
 	handler := http.NewServeMux()
 	handler.HandleFunc("GET /api/v1/repos/owner/repo/compare/main...feature", func(w http.ResponseWriter, _ *http.Request) {
@@ -439,10 +438,8 @@ func TestGetDiff_FallbackToStats(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(compareJSON))
 	})
-	handler.HandleFunc("GET /api/v1/repos/owner/repo/git/commits/bbb222", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(commitJSON))
+	handler.HandleFunc("GET /owner/repo/commit/bbb222.diff", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
 	})
 
 	c, _ := newTestClient(t, handler)
@@ -451,14 +448,8 @@ func TestGetDiff_FallbackToStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDiff: %v", err)
 	}
-	if strings.Contains(diff, "{") {
-		t.Errorf("output should not contain raw JSON, got %q", diff)
-	}
-	if !strings.Contains(diff, "README.md") {
-		t.Errorf("expected filename in stats fallback, got %q", diff)
-	}
-	if !strings.Contains(diff, "+3") {
-		t.Errorf("expected addition count in stats fallback, got %q", diff)
+	if !strings.Contains(diff, "no file changes found") {
+		t.Errorf("expected fallback message, got %q", diff)
 	}
 }
 

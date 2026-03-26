@@ -90,10 +90,18 @@ func (w *Watcher) poll(ctx context.Context) error {
 		tier2Delay = 60 * time.Minute // default 1 hour
 	}
 
+	var eligible, skippedAuthor, skippedCI, skippedDelay, skippedBlocking, merged, tier3 int
+
 	for _, pr := range prs {
 		if !w.isEligible(pr) {
+			if !w.isTrustedAuthor(pr.Author) {
+				skippedAuthor++
+				w.logger.Debug("pr-watcher: skip untrusted author",
+					zap.Int("pr", pr.Number), zap.String("author", pr.Author))
+			}
 			continue
 		}
+		eligible++
 
 		// Check for blocking review comments and create remediation issues.
 		if w.issueTracker != nil {
@@ -102,6 +110,7 @@ func (w *Watcher) poll(ctx context.Context) error {
 				w.logger.Error("pr-watcher: check review comments", zap.Int("pr", pr.Number), zap.Error(checkErr))
 			}
 			if hasBlocking {
+				skippedBlocking++
 				continue
 			}
 		}
@@ -117,26 +126,32 @@ func (w *Watcher) poll(ctx context.Context) error {
 
 		switch tier {
 		case PRTier3:
-			// Never auto-merge. Label if not already labeled.
+			tier3++
 			w.labelTier3(ctx, pr)
 			continue
 		case PRTier2:
 			if !ciPassed {
+				skippedCI++
+				w.logger.Debug("pr-watcher: CI not passed",
+					zap.Int("pr", pr.Number), zap.Int("checks", len(checks)), zap.String("tier", tier.String()))
 				continue
 			}
-			// Merge only after the configured delay.
 			if time.Since(pr.UpdatedAt) < tier2Delay {
+				skippedDelay++
 				w.logger.Debug("pr-watcher: tier-2 delay not elapsed",
-					zap.Int("pr", pr.Number), zap.Duration("age", time.Since(pr.UpdatedAt).Truncate(time.Minute)))
+					zap.Int("pr", pr.Number), zap.Duration("remaining", tier2Delay-time.Since(pr.UpdatedAt)))
 				continue
 			}
 		case PRTier1:
 			if !ciPassed {
+				skippedCI++
+				w.logger.Debug("pr-watcher: CI not passed",
+					zap.Int("pr", pr.Number), zap.Int("checks", len(checks)), zap.String("tier", tier.String()))
 				continue
 			}
-			// Merge immediately.
 		default:
 			if !ciPassed {
+				skippedCI++
 				continue
 			}
 		}
@@ -147,6 +162,7 @@ func (w *Watcher) poll(ctx context.Context) error {
 			w.logger.Error("pr-watcher: merge failed", zap.Int("pr", pr.Number), zap.Error(mergeErr))
 			continue
 		}
+		merged++
 		if w.issueTracker != nil {
 			issueNums := w.closeLinkedIssues(ctx, pr)
 			// Unblock dependent issues for each closed issue.
@@ -158,6 +174,17 @@ func (w *Watcher) poll(ctx context.Context) error {
 			}
 		}
 	}
+
+	w.logger.Info("pr-watcher: poll complete",
+		zap.Int("open_prs", len(prs)),
+		zap.Int("eligible", eligible),
+		zap.Int("merged", merged),
+		zap.Int("ci_pending", skippedCI),
+		zap.Int("delay_pending", skippedDelay),
+		zap.Int("blocked_review", skippedBlocking),
+		zap.Int("untrusted_author", skippedAuthor),
+		zap.Int("tier3_human", tier3),
+	)
 
 	return nil
 }
