@@ -182,11 +182,14 @@ func restoreInjectedFiles(workDir string) {
 	// CLAUDE.md is overwritten by GenerateAgentCLAUDEMD in runner.go.
 	// .claude/ directory is written by WriteMCPConfig.
 	for _, path := range []string{"CLAUDE.md", ".claude"} {
-		// git checkout -- <path> restores from HEAD (the worktree base).
+		// git checkout HEAD -- <path> restores from the commit, not the index.
+		// Using "checkout --" without HEAD would restore from the index,
+		// which may contain the injected version if the agent ran "git add"
+		// during its session. HEAD always has the clean original.
 		// Errors are ignored: the file may not have existed originally
 		// (e.g., .claude/ in repos without Claude config), or the agent
 		// may have legitimately modified it.
-		_, _ = gitExec(workDir, "checkout", "--", path)
+		_, _ = gitExec(workDir, "checkout", "HEAD", "--", path)
 	}
 }
 
