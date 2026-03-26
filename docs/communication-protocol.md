@@ -1,6 +1,6 @@
 # Communication Protocol
 
-**Schema Version: 1.0.0**
+**Schema Version: 1.1.0**
 
 ## The Core Idea
 
@@ -20,7 +20,7 @@ Every task, question, result, and handoff is an issue. The issue body uses YAML 
 
 | Field | Type | Required | Valid Values | Description |
 | ----- | ---- | -------- | ------------ | ----------- |
-| `schema_version` | string | Yes | `1.0.0` | Schema version for forward compatibility |
+| `schema_version` | string | Yes | `1.1.0` | Schema version for forward compatibility |
 | `type` | enum | Yes | `task`, `question`, `result`, `block`, `idea`, `research`, `feasibility`, `gate`, `requirement`, `architecture`, `scaffold` | Communication type |
 | `agent_type` | enum | Yes | See [Agent Type Labels](#agent-type-who-should-pick-this-up). Includes `ideation`, `feasibility`, `legal` for pre-project phases. | Who should work on this |
 | `priority` | enum | Yes | `critical`, `high`, `normal`, `low` | Scheduling priority |
@@ -29,6 +29,9 @@ Every task, question, result, and handoff is an issue. The issue body uses YAML 
 | `estimated_tokens` | int | No | Positive integer | Token budget estimate |
 | `actual_tokens` | int | No | Positive integer | Actual tokens consumed (set on completion) |
 | `model_used` | string | No | Model identifier | Which model completed the work |
+| `file_context` | string[] | No | File paths | Explicit file paths the agent should read before starting. Highest priority context source. |
+| `constraints` | string[] | No | Free-form strings | Operational constraints the agent must respect (e.g., "do not modify X", "run make ci before finishing"). |
+| `handoff_ready` | boolean | No | `true`, `false` | Flag indicating the issue has been reviewed and is ready for agent work. Defaults to `false` when omitted. |
 
 ### Body Sections
 
@@ -44,7 +47,7 @@ Every task, question, result, and handoff is an issue. The issue body uses YAML 
 
 ```markdown
 ---
-schema_version: "1.0.0"
+schema_version: "1.1.0"
 type: task
 agent_type: code-gen
 priority: normal
@@ -53,6 +56,12 @@ depends_on: [121, 122]
 estimated_tokens: 2000
 actual_tokens:
 model_used:
+file_context:
+  - "internal/forge/tracker.go"
+  - "pkg/models/issue.go"
+constraints:
+  - "run make ci before finishing"
+handoff_ready: true
 ---
 
 ## Summary
@@ -88,19 +97,40 @@ The schema uses semantic versioning (`MAJOR.MINOR.PATCH`):
 
 Agents must check `schema_version` and handle unknown fields gracefully. An agent receiving a schema version higher than it supports should log a warning and process the fields it recognizes.
 
+### Context Discovery and `file_context`
+
+Agents receive context from two sources, applied in priority order:
+
+1. **`file_context` (explicit):** File paths listed in the frontmatter. The agent reads these first, before any other exploration. This is the highest priority context source because the issue author knows exactly which files are relevant.
+
+2. **Explorer regex-based discovery (implicit):** The agent's explorer scans the issue body (Summary, Context, Acceptance Criteria) for file path patterns (e.g., `internal/forge/tracker.go`, `pkg/models/issue.go`). Discovered paths supplement `file_context` but do not override it.
+
+When both sources are present, `file_context` paths are read first. Explorer-discovered paths are read after, skipping any already covered by `file_context`. When `file_context` is omitted, the agent relies entirely on explorer discovery.
+
+The `constraints` field provides operational guardrails that the agent must respect throughout execution. Unlike acceptance criteria (which define what success looks like), constraints define boundaries on how the agent works (e.g., "do not modify the public API", "skip integration tests on Windows").
+
+The `handoff_ready` flag signals that a human or orchestrator has reviewed the issue and confirmed it is ready for agent pickup. The dispatcher skips issues where `handoff_ready` is `false` or omitted, preventing agents from starting work on draft or incomplete issues.
+
 ## Example Issues
 
-### Task Issue
+### Task Issue (v1.1.0)
 
 ```markdown
 ---
-schema_version: "1.0.0"
+schema_version: "1.1.0"
 type: task
 agent_type: code-gen
 priority: high
 parent_issue: 45
 depends_on: [42, 43]
 estimated_tokens: 3000
+file_context:
+  - "internal/forge/tracker.go"
+  - "internal/forge/github.go"
+constraints:
+  - "do not modify the IssueTracker interface"
+  - "run make ci before finishing"
+handoff_ready: true
 ---
 
 ## Summary
@@ -129,7 +159,7 @@ Gitea SDK: code.gitea.io/sdk/gitea.
 
 ```markdown
 ---
-schema_version: "1.0.0"
+schema_version: "1.1.0"
 type: question
 agent_type: human
 priority: normal
@@ -158,7 +188,7 @@ SHA256 is more secure but SHA1 is the default. The GitHub implementation uses SH
 
 ```markdown
 ---
-schema_version: "1.0.0"
+schema_version: "1.1.0"
 type: result
 agent_type: qc
 priority: normal
@@ -193,7 +223,7 @@ Not blocking -- filed as issue #55.
 
 ```markdown
 ---
-schema_version: "1.0.0"
+schema_version: "1.1.0"
 type: block
 agent_type: dispatcher
 priority: high
