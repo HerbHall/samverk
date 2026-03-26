@@ -1746,15 +1746,15 @@ func TestHandleLabeled_SkipsClosedIssue(t *testing.T) {
 	}
 }
 
-func TestHandleLabeled_SkipsNeedsQC(t *testing.T) {
+func TestHandleLabeled_RequeuesNeedsQC(t *testing.T) {
 	tracker := newMockTracker()
 	d := newTestDispatcher(tracker)
 
 	tracker.mu.Lock()
 	tracker.issues[52] = &forge.Issue{
 		Number: 52,
-		Title:  "Issue in QC with queued label",
-		Body:   "---\nagent_type: code-gen\n---\nBody.",
+		Title:  "Issue re-queued after QC rejection",
+		Body:   issueBody("code-gen", nil),
 		State:  forge.StateOpen,
 		Labels: []string{models.LabelStatusQueued, models.LabelStatusNeedsQc},
 	}
@@ -1773,8 +1773,152 @@ func TestHandleLabeled_SkipsNeedsQC(t *testing.T) {
 	issue := tracker.issues[52]
 	tracker.mu.Unlock()
 
-	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
-		t.Error("needs-qc issue should not be claimed via handleLabeled")
+	// Issue should be claimed (dispatched) after re-queue.
+	if !hasLabel(issue.Labels, models.LabelStatusClaimed) {
+		t.Error("expected re-queued needs-qc issue to be claimed")
+	}
+	// The stale needs-qc label should have been stripped.
+	if hasLabel(issue.Labels, models.LabelStatusNeedsQc) {
+		t.Error("expected status:needs-qc label to be removed before routing")
+	}
+}
+
+func TestHandleLabeled_NeedsQCAlreadyClaimed(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[54] = &forge.Issue{
+		Number: 54,
+		Title:  "Issue already in-flight",
+		Body:   issueBody("code-gen", nil),
+		State:  forge.StateOpen,
+		Labels: []string{models.LabelStatusQueued, models.LabelStatusNeedsQc},
+	}
+	tracker.mu.Unlock()
+
+	// Pre-populate claimed map to simulate an in-flight issue.
+	d.mu.Lock()
+	d.claimed[issueKey("test", "repo", 54)] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	err := d.handleLabeled(context.Background(), forge.Event{
+		Type:        forge.EventIssueLabeled,
+		Owner:       "test",
+		Repo:        "repo",
+		IssueNumber: 54,
+		Label:       models.LabelStatusQueued,
+	})
+	if err != nil {
+		t.Fatalf("handleLabeled returned error: %v", err)
+	}
+
+	tracker.mu.Lock()
+	issue := tracker.issues[54]
+	calls := make([]string, len(tracker.calls))
+	copy(calls, tracker.calls)
+	tracker.mu.Unlock()
+
+	// Issue should NOT be re-routed because it's already claimed.
+	assignCalled := false
+	for _, c := range calls {
+		if c == "Assign" {
+			assignCalled = true
+		}
+	}
+	if assignCalled {
+		t.Error("Assign should not be called for an already-claimed issue")
+	}
+	// needs-qc label should still be present since we skipped early.
+	if !hasLabel(issue.Labels, models.LabelStatusNeedsQc) {
+		t.Error("expected status:needs-qc label to remain on already-claimed issue")
+	}
+}
+
+func TestPollQueued_DispatchesMissedQueuedIssue(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[60] = &forge.Issue{
+		Number: 60,
+		Title:  "Missed queued issue",
+		Body:   issueBody("code-gen", nil),
+		State:  forge.StateOpen,
+		Labels: []string{models.LabelStatusQueued},
+	}
+	tracker.mu.Unlock()
+
+	d.pollQueued(context.Background())
+
+	tracker.mu.Lock()
+	issue := tracker.issues[60]
+	tracker.mu.Unlock()
+
+	if !hasLabel(issue.Labels, models.LabelStatusClaimed) {
+		t.Error("expected pollQueued to dispatch and claim the missed queued issue")
+	}
+}
+
+func TestPollQueued_SkipsAlreadyClaimed(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[61] = &forge.Issue{
+		Number: 61,
+		Title:  "Already claimed issue",
+		Body:   issueBody("code-gen", nil),
+		State:  forge.StateOpen,
+		Labels: []string{models.LabelStatusQueued},
+	}
+	tracker.mu.Unlock()
+
+	// Pre-populate claimed map.
+	d.mu.Lock()
+	d.claimed[issueKey("test", "repo", 61)] = &claimedIssue{AgentID: "code-gen", ClaimedAt: time.Now(), LastHeartbeat: time.Now()}
+	d.mu.Unlock()
+
+	d.pollQueued(context.Background())
+
+	tracker.mu.Lock()
+	calls := make([]string, len(tracker.calls))
+	copy(calls, tracker.calls)
+	tracker.mu.Unlock()
+
+	// Should only have ListIssues, no Assign.
+	for _, c := range calls {
+		if c == "Assign" {
+			t.Error("Assign should not be called for an already-claimed issue in pollQueued")
+		}
+	}
+}
+
+func TestPollQueued_RequeuesNeedsQCIssue(t *testing.T) {
+	tracker := newMockTracker()
+	d := newTestDispatcher(tracker)
+
+	tracker.mu.Lock()
+	tracker.issues[62] = &forge.Issue{
+		Number: 62,
+		Title:  "Issue with queued and needs-qc",
+		Body:   issueBody("code-gen", nil),
+		State:  forge.StateOpen,
+		Labels: []string{models.LabelStatusQueued, models.LabelStatusNeedsQc},
+	}
+	tracker.mu.Unlock()
+
+	d.pollQueued(context.Background())
+
+	tracker.mu.Lock()
+	issue := tracker.issues[62]
+	tracker.mu.Unlock()
+
+	if !hasLabel(issue.Labels, models.LabelStatusClaimed) {
+		t.Error("expected pollQueued to dispatch the re-queued needs-qc issue")
+	}
+	if hasLabel(issue.Labels, models.LabelStatusNeedsQc) {
+		t.Error("expected status:needs-qc label to be stripped by pollQueued")
 	}
 }
 

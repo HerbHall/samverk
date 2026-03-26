@@ -480,6 +480,7 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			if err := d.recheckCrossProjectDeps(ctx); err != nil {
 				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
 			}
+			d.pollQueued(ctx)
 			d.metrics.PollCompleted(time.Since(pollStart))
 			d.mu.Lock()
 			depth := len(d.claimed)
@@ -495,6 +496,7 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			if err := d.recheckCrossProjectDeps(ctx); err != nil {
 				d.logger.Error("cross-project dep recheck", zap.String("error", err.Error()))
 			}
+			d.pollQueued(ctx)
 			d.metrics.PollCompleted(time.Since(pollStart))
 			d.mu.Lock()
 			depth := len(d.claimed)
@@ -697,12 +699,27 @@ func (d *Dispatcher) handleLabeled(ctx context.Context, ev forge.Event) error {
 	for _, l := range issue.Labels {
 		labels[l] = true
 	}
-	// Skip if already actively worked on, awaiting human, or in QC.
+	// Skip if already actively worked on or awaiting human.
 	if labels[models.LabelStatusNeedsHuman] || labels["status:human-pending"] ||
 		labels[models.LabelStatusBlocked] || labels[models.LabelStatusClaimed] ||
-		labels[models.LabelStatusInProgress] || labels[models.LabelStatusNeedsQc] {
+		labels[models.LabelStatusInProgress] {
 		d.logger.Debug("skipping re-queued issue with active status", zap.Int("issue", issue.Number))
 		return nil
+	}
+
+	// Guard against duplicate dispatch: check the in-memory claimed map directly.
+	key := issueKey(ev.Owner, ev.Repo, issue.Number)
+	d.mu.RLock()
+	_, alreadyClaimed := d.claimed[key]
+	d.mu.RUnlock()
+	if alreadyClaimed {
+		d.logger.Debug("skipping re-queued issue already in-flight", zap.Int("issue", issue.Number))
+		return nil
+	}
+
+	// Strip stale QC label before routing so the issue doesn't loop back.
+	if labels["status:needs-qc"] {
+		_ = tracker.RemoveLabel(ctx, issue.Number, "status:needs-qc")
 	}
 
 	agentType, fm, err := d.classify(ctx, ev.Owner, ev.Repo, issue)
@@ -751,6 +768,70 @@ func (d *Dispatcher) handleAssigned(_ context.Context, ev forge.Event) error {
 func (d *Dispatcher) handleEdited(_ context.Context, _ forge.Event) error {
 	// Phase 1: no re-parsing on edits.
 	return nil
+}
+
+// pollQueued scans all tracked repositories for open issues labeled
+// status:queued that are not in the claimed map. This catches issues that
+// were relabeled back to queued (e.g., after QC rejection) but missed by the
+// event watcher because the dispatcher had already "seen" them.
+func (d *Dispatcher) pollQueued(ctx context.Context) {
+	d.mu.RLock()
+	entries := make([]TrackerEntry, len(d.trackerEntries))
+	copy(entries, d.trackerEntries)
+	d.mu.RUnlock()
+
+	for i := range entries {
+		entry := entries[i]
+		issues, err := entry.Tracker.ListIssues(ctx, &forge.ListOptions{
+			State:   forge.StateOpen,
+			Labels:  []string{"status:queued"},
+			PerPage: 100,
+		})
+		if err != nil {
+			d.logger.Warn("pollQueued: list issues",
+				zap.String("owner", entry.Owner),
+				zap.String("repo", entry.Repo),
+				zap.Error(err))
+			continue
+		}
+		for j := range issues {
+			issue := issues[j]
+			key := issueKey(entry.Owner, entry.Repo, issue.Number)
+			d.mu.RLock()
+			_, alreadyClaimed := d.claimed[key]
+			d.mu.RUnlock()
+			if alreadyClaimed {
+				continue
+			}
+			labels := make(map[string]bool, len(issue.Labels))
+			for _, l := range issue.Labels {
+				labels[l] = true
+			}
+			if labels["status:needs-human"] || labels["status:human-pending"] ||
+				labels["status:blocked"] || labels["status:claimed"] ||
+				labels["status:in-progress"] {
+				continue
+			}
+			if labels["status:needs-qc"] {
+				_ = entry.Tracker.RemoveLabel(ctx, issue.Number, "status:needs-qc")
+			}
+			d.logger.Info("pollQueued: dispatching missed queued issue",
+				zap.String("owner", entry.Owner),
+				zap.String("repo", entry.Repo),
+				zap.Int("issue", issue.Number))
+			agentType, fm, classifyErr := d.classify(ctx, entry.Owner, entry.Repo, issue)
+			if classifyErr != nil {
+				d.recordFailure(ctx, issue.Number, "", "", "", classifyErr.Error(), 0)
+				_ = d.escalate(ctx, entry.Owner, entry.Repo, issue.Number, "invalid_frontmatter", classifyErr.Error())
+				continue
+			}
+			if routeErr := d.route(ctx, entry.Owner, entry.Repo, issue, agentType, fm); routeErr != nil {
+				d.logger.Error("pollQueued: route issue",
+					zap.Int("issue", issue.Number),
+					zap.Error(routeErr))
+			}
+		}
+	}
 }
 
 // escalate labels an issue as needs-human and posts a comment.
