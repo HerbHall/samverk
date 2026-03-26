@@ -96,7 +96,7 @@ func BuildDigest(ctx context.Context, tracker forge.IssueTracker, costs CostSour
 
 	// 1. Tier 3 pending actions: status:needs-human, sorted by priority then age.
 	needsHuman, err := tracker.ListIssues(ctx, &forge.ListOptions{
-		State: forge.StateOpen, Labels: []string{"status:needs-human"},
+		State: forge.StateOpen, Labels: []string{models.LabelStatusNeedsHuman},
 	})
 	if err != nil {
 		return d, err
@@ -144,7 +144,7 @@ func BuildDigest(ctx context.Context, tracker forge.IssueTracker, costs CostSour
 
 	// 3. Active work: status:in-progress.
 	active, err := tracker.ListIssues(ctx, &forge.ListOptions{
-		State: forge.StateOpen, Labels: []string{"status:in-progress"},
+		State: forge.StateOpen, Labels: []string{models.LabelStatusInProgress},
 	})
 	if err != nil {
 		return d, err
@@ -164,7 +164,7 @@ func BuildDigest(ctx context.Context, tracker forge.IssueTracker, costs CostSour
 
 	// 4. Counts.
 	queued, err := tracker.ListIssues(ctx, &forge.ListOptions{
-		State: forge.StateOpen, Labels: []string{"status:queued"},
+		State: forge.StateOpen, Labels: []string{models.LabelStatusQueued},
 	})
 	if err != nil {
 		return d, err
@@ -172,7 +172,7 @@ func BuildDigest(ctx context.Context, tracker forge.IssueTracker, costs CostSour
 	d.QueuedCount = len(queued)
 
 	blocked, err := tracker.ListIssues(ctx, &forge.ListOptions{
-		State: forge.StateOpen, Labels: []string{"status:blocked"},
+		State: forge.StateOpen, Labels: []string{models.LabelStatusBlocked},
 	})
 	if err != nil {
 		return d, err

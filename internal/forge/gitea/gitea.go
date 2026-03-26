@@ -12,6 +12,7 @@ import (
 	gogitea "code.gitea.io/sdk/gitea"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // Compile-time interface checks.
@@ -377,7 +378,7 @@ func (c *Client) Watch(ctx context.Context, handler func(forge.Event)) error {
 	// routes them on startup, not only when new issues appear.
 	for _, iss := range issues {
 		for _, label := range iss.Labels {
-			if label == "status:queued" {
+			if label == models.LabelStatusQueued {
 				wrappedHandler(forge.Event{
 					Type:          forge.EventIssueOpened,
 					IssueNumber:   iss.Number,
