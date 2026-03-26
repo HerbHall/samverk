@@ -136,7 +136,7 @@ func (d *Dispatcher) createChildIssues(
 		body := buildChildBody(parent.Number, at, st.Body, st.DependsOn)
 
 		labels := []string{
-			"status:queued",
+			models.LabelStatusQueued,
 			fmt.Sprintf("agent:%s", at),
 			"decomposed",
 		}
