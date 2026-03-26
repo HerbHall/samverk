@@ -58,11 +58,15 @@ func CreateWorkspace(repoDir, sessionID string, issueNumber int, logger *zap.Log
 	wsPath = filepath.Join(os.TempDir(), fmt.Sprintf("%s%s", worktreePrefix, sessionID))
 	branch := fmt.Sprintf("agent/%d", issueNumber)
 
-	// Create worktree with new branch. Fall back to existing branch if it
-	// already exists (e.g. retry after a previous session failed without cleanup).
+	// Create worktree with new branch. If the branch already exists from a
+	// previous failed attempt, delete it first so we get a clean branch from
+	// HEAD. Without this, the worktree inherits the old branch's corrupted
+	// CLAUDE.md and other stale changes from the prior run.
 	_, err := gitExec(repoDir, "worktree", "add", wsPath, "-b", branch)
 	if err != nil {
-		_, err = gitExec(repoDir, "worktree", "add", wsPath, branch)
+		// Branch exists -- force-delete it and retry with a fresh branch.
+		_, _ = gitExec(repoDir, "branch", "-D", branch)
+		_, err = gitExec(repoDir, "worktree", "add", wsPath, "-b", branch)
 		if err != nil {
 			return "", nil, fmt.Errorf("create worktree: %w", err)
 		}
