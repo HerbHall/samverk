@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/forge"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // newTestRegistry creates a project registry with a mock tracker for testing.
@@ -28,7 +29,7 @@ func newTestRegistry(t *testing.T, tracker forge.IssueTracker) *internalmcp.Proj
 func TestClaimIssue(t *testing.T) {
 	tracker := &mockTracker{
 		issues: []*forge.Issue{
-			{Number: 42, Title: "test issue", Labels: []string{"status:queued"}, State: forge.StateOpen},
+			{Number: 42, Title: "test issue", Labels: []string{models.LabelStatusQueued}, State: forge.StateOpen},
 		},
 	}
 	reg := newTestRegistry(t, tracker)
@@ -52,7 +53,7 @@ func TestClaimIssue(t *testing.T) {
 	}
 	foundRemove := false
 	for _, c := range tracker.removeLabelCalls {
-		if c.Number == 42 && c.Label == "status:queued" {
+		if c.Number == 42 && c.Label == models.LabelStatusQueued {
 			foundRemove = true
 		}
 	}
@@ -62,7 +63,7 @@ func TestClaimIssue(t *testing.T) {
 
 	foundAdd := false
 	for _, c := range tracker.addLabelCalls {
-		if c.Number == 42 && c.Label == "status:claimed" {
+		if c.Number == 42 && c.Label == models.LabelStatusClaimed {
 			foundAdd = true
 		}
 	}
@@ -119,7 +120,7 @@ func TestCompleteIssue(t *testing.T) {
 	// Verify needs-qc label was added.
 	foundQC := false
 	for _, c := range tracker.addLabelCalls {
-		if c.Number == 42 && c.Label == "status:needs-qc" {
+		if c.Number == 42 && c.Label == models.LabelStatusNeedsQc {
 			foundQC = true
 		}
 	}
@@ -182,7 +183,7 @@ func TestReleaseIssue(t *testing.T) {
 	// Verify queued label restored.
 	foundQueued := false
 	for _, c := range tracker.addLabelCalls {
-		if c.Number == 42 && c.Label == "status:queued" {
+		if c.Number == 42 && c.Label == models.LabelStatusQueued {
 			foundQueued = true
 		}
 	}
@@ -264,8 +265,8 @@ func TestHeartbeatIssue_WrongWorker(t *testing.T) {
 func TestRequestWork(t *testing.T) {
 	tracker := &mockTracker{
 		issues: []*forge.Issue{
-			{Number: 10, Title: "first", Labels: []string{"status:queued"}, State: forge.StateOpen},
-			{Number: 20, Title: "second", Labels: []string{"status:queued"}, State: forge.StateOpen},
+			{Number: 10, Title: "first", Labels: []string{models.LabelStatusQueued}, State: forge.StateOpen},
+			{Number: 20, Title: "second", Labels: []string{models.LabelStatusQueued}, State: forge.StateOpen},
 		},
 	}
 	reg := newTestRegistry(t, tracker)
@@ -287,7 +288,7 @@ func TestRequestWork(t *testing.T) {
 func TestRequestWork_SkipsInactiveProjects(t *testing.T) {
 	tracker := &mockTracker{
 		issues: []*forge.Issue{
-			{Number: 10, Title: "queued", Labels: []string{"status:queued"}, State: forge.StateOpen},
+			{Number: 10, Title: "queued", Labels: []string{models.LabelStatusQueued}, State: forge.StateOpen},
 		},
 	}
 	reg := internalmcp.NewProjectRegistry()
@@ -311,12 +312,12 @@ func TestRequestWork_SkipsInactiveProjects(t *testing.T) {
 func TestRequestWork_FilterByProject(t *testing.T) {
 	tracker1 := &mockTracker{
 		issues: []*forge.Issue{
-			{Number: 10, Title: "proj1", Labels: []string{"status:queued"}, State: forge.StateOpen},
+			{Number: 10, Title: "proj1", Labels: []string{models.LabelStatusQueued}, State: forge.StateOpen},
 		},
 	}
 	tracker2 := &mockTracker{
 		issues: []*forge.Issue{
-			{Number: 20, Title: "proj2", Labels: []string{"status:queued"}, State: forge.StateOpen},
+			{Number: 20, Title: "proj2", Labels: []string{models.LabelStatusQueued}, State: forge.StateOpen},
 		},
 	}
 	reg := internalmcp.NewProjectRegistry()
@@ -339,7 +340,7 @@ func TestRequestWork_FilterByProject(t *testing.T) {
 func TestRequestWork_NoQueuedIssues(t *testing.T) {
 	tracker := &mockTracker{
 		issues: []*forge.Issue{
-			{Number: 10, Title: "in progress", Labels: []string{"status:in-progress"}, State: forge.StateOpen},
+			{Number: 10, Title: "in progress", Labels: []string{models.LabelStatusInProgress}, State: forge.StateOpen},
 		},
 	}
 	reg := newTestRegistry(t, tracker)

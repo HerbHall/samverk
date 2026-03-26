@@ -129,8 +129,8 @@ func TestDetectProjectType(t *testing.T) {
 	}{
 		{name: "no labels", labels: nil, want: ProjectTypeGo},
 		{name: "empty labels", labels: []string{}, want: ProjectTypeGo},
-		{name: "backend label", labels: []string{"area:agent", "priority:high"}, want: ProjectTypeGo},
-		{name: "frontend epic", labels: []string{"epic:frontend", "priority:high"}, want: ProjectTypeFrontend},
+		{name: "backend label", labels: []string{"area:agent", models.LabelPriorityHigh}, want: ProjectTypeGo},
+		{name: "frontend epic", labels: []string{"epic:frontend", models.LabelPriorityHigh}, want: ProjectTypeFrontend},
 		{name: "web label", labels: []string{"area:web"}, want: ProjectTypeFrontend},
 		{name: "ui label", labels: []string{"area:ui"}, want: ProjectTypeFrontend},
 		{name: "explicit fullstack", labels: []string{"fullstack"}, want: ProjectTypeFullstack},
@@ -138,7 +138,7 @@ func TestDetectProjectType(t *testing.T) {
 		{name: "frontend+backend", labels: []string{"epic:frontend", "area:api"}, want: ProjectTypeFullstack},
 		{name: "frontend+server", labels: []string{"area:web", "area:server"}, want: ProjectTypeFullstack},
 		{name: "case insensitive", labels: []string{"EPIC:FRONTEND"}, want: ProjectTypeFrontend},
-		{name: "backend only", labels: []string{"area:api", "priority:high"}, want: ProjectTypeGo},
+		{name: "backend only", labels: []string{"area:api", models.LabelPriorityHigh}, want: ProjectTypeGo},
 	}
 
 	for _, tt := range tests {

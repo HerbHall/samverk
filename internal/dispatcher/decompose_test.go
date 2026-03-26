@@ -181,7 +181,7 @@ func TestDecomposeAndCreateChildren_CreatesChildren(t *testing.T) {
 			if l == "decomposed" {
 				hasDecomposed = true
 			}
-			if l == "status:queued" {
+			if l == models.LabelStatusQueued {
 				hasQueued = true
 			}
 		}

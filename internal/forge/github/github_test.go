@@ -13,6 +13,7 @@ import (
 	gogithub "github.com/google/go-github/v68/github"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // newTestClient creates a Client pointed at a test HTTP server.
@@ -90,7 +91,7 @@ func TestGetIssue(t *testing.T) {
 			Body:   gogithub.Ptr("Body text"),
 			State:  gogithub.Ptr("open"),
 			Labels: []*gogithub.Label{
-				{Name: gogithub.Ptr("priority:high")},
+				{Name: gogithub.Ptr(models.LabelPriorityHigh)},
 				{Name: gogithub.Ptr("type:task")},
 			},
 			Assignees: []*gogithub.User{
@@ -306,14 +307,14 @@ func TestSetLabels(t *testing.T) {
 		}
 
 		writeJSON(t, w, http.StatusOK, []*gogithub.Label{
-			{Name: gogithub.Ptr("priority:high")},
-			{Name: gogithub.Ptr("status:claimed")},
+			{Name: gogithub.Ptr(models.LabelPriorityHigh)},
+			{Name: gogithub.Ptr(models.LabelStatusClaimed)},
 		})
 	})
 
 	c, _ := newTestClient(t, mux)
 
-	err := c.SetLabels(context.Background(), 7, []string{"priority:high", "status:claimed"})
+	err := c.SetLabels(context.Background(), 7, []string{models.LabelPriorityHigh, models.LabelStatusClaimed})
 	if err != nil {
 		t.Fatalf("SetLabels: %v", err)
 	}
@@ -364,7 +365,7 @@ func TestRemoveLabel_NotPresent(t *testing.T) {
 	c, _ := newTestClient(t, mux)
 
 	// A 404 must be silently suppressed — the label being absent is the desired state.
-	err := c.RemoveLabel(context.Background(), 7, "status:queued")
+	err := c.RemoveLabel(context.Background(), 7, models.LabelStatusQueued)
 	if err != nil {
 		t.Fatalf("RemoveLabel on absent label: expected nil, got %v", err)
 	}

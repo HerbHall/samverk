@@ -75,13 +75,13 @@ func TestCheckDependencies_SameProjectOnly(t *testing.T) {
 	tracker.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 	tracker.issues[11] = &forge.Issue{
 		Number: 11,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	fm := &models.IssueFrontmatter{
@@ -113,7 +113,7 @@ func TestCheckDependencies_CrossProjectDone(t *testing.T) {
 	crossTracker.issues[15] = &forge.Issue{
 		Number:   15,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -147,7 +147,7 @@ func TestCheckDependencies_CrossProjectNotDone(t *testing.T) {
 	crossTracker.issues[15] = &forge.Issue{
 		Number: 15,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	resolver := newMockProjectResolver()
@@ -181,7 +181,7 @@ func TestCheckDependencies_MixedDeps(t *testing.T) {
 	tracker.issues[42] = &forge.Issue{
 		Number:   42,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -190,7 +190,7 @@ func TestCheckDependencies_MixedDeps(t *testing.T) {
 	crossTracker.issues[15] = &forge.Issue{
 		Number: 15,
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 
 	resolver := newMockProjectResolver()
@@ -303,7 +303,7 @@ func TestRecheckCrossProjectDeps_UnblocksWhenDone(t *testing.T) {
 	tracker.issues[42] = &forge.Issue{
 		Number:   42,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -313,7 +313,7 @@ func TestRecheckCrossProjectDeps_UnblocksWhenDone(t *testing.T) {
 		Title:  "Blocked on cross-project dep",
 		Body:   issueBodyMixed("code-gen", []int{42}, []string{"HerbHall/devkit#15"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	// Cross-project dep is now done.
@@ -321,7 +321,7 @@ func TestRecheckCrossProjectDeps_UnblocksWhenDone(t *testing.T) {
 	crossTracker.issues[15] = &forge.Issue{
 		Number:   15,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -335,10 +335,10 @@ func TestRecheckCrossProjectDeps_UnblocksWhenDone(t *testing.T) {
 	}
 
 	issue := tracker.issues[1]
-	if hasLabel(issue.Labels, "status:blocked") {
+	if hasLabel(issue.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked to be removed")
 	}
-	if !hasLabel(issue.Labels, "status:queued") {
+	if !hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("expected status:queued after cross-project unblock")
 	}
 }
@@ -352,7 +352,7 @@ func TestRecheckCrossProjectDeps_StaysBlockedWhenNotDone(t *testing.T) {
 		Title:  "Blocked on cross-project dep",
 		Body:   issueBodyMixed("code-gen", nil, []string{"HerbHall/devkit#15"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	// Cross-project dep is still open.
@@ -360,7 +360,7 @@ func TestRecheckCrossProjectDeps_StaysBlockedWhenNotDone(t *testing.T) {
 	crossTracker.issues[15] = &forge.Issue{
 		Number: 15,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	resolver := newMockProjectResolver()
@@ -373,10 +373,10 @@ func TestRecheckCrossProjectDeps_StaysBlockedWhenNotDone(t *testing.T) {
 	}
 
 	issue := tracker.issues[1]
-	if !hasLabel(issue.Labels, "status:blocked") {
+	if !hasLabel(issue.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked to remain")
 	}
-	if hasLabel(issue.Labels, "status:queued") {
+	if hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("did not expect status:queued (dep not done)")
 	}
 }
@@ -402,12 +402,12 @@ func TestRecheckCrossProjectDeps_SkipsLocalOnlyDeps(t *testing.T) {
 		Title:  "Blocked on local dep only",
 		Body:   issueBody("code-gen", []int{42}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 	tracker.issues[42] = &forge.Issue{
 		Number: 42,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	resolver := newMockProjectResolver()
@@ -420,7 +420,7 @@ func TestRecheckCrossProjectDeps_SkipsLocalOnlyDeps(t *testing.T) {
 
 	// Issue should remain blocked (local-only deps are not touched by this function).
 	issue := tracker.issues[1]
-	if !hasLabel(issue.Labels, "status:blocked") {
+	if !hasLabel(issue.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked to remain for local-only dep issue")
 	}
 }
@@ -476,7 +476,7 @@ func TestHandleOpened_CrossProjectDependencyBlocked(t *testing.T) {
 	crossTracker.issues[15] = &forge.Issue{
 		Number: 15,
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 
 	resolver := newMockProjectResolver()
@@ -488,7 +488,7 @@ func TestHandleOpened_CrossProjectDependencyBlocked(t *testing.T) {
 		Title:  "Depends on cross-project",
 		Body:   issueBodyMixed("code-gen", nil, []string{"HerbHall/devkit#15"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.issues[1] = issue
 
@@ -501,7 +501,7 @@ func TestHandleOpened_CrossProjectDependencyBlocked(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !hasLabel(issue.Labels, "status:blocked") {
+	if !hasLabel(issue.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked for unsatisfied cross-project dependency")
 	}
 }
@@ -516,7 +516,7 @@ func TestHandleOpened_CrossProjectDependencyDone(t *testing.T) {
 	crossTracker.issues[15] = &forge.Issue{
 		Number:   15,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -529,7 +529,7 @@ func TestHandleOpened_CrossProjectDependencyDone(t *testing.T) {
 		Title:  "Depends on cross-project (done)",
 		Body:   issueBodyMixed("code-gen", nil, []string{"HerbHall/devkit#15"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.issues[1] = issue
 
@@ -542,10 +542,10 @@ func TestHandleOpened_CrossProjectDependencyDone(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if hasLabel(issue.Labels, "status:blocked") {
+	if hasLabel(issue.Labels, models.LabelStatusBlocked) {
 		t.Error("did not expect status:blocked -- cross-project dep is done")
 	}
-	if !hasLabel(issue.Labels, "status:claimed") {
+	if !hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected status:claimed after routing")
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 func makePipelineEvent(issueNumber int, from, to string, at time.Time) PipelineEvent {
@@ -24,7 +26,7 @@ func TestPipelineEvent_RoundTrip(t *testing.T) {
 	ts := time.Now().UTC().Truncate(time.Second)
 	ev := PipelineEvent{
 		IssueNumber: 42, Project: "owner/repo",
-		FromStage: "status:queued", ToStage: "status:claimed",
+		FromStage: models.LabelStatusQueued, ToStage: models.LabelStatusClaimed,
 		TriggeredBy: "dispatcher", OccurredAt: ts,
 	}
 	if err := s.RecordPipelineEvent(ctx, ev); err != nil {
@@ -45,11 +47,11 @@ func TestPipelineEvent_RoundTrip(t *testing.T) {
 	if got.IssueNumber != 42 {
 		t.Errorf("IssueNumber = %d, want 42", got.IssueNumber)
 	}
-	if got.FromStage != "status:queued" {
-		t.Errorf("FromStage = %q, want %q", got.FromStage, "status:queued")
+	if got.FromStage != models.LabelStatusQueued {
+		t.Errorf("FromStage = %q, want %q", got.FromStage, models.LabelStatusQueued)
 	}
-	if got.ToStage != "status:claimed" {
-		t.Errorf("ToStage = %q, want %q", got.ToStage, "status:claimed")
+	if got.ToStage != models.LabelStatusClaimed {
+		t.Errorf("ToStage = %q, want %q", got.ToStage, models.LabelStatusClaimed)
 	}
 	if !got.OccurredAt.Equal(ts) {
 		t.Errorf("OccurredAt = %v, want %v", got.OccurredAt, ts)
@@ -63,10 +65,10 @@ func TestPipelineEvent_SinceFilter(t *testing.T) {
 	old := base.Add(-2 * time.Hour)
 	recent := base.Add(-30 * time.Minute)
 	cutoff := base.Add(-1 * time.Hour)
-	if err := s.RecordPipelineEvent(ctx, makePipelineEvent(1, "", "status:claimed", old)); err != nil {
+	if err := s.RecordPipelineEvent(ctx, makePipelineEvent(1, "", models.LabelStatusClaimed, old)); err != nil {
 		t.Fatalf("save old: %v", err)
 	}
-	if err := s.RecordPipelineEvent(ctx, makePipelineEvent(1, "status:claimed", "status:in-progress", recent)); err != nil {
+	if err := s.RecordPipelineEvent(ctx, makePipelineEvent(1, models.LabelStatusClaimed, models.LabelStatusInProgress, recent)); err != nil {
 		t.Fatalf("save recent: %v", err)
 	}
 	events, err := s.GetPipelineEvents(ctx, 1, cutoff, 0)
@@ -76,7 +78,7 @@ func TestPipelineEvent_SinceFilter(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event after cutoff, got %d", len(events))
 	}
-	if events[0].ToStage != "status:in-progress" {
+	if events[0].ToStage != models.LabelStatusInProgress {
 		t.Errorf("expected status:in-progress, got %q", events[0].ToStage)
 	}
 }
@@ -86,7 +88,7 @@ func TestPipelineEvent_LimitEnforced(t *testing.T) {
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Second)
 	epoch := time.Unix(0, 0).UTC()
-	for i, to := range []string{"status:claimed", "status:in-progress", "status:needs-qc"} {
+	for i, to := range []string{models.LabelStatusClaimed, models.LabelStatusInProgress, models.LabelStatusNeedsQc} {
 		if err := s.RecordPipelineEvent(ctx, makePipelineEvent(5, "", to, base.Add(time.Duration(i)*time.Minute))); err != nil {
 			t.Fatalf("save %d: %v", i, err)
 		}
@@ -98,7 +100,7 @@ func TestPipelineEvent_LimitEnforced(t *testing.T) {
 	if len(events) != 2 {
 		t.Fatalf("expected 2, got %d", len(events))
 	}
-	if events[0].ToStage != "status:claimed" {
+	if events[0].ToStage != models.LabelStatusClaimed {
 		t.Errorf("expected status:claimed first, got %q", events[0].ToStage)
 	}
 }
@@ -108,10 +110,10 @@ func TestPipelineEvent_IssueFilter(t *testing.T) {
 	ctx := context.Background()
 	epoch := time.Unix(0, 0).UTC()
 	base := time.Now().UTC()
-	if err := s.RecordPipelineEvent(ctx, makePipelineEvent(10, "", "status:claimed", base)); err != nil {
+	if err := s.RecordPipelineEvent(ctx, makePipelineEvent(10, "", models.LabelStatusClaimed, base)); err != nil {
 		t.Fatalf("save 10: %v", err)
 	}
-	if err := s.RecordPipelineEvent(ctx, makePipelineEvent(20, "", "status:claimed", base)); err != nil {
+	if err := s.RecordPipelineEvent(ctx, makePipelineEvent(20, "", models.LabelStatusClaimed, base)); err != nil {
 		t.Fatalf("save 20: %v", err)
 	}
 	events, err := s.GetPipelineEvents(ctx, 10, epoch, 0)
@@ -129,7 +131,7 @@ func TestPipelineEvent_AllIssues(t *testing.T) {
 	epoch := time.Unix(0, 0).UTC()
 	base := time.Now().UTC()
 	for _, n := range []int{1, 2, 3} {
-		if err := s.RecordPipelineEvent(ctx, makePipelineEvent(n, "", "status:claimed", base)); err != nil {
+		if err := s.RecordPipelineEvent(ctx, makePipelineEvent(n, "", models.LabelStatusClaimed, base)); err != nil {
 			t.Fatalf("save %d: %v", n, err)
 		}
 	}
@@ -162,7 +164,7 @@ func TestPipelineEvent_Persistence(t *testing.T) {
 		t.Fatalf("open store 1: %v", err)
 	}
 	ctx := context.Background()
-	ev := makePipelineEvent(99, "status:queued", "status:claimed", time.Now().UTC().Truncate(time.Second))
+	ev := makePipelineEvent(99, models.LabelStatusQueued, models.LabelStatusClaimed, time.Now().UTC().Truncate(time.Second))
 	if err := s1.RecordPipelineEvent(ctx, ev); err != nil {
 		t.Fatalf("RecordPipelineEvent: %v", err)
 	}
@@ -182,7 +184,7 @@ func TestPipelineEvent_Persistence(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1, got %d", len(events))
 	}
-	if events[0].FromStage != "status:queued" {
+	if events[0].FromStage != models.LabelStatusQueued {
 		t.Errorf("FromStage = %q, want status:queued", events[0].FromStage)
 	}
 }

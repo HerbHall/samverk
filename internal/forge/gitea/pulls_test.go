@@ -10,6 +10,7 @@ import (
 	gogitea "code.gitea.io/sdk/gitea"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 func TestCreatePullRequest(t *testing.T) {
@@ -89,7 +90,7 @@ func TestGetPullRequest(t *testing.T) {
 			Poster:    &gogitea.User{UserName: "bob"},
 			Mergeable: true,
 			Draft:     false,
-			Labels:    []*gogitea.Label{{ID: 1, Name: "priority:high"}},
+			Labels:    []*gogitea.Label{{ID: 1, Name: models.LabelPriorityHigh}},
 			Created:   &created,
 			Updated:   &created,
 		})
@@ -117,7 +118,7 @@ func TestGetPullRequest(t *testing.T) {
 	if !pr.Mergeable {
 		t.Error("Mergeable = false, want true")
 	}
-	if len(pr.Labels) != 1 || pr.Labels[0] != "priority:high" {
+	if len(pr.Labels) != 1 || pr.Labels[0] != models.LabelPriorityHigh {
 		t.Errorf("Labels = %v, want [priority:high]", pr.Labels)
 	}
 }

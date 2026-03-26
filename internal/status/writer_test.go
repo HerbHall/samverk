@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // mockTracker implements forge.IssueTracker for testing.
@@ -82,12 +83,12 @@ func TestGenerate(t *testing.T) {
 		{
 			name: "mixed status labels",
 			issues: []*forge.Issue{
-				{Number: 1, Title: "Active task", State: forge.StateOpen, Labels: []string{"status:in-progress"}},
-				{Number: 2, Title: "Claimed work", State: forge.StateOpen, Labels: []string{"status:claimed"}},
-				{Number: 3, Title: "Stuck issue", State: forge.StateOpen, Labels: []string{"status:blocked"}},
-				{Number: 4, Title: "Human needed", State: forge.StateOpen, Labels: []string{"status:needs-human"}},
+				{Number: 1, Title: "Active task", State: forge.StateOpen, Labels: []string{models.LabelStatusInProgress}},
+				{Number: 2, Title: "Claimed work", State: forge.StateOpen, Labels: []string{models.LabelStatusClaimed}},
+				{Number: 3, Title: "Stuck issue", State: forge.StateOpen, Labels: []string{models.LabelStatusBlocked}},
+				{Number: 4, Title: "Human needed", State: forge.StateOpen, Labels: []string{models.LabelStatusNeedsHuman}},
 				{Number: 5, Title: "Pending human", State: forge.StateOpen, Labels: []string{"status:human-pending"}},
-				{Number: 6, Title: "QC check", State: forge.StateOpen, Labels: []string{"status:needs-qc"}},
+				{Number: 6, Title: "QC check", State: forge.StateOpen, Labels: []string{models.LabelStatusNeedsQc}},
 				{Number: 7, Title: "Backlog item", State: forge.StateOpen, Labels: []string{"priority:medium"}},
 			},
 			wantChecks: []string{

@@ -296,7 +296,7 @@ func TestHandleOpened_ValidFrontmatter(t *testing.T) {
 		Title:  "Add widget",
 		Body:   issueBody("code-gen", nil),
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.issues[1] = issue
 
@@ -310,10 +310,10 @@ func TestHandleOpened_ValidFrontmatter(t *testing.T) {
 	}
 
 	// Issue should be claimed and assigned.
-	if !hasLabel(issue.Labels, "status:claimed") {
+	if !hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected status:claimed label")
 	}
-	if hasLabel(issue.Labels, "status:queued") {
+	if hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("did not expect status:queued label after routing")
 	}
 	if len(issue.Assignees) == 0 || issue.Assignees[0] != "code-gen" {
@@ -342,7 +342,7 @@ func TestHandleOpened_InvalidAgentType(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !hasLabel(issue.Labels, "status:needs-human") {
+	if !hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 		t.Error("expected status:needs-human label for invalid agent type")
 	}
 }
@@ -368,7 +368,7 @@ func TestHandleOpened_NoFrontmatter(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !hasLabel(issue.Labels, "status:needs-human") {
+	if !hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 		t.Error("expected status:needs-human label for missing frontmatter")
 	}
 }
@@ -383,7 +383,7 @@ func TestClassifyByHeuristic(t *testing.T) {
 		{
 			name:     "agent:human label",
 			title:    "Some issue",
-			labels:   []string{"agent:human"},
+			labels:   []string{models.LabelAgentHuman},
 			wantType: models.AgentTypeHuman,
 		},
 		{
@@ -443,7 +443,7 @@ func TestClassifyByHeuristic(t *testing.T) {
 		{
 			name:     "agent:human takes priority over bug",
 			title:    "Something broken",
-			labels:   []string{"agent:human", "bug"},
+			labels:   []string{models.LabelAgentHuman, "bug"},
 			wantType: models.AgentTypeHuman,
 		},
 		{
@@ -496,10 +496,10 @@ func TestHandleOpened_NoFrontmatter_BugLabel(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if hasLabel(issue.Labels, "status:needs-human") {
+	if hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 		t.Error("did not expect status:needs-human for issue with bug label")
 	}
-	if !hasLabel(issue.Labels, "status:claimed") {
+	if !hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected status:claimed after heuristic routing")
 	}
 }
@@ -513,7 +513,7 @@ func TestHandleOpened_NoFrontmatter_AgentHumanLabel(t *testing.T) {
 		Title:  "Design review needed",
 		Body:   "Plain issue without frontmatter.",
 		State:  forge.StateOpen,
-		Labels: []string{"agent:human"},
+		Labels: []string{models.LabelAgentHuman},
 	}
 	tracker.issues[1] = issue
 
@@ -528,10 +528,10 @@ func TestHandleOpened_NoFrontmatter_AgentHumanLabel(t *testing.T) {
 
 	// agent:human issues are now intercepted by the route() human gate:
 	// status:needs-human is added and no pool submission occurs.
-	if !hasLabel(issue.Labels, "status:needs-human") {
+	if !hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 		t.Error("expected status:needs-human for agent:human classified issue")
 	}
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("did not expect status:claimed — human issues must not be dispatched")
 	}
 }
@@ -545,7 +545,7 @@ func TestHandleOpened_WithDependencies_AllDone(t *testing.T) {
 	tracker.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -554,7 +554,7 @@ func TestHandleOpened_WithDependencies_AllDone(t *testing.T) {
 		Title:  "Depends on #10",
 		Body:   issueBody("code-gen", []int{10}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.issues[1] = issue
 
@@ -568,10 +568,10 @@ func TestHandleOpened_WithDependencies_AllDone(t *testing.T) {
 	}
 
 	// Should be routed, not blocked.
-	if hasLabel(issue.Labels, "status:blocked") {
+	if hasLabel(issue.Labels, models.LabelStatusBlocked) {
 		t.Error("did not expect status:blocked -- dependency is done")
 	}
-	if !hasLabel(issue.Labels, "status:claimed") {
+	if !hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected status:claimed after routing")
 	}
 }
@@ -584,7 +584,7 @@ func TestHandleOpened_WithDependencies_Blocked(t *testing.T) {
 	tracker.issues[10] = &forge.Issue{
 		Number: 10,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 		Body:   issueBody("code-gen", nil),
 	}
 
@@ -593,7 +593,7 @@ func TestHandleOpened_WithDependencies_Blocked(t *testing.T) {
 		Title:  "Depends on #10",
 		Body:   issueBody("code-gen", []int{10}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.issues[1] = issue
 
@@ -606,7 +606,7 @@ func TestHandleOpened_WithDependencies_Blocked(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !hasLabel(issue.Labels, "status:blocked") {
+	if !hasLabel(issue.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked for unsatisfied dependency")
 	}
 }
@@ -620,7 +620,7 @@ func TestHandleClosed_UnblocksDependents(t *testing.T) {
 	tracker.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -630,7 +630,7 @@ func TestHandleClosed_UnblocksDependents(t *testing.T) {
 		Title:  "Blocked on #10",
 		Body:   issueBody("code-gen", []int{10}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	err := d.handleClosed(context.Background(), forge.Event{
@@ -643,10 +643,10 @@ func TestHandleClosed_UnblocksDependents(t *testing.T) {
 
 	// Issue #1 should be unblocked.
 	issue := tracker.issues[1]
-	if hasLabel(issue.Labels, "status:blocked") {
+	if hasLabel(issue.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked to be removed")
 	}
-	if !hasLabel(issue.Labels, "status:queued") {
+	if !hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("expected status:queued after unblock")
 	}
 }
@@ -747,7 +747,7 @@ func TestCheckTimeouts_NoTimeout(t *testing.T) {
 	tracker.issues[1] = &forge.Issue{
 		Number: 1,
 		State:  forge.StateOpen,
-		Labels: []string{"status:claimed"},
+		Labels: []string{models.LabelStatusClaimed},
 	}
 
 	err := d.checkTimeouts(context.Background())
@@ -780,7 +780,7 @@ func TestCheckTimeouts_TimedOut(t *testing.T) {
 	tracker.issues[1] = &forge.Issue{
 		Number:    1,
 		State:     forge.StateOpen,
-		Labels:    []string{"status:claimed"},
+		Labels:    []string{models.LabelStatusClaimed},
 		Assignees: []string{"code-gen"},
 	}
 
@@ -798,7 +798,7 @@ func TestCheckTimeouts_TimedOut(t *testing.T) {
 	}
 
 	issue := tracker.issues[1]
-	if !hasLabel(issue.Labels, "status:queued") {
+	if !hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("expected status:queued after timeout release")
 	}
 }
@@ -820,7 +820,7 @@ func TestCheckTimeouts_ThreeFailures(t *testing.T) {
 	tracker.issues[1] = &forge.Issue{
 		Number:    1,
 		State:     forge.StateOpen,
-		Labels:    []string{"status:claimed"},
+		Labels:    []string{models.LabelStatusClaimed},
 		Assignees: []string{"code-gen"},
 	}
 
@@ -830,7 +830,7 @@ func TestCheckTimeouts_ThreeFailures(t *testing.T) {
 	}
 
 	issue := tracker.issues[1]
-	if !hasLabel(issue.Labels, "status:needs-human") {
+	if !hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 		t.Error("expected status:needs-human after 3 consecutive failures")
 	}
 }
@@ -847,7 +847,7 @@ func TestCheckTimeouts_MultiCycleRetryEscalation(t *testing.T) {
 	tracker.issues[1] = &forge.Issue{
 		Number:    1,
 		State:     forge.StateOpen,
-		Labels:    []string{"status:claimed"},
+		Labels:    []string{models.LabelStatusClaimed},
 		Assignees: []string{"code-gen"},
 	}
 
@@ -884,13 +884,13 @@ func TestCheckTimeouts_MultiCycleRetryEscalation(t *testing.T) {
 		issue := tracker.issues[1]
 		if cycle < maxRetries {
 			// Should NOT be escalated yet.
-			if hasLabel(issue.Labels, "status:needs-human") {
+			if hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 				t.Errorf("cycle %d: premature escalation to status:needs-human", cycle)
 			}
-			if !hasLabel(issue.Labels, "status:queued") {
+			if !hasLabel(issue.Labels, models.LabelStatusQueued) {
 				t.Errorf("cycle %d: expected status:queued after release", cycle)
 			}
-		} else if !hasLabel(issue.Labels, "status:needs-human") {
+		} else if !hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 			// Final cycle — must escalate.
 			t.Errorf("cycle %d: expected status:needs-human after %d failures", cycle, maxRetries)
 		}
@@ -942,13 +942,13 @@ func TestHandleOpened_SkipsPullRequest(t *testing.T) {
 	}
 
 	// PR should NOT be escalated or routed.
-	if hasLabel(issue.Labels, "status:needs-human") {
+	if hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 		t.Error("PR should not be escalated to needs-human")
 	}
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("PR should not be routed (status:claimed)")
 	}
-	if hasLabel(issue.Labels, "status:queued") {
+	if hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("PR should not be queued")
 	}
 }
@@ -999,7 +999,7 @@ func TestHandleOpened_SkipsNeedsHuman(t *testing.T) {
 		Title:  "Needs human review",
 		Body:   "Some body",
 		State:  forge.StateOpen,
-		Labels: []string{"status:needs-human"},
+		Labels: []string{models.LabelStatusNeedsHuman},
 	}
 	tracker.mu.Unlock()
 
@@ -1015,7 +1015,7 @@ func TestHandleOpened_SkipsNeedsHuman(t *testing.T) {
 	issue := tracker.issues[10]
 	tracker.mu.Unlock()
 
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected no status:claimed label — issue should be skipped")
 	}
 }
@@ -1030,7 +1030,7 @@ func TestHandleOpened_SkipsBlocked(t *testing.T) {
 		Title:  "Blocked issue",
 		Body:   "Some body",
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 	tracker.mu.Unlock()
 
@@ -1046,7 +1046,7 @@ func TestHandleOpened_SkipsBlocked(t *testing.T) {
 	issue := tracker.issues[11]
 	tracker.mu.Unlock()
 
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected no status:claimed label — issue should be skipped")
 	}
 }
@@ -1061,7 +1061,7 @@ func TestHandleOpened_SkipsClaimed(t *testing.T) {
 		Title:  "Already claimed",
 		Body:   "Some body",
 		State:  forge.StateOpen,
-		Labels: []string{"status:claimed"},
+		Labels: []string{models.LabelStatusClaimed},
 	}
 	tracker.mu.Unlock()
 
@@ -1096,7 +1096,7 @@ func TestRoute_HumanAgentNotDispatched(t *testing.T) {
 		Title:  "Human task",
 		Body:   "Requires human decision",
 		State:  forge.StateOpen,
-		Labels: []string{"agent:human"},
+		Labels: []string{models.LabelAgentHuman},
 	}
 	tracker.mu.Unlock()
 
@@ -1105,7 +1105,7 @@ func TestRoute_HumanAgentNotDispatched(t *testing.T) {
 		Title:  "Human task",
 		Body:   "Requires human decision",
 		State:  forge.StateOpen,
-		Labels: []string{"agent:human"},
+		Labels: []string{models.LabelAgentHuman},
 	}
 
 	err := d.route(context.Background(), "test", "repo", issue, models.AgentTypeHuman, nil)
@@ -1120,7 +1120,7 @@ func TestRoute_HumanAgentNotDispatched(t *testing.T) {
 	tracker.mu.Unlock()
 
 	// status:needs-human must be set.
-	if !hasLabel(routedIssue.Labels, "status:needs-human") {
+	if !hasLabel(routedIssue.Labels, models.LabelStatusNeedsHuman) {
 		t.Error("expected status:needs-human label to be added")
 	}
 
@@ -1147,7 +1147,7 @@ func TestHandleTaskComplete_Success(t *testing.T) {
 	tracker.issues[5] = &forge.Issue{
 		Number: 5,
 		State:  forge.StateOpen,
-		Labels: []string{"status:claimed", "status:in-progress"},
+		Labels: []string{models.LabelStatusClaimed, models.LabelStatusInProgress},
 	}
 
 	d.mu.Lock()
@@ -1176,13 +1176,13 @@ func TestHandleTaskComplete_Success(t *testing.T) {
 	}
 
 	issue := tracker.issues[5]
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected status:claimed removed")
 	}
-	if hasLabel(issue.Labels, "status:in-progress") {
+	if hasLabel(issue.Labels, models.LabelStatusInProgress) {
 		t.Error("expected status:in-progress removed")
 	}
-	if !hasLabel(issue.Labels, "status:needs-qc") {
+	if !hasLabel(issue.Labels, models.LabelStatusNeedsQc) {
 		t.Error("expected status:needs-qc added on success")
 	}
 }
@@ -1194,7 +1194,7 @@ func TestHandleTaskComplete_Failure(t *testing.T) {
 	tracker.issues[6] = &forge.Issue{
 		Number: 6,
 		State:  forge.StateOpen,
-		Labels: []string{"status:claimed"},
+		Labels: []string{models.LabelStatusClaimed},
 	}
 
 	d.mu.Lock()
@@ -1224,10 +1224,10 @@ func TestHandleTaskComplete_Failure(t *testing.T) {
 	}
 
 	issue := tracker.issues[6]
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected status:claimed removed")
 	}
-	if !hasLabel(issue.Labels, "status:queued") {
+	if !hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("expected status:queued added on failure")
 	}
 }
@@ -1239,7 +1239,7 @@ func TestNoDoubleDispatch_AfterCompletion(t *testing.T) {
 	tracker.issues[7] = &forge.Issue{
 		Number: 7,
 		State:  forge.StateOpen,
-		Labels: []string{"status:claimed"},
+		Labels: []string{models.LabelStatusClaimed},
 	}
 
 	d.mu.Lock()
@@ -1271,7 +1271,7 @@ func TestNoDoubleDispatch_AfterCompletion(t *testing.T) {
 
 	// Status should remain needs-qc (set by handleTaskComplete), not be overwritten.
 	issue := tracker.issues[7]
-	if hasLabel(issue.Labels, "status:queued") {
+	if hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("checkTimeouts re-queued a completed issue — double-dispatch bug")
 	}
 }
@@ -1283,7 +1283,7 @@ func TestHandleTaskComplete_SignalsWakeup(t *testing.T) {
 	tracker.issues[8] = &forge.Issue{
 		Number: 8,
 		State:  forge.StateOpen,
-		Labels: []string{"status:claimed"},
+		Labels: []string{models.LabelStatusClaimed},
 	}
 
 	d.mu.Lock()
@@ -1317,7 +1317,7 @@ func TestHandleTaskComplete_WakeupDoesNotBlock(t *testing.T) {
 	tracker.issues[9] = &forge.Issue{
 		Number: 9,
 		State:  forge.StateOpen,
-		Labels: []string{"status:claimed"},
+		Labels: []string{models.LabelStatusClaimed},
 	}
 
 	d.mu.Lock()
@@ -1361,11 +1361,11 @@ func TestMultiRepo_TwoTrackers_EventsRoutedCorrectly(t *testing.T) {
 	// Add issues to each tracker.
 	trackerA.issues[1] = &forge.Issue{
 		Number: 1, Title: "feat: alpha feature",
-		Body: issueBody("code-gen", nil), State: forge.StateOpen, Labels: []string{"status:queued"},
+		Body: issueBody("code-gen", nil), State: forge.StateOpen, Labels: []string{models.LabelStatusQueued},
 	}
 	trackerB.issues[1] = &forge.Issue{
 		Number: 1, Title: "feat: beta feature",
-		Body: issueBody("code-gen", nil), State: forge.StateOpen, Labels: []string{"status:queued"},
+		Body: issueBody("code-gen", nil), State: forge.StateOpen, Labels: []string{models.LabelStatusQueued},
 	}
 
 	// Route event from tracker A.
@@ -1387,10 +1387,10 @@ func TestMultiRepo_TwoTrackers_EventsRoutedCorrectly(t *testing.T) {
 	}
 
 	// Both issues #1 should be claimed -- no collision.
-	if !hasLabel(trackerA.issues[1].Labels, "status:claimed") {
+	if !hasLabel(trackerA.issues[1].Labels, models.LabelStatusClaimed) {
 		t.Error("alpha issue #1 should be claimed")
 	}
-	if !hasLabel(trackerB.issues[1].Labels, "status:claimed") {
+	if !hasLabel(trackerB.issues[1].Labels, models.LabelStatusClaimed) {
 		t.Error("beta issue #1 should be claimed")
 	}
 
@@ -1454,7 +1454,7 @@ func TestMultiRepo_HandleTaskComplete_ResolvesCorrectTracker(t *testing.T) {
 	// Set up issue in tracker B.
 	trackerB.issues[5] = &forge.Issue{
 		Number: 5, State: forge.StateOpen,
-		Labels: []string{"status:claimed", "status:in-progress"},
+		Labels: []string{models.LabelStatusClaimed, models.LabelStatusInProgress},
 	}
 
 	// Claim it under beta.
@@ -1470,7 +1470,7 @@ func TestMultiRepo_HandleTaskComplete_ResolvesCorrectTracker(t *testing.T) {
 	})
 
 	// Verify beta's tracker got the label changes, not alpha's.
-	if !hasLabel(trackerB.issues[5].Labels, "status:needs-qc") {
+	if !hasLabel(trackerB.issues[5].Labels, models.LabelStatusNeedsQc) {
 		t.Error("expected status:needs-qc on beta tracker issue #5")
 	}
 
@@ -1693,7 +1693,7 @@ func TestRoute_SkipsClosedIssue(t *testing.T) {
 		Title:  "Closed issue with queued label",
 		Body:   "---\nagent_type: code-gen\n---\nBody.",
 		State:  forge.StateClosed,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.mu.Unlock()
 
@@ -1706,10 +1706,10 @@ func TestRoute_SkipsClosedIssue(t *testing.T) {
 	issue := tracker.issues[50]
 	tracker.mu.Unlock()
 
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("closed issue should not be claimed")
 	}
-	if hasLabel(issue.Labels, "status:queued") {
+	if hasLabel(issue.Labels, models.LabelStatusQueued) {
 		t.Error("status:queued should be removed from closed issue")
 	}
 }
@@ -1724,14 +1724,14 @@ func TestHandleLabeled_SkipsClosedIssue(t *testing.T) {
 		Title:  "Closed issue re-queued",
 		Body:   "---\nagent_type: code-gen\n---\nBody.",
 		State:  forge.StateClosed,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.mu.Unlock()
 
 	err := d.handleLabeled(context.Background(), forge.Event{
 		Type:        forge.EventIssueLabeled,
 		IssueNumber: 51,
-		Label:       "status:queued",
+		Label:       models.LabelStatusQueued,
 	})
 	if err != nil {
 		t.Fatalf("handleLabeled returned error: %v", err)
@@ -1741,7 +1741,7 @@ func TestHandleLabeled_SkipsClosedIssue(t *testing.T) {
 	issue := tracker.issues[51]
 	tracker.mu.Unlock()
 
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("closed issue should not be claimed via handleLabeled")
 	}
 }
@@ -1756,14 +1756,14 @@ func TestHandleLabeled_SkipsNeedsQC(t *testing.T) {
 		Title:  "Issue in QC with queued label",
 		Body:   "---\nagent_type: code-gen\n---\nBody.",
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued", "status:needs-qc"},
+		Labels: []string{models.LabelStatusQueued, models.LabelStatusNeedsQc},
 	}
 	tracker.mu.Unlock()
 
 	err := d.handleLabeled(context.Background(), forge.Event{
 		Type:        forge.EventIssueLabeled,
 		IssueNumber: 52,
-		Label:       "status:queued",
+		Label:       models.LabelStatusQueued,
 	})
 	if err != nil {
 		t.Fatalf("handleLabeled returned error: %v", err)
@@ -1773,7 +1773,7 @@ func TestHandleLabeled_SkipsNeedsQC(t *testing.T) {
 	issue := tracker.issues[52]
 	tracker.mu.Unlock()
 
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("needs-qc issue should not be claimed via handleLabeled")
 	}
 }
@@ -1788,7 +1788,7 @@ func TestHandleOpened_SkipsNeedsQC(t *testing.T) {
 		Title:  "Issue in QC",
 		Body:   "Some body",
 		State:  forge.StateOpen,
-		Labels: []string{"status:needs-qc"},
+		Labels: []string{models.LabelStatusNeedsQc},
 	}
 	tracker.mu.Unlock()
 
@@ -1804,7 +1804,7 @@ func TestHandleOpened_SkipsNeedsQC(t *testing.T) {
 	issue := tracker.issues[53]
 	tracker.mu.Unlock()
 
-	if hasLabel(issue.Labels, "status:claimed") {
+	if hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("needs-qc issue should not be claimed")
 	}
 }

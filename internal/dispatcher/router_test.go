@@ -23,10 +23,10 @@ func TestSelectProviderKey(t *testing.T) {
 		// --- complex tier ---
 		{
 			name:      "priority:critical → complex",
-			issue:     &forge.Issue{Title: "fix: something", Body: longBody, Labels: []string{"priority:critical"}},
+			issue:     &forge.Issue{Title: "fix: something", Body: longBody, Labels: []string{models.LabelPriorityCritical}},
 			agentType: models.AgentTypeCodeGen,
 			wantKey:   "complex",
-			wantReason: "priority:critical",
+			wantReason: models.LabelPriorityCritical,
 		},
 		{
 			name:      "complexity:high → complex",
@@ -105,10 +105,10 @@ func TestSelectProviderKey(t *testing.T) {
 		// --- triage tier ---
 		{
 			name:      "label priority:low → triage (research agent)",
-			issue:     &forge.Issue{Title: "fix: minor thing", Body: longBody, Labels: []string{"priority:low"}},
+			issue:     &forge.Issue{Title: "fix: minor thing", Body: longBody, Labels: []string{models.LabelPriorityLow}},
 			agentType: models.AgentTypeResearch,
 			wantKey:   "triage",
-			wantReason: "priority:low",
+			wantReason: models.LabelPriorityLow,
 		},
 		{
 			name:      "agent type docs → triage",
@@ -139,11 +139,11 @@ func TestSelectProviderKey(t *testing.T) {
 			issue: &forge.Issue{
 				Title:  "validate: critical output",
 				Body:   longBody,
-				Labels: []string{"priority:critical"},
+				Labels: []string{models.LabelPriorityCritical},
 			},
 			agentType: models.AgentTypeQC,
 			wantKey:   "complex",
-			wantReason: "priority:critical",
+			wantReason: models.LabelPriorityCritical,
 		},
 
 		// --- default tier ---
@@ -169,11 +169,11 @@ func TestSelectProviderKey(t *testing.T) {
 			issue: &forge.Issue{
 				Title:  "chore: generate scaffold",
 				Body:   longBody,
-				Labels: []string{"priority:critical", "type:boilerplate"},
+				Labels: []string{models.LabelPriorityCritical, "type:boilerplate"},
 			},
 			agentType: models.AgentTypeCodeGen,
 			wantKey:   "complex",
-			wantReason: "priority:critical",
+			wantReason: models.LabelPriorityCritical,
 		},
 		{
 			// complex beats triage: complexity:high takes precedence over priority:low
@@ -181,7 +181,7 @@ func TestSelectProviderKey(t *testing.T) {
 			issue: &forge.Issue{
 				Title:  "fix: something",
 				Body:   longBody,
-				Labels: []string{"complexity:high", "priority:low"},
+				Labels: []string{"complexity:high", models.LabelPriorityLow},
 			},
 			agentType: models.AgentTypeCodeGen,
 			wantKey:   "complex",

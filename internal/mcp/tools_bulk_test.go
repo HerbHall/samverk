@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/forge"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 func newTestBulkServer(t *testing.T, tracker forge.IssueTracker) *httptest.Server {
@@ -307,7 +308,7 @@ func TestCreateIssueBatch_EmptyTitle(t *testing.T) {
 func TestGetProjectSummary(t *testing.T) {
 	tracker := &mockTracker{
 		issues: []*forge.Issue{
-			{Number: 1, Title: "Open 1", State: forge.StateOpen, Labels: []string{"bug", "priority:high"}},
+			{Number: 1, Title: "Open 1", State: forge.StateOpen, Labels: []string{"bug", models.LabelPriorityHigh}},
 			{Number: 2, Title: "Open 2", State: forge.StateOpen, Labels: []string{"bug"}},
 			{Number: 3, Title: "Closed 1", State: forge.StateClosed},
 		},

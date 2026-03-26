@@ -12,6 +12,7 @@ import (
 	gogitea "code.gitea.io/sdk/gitea"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // newTestClient creates a Client pointed at a test HTTP server.
@@ -116,7 +117,7 @@ func TestGetIssue(t *testing.T) {
 			Body:  "Body text",
 			State: gogitea.StateOpen,
 			Labels: []*gogitea.Label{
-				{ID: 1, Name: "priority:high"},
+				{ID: 1, Name: models.LabelPriorityHigh},
 				{ID: 2, Name: "type:task"},
 			},
 			Assignees: []*gogitea.User{
@@ -309,8 +310,8 @@ func TestSetLabels(t *testing.T) {
 	// Label cache endpoint.
 	handler.HandleFunc("GET /api/v1/repos/owner/repo/labels", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(t, w, http.StatusOK, []*gogitea.Label{
-			{ID: 17, Name: "priority:high"},
-			{ID: 10, Name: "status:claimed"},
+			{ID: 17, Name: models.LabelPriorityHigh},
+			{ID: 10, Name: models.LabelStatusClaimed},
 		})
 	})
 
@@ -321,14 +322,14 @@ func TestSetLabels(t *testing.T) {
 		}
 
 		writeJSON(t, w, http.StatusOK, []*gogitea.Label{
-			{ID: 17, Name: "priority:high"},
-			{ID: 10, Name: "status:claimed"},
+			{ID: 17, Name: models.LabelPriorityHigh},
+			{ID: 10, Name: models.LabelStatusClaimed},
 		})
 	})
 
 	c, _ := newTestClient(t, handler)
 
-	err := c.SetLabels(context.Background(), 7, []string{"priority:high", "status:claimed"})
+	err := c.SetLabels(context.Background(), 7, []string{models.LabelPriorityHigh, models.LabelStatusClaimed})
 	if err != nil {
 		t.Fatalf("SetLabels: %v", err)
 	}

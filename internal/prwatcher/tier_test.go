@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 func TestClassifyPRTier(t *testing.T) {
@@ -16,7 +17,7 @@ func TestClassifyPRTier(t *testing.T) {
 		{
 			name: "tier 3: priority critical label",
 			pr:   &forge.PullRequest{Title: "feat: add widget"},
-			issueLabels: []string{"priority:critical"},
+			issueLabels: []string{models.LabelPriorityCritical},
 			want: PRTier3,
 		},
 		{
@@ -49,7 +50,7 @@ func TestClassifyPRTier(t *testing.T) {
 		{
 			name: "tier 1: agent docs label",
 			pr:   &forge.PullRequest{Title: "update readme"},
-			issueLabels: []string{"agent:docs"},
+			issueLabels: []string{models.LabelAgentDocs},
 			want: PRTier1,
 		},
 		{
@@ -104,13 +105,13 @@ func TestClassifyPRTier(t *testing.T) {
 		{
 			name: "tier 2: agent code-gen label",
 			pr:   &forge.PullRequest{Title: "implement feature"},
-			issueLabels: []string{"agent:code-gen"},
+			issueLabels: []string{models.LabelAgentCodeGen},
 			want: PRTier2,
 		},
 		{
 			name: "tier 2: agent test label",
 			pr:   &forge.PullRequest{Title: "add tests"},
-			issueLabels: []string{"agent:test"},
+			issueLabels: []string{models.LabelAgentTest},
 			want: PRTier2,
 		},
 		{
