@@ -365,3 +365,28 @@ func TestLogout(t *testing.T) {
 		t.Errorf("status after logout = %d, want %d (redirect to login)", spaResp.StatusCode, http.StatusSeeOther)
 	}
 }
+
+// TestCFAccessOnlyInitializesSessions verifies that a server configured with
+// only CFAccessTeamDomain (no AuthToken) still creates a SessionManager so
+// CF Access JWT auto-login can persist sessions across restarts.
+func TestCFAccessOnlyInitializesSessions(t *testing.T) {
+	s := server.New(server.Config{
+		Addr:               "localhost:0",
+		CFAccessTeamDomain: "example.cloudflareaccess.com",
+		// No AuthToken or KeyStore -- CF Access is the only auth source.
+	}, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	// The server should respond to /login without panic (sessions initialized).
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/login", http.NoBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /login: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusInternalServerError {
+		t.Error("server should not error when only CFAccessTeamDomain is set")
+	}
+}

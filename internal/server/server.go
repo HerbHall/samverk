@@ -57,7 +57,7 @@ func New(cfg Config, logger *zap.Logger) *Server {
 	}
 
 	var sessions *SessionManager
-	if cfg.AuthToken != "" || cfg.KeyStore != nil {
+	if cfg.AuthToken != "" || cfg.KeyStore != nil || cfg.CFAccessTeamDomain != "" {
 		if cfg.SessionFile != "" {
 			sessions = NewSessionManagerWithFile(cfg.SessionFile)
 		} else {
