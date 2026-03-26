@@ -73,6 +73,7 @@ type Store interface {
 	GetIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
 	IncrementIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
 	ClearIssueFailureCount(ctx context.Context, issueNumber int) error
+	ResetAllFailureCounts(ctx context.Context) (int64, error)
 
 	// Correction events (written by correction engine, read by API and diagnostics)
 	SaveCorrectionEvent(ctx context.Context, e *models.CorrectionEvent) error

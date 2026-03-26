@@ -294,7 +294,7 @@ func TestToolsListDiscovery(t *testing.T) {
 		"list_files", "read_file", "get_diff", "list_branches",
 		"get_commit_log", "search_code",
 		"list_projects", "set_project",
-		"get_failure_summary",
+		"get_failure_summary", "reset_failure_counts",
 		"write_file", "create_branch",
 		"list_workers", "get_session_log", "get_provider_health",
 		"search_issues", "search_prs",
@@ -306,8 +306,8 @@ func TestToolsListDiscovery(t *testing.T) {
 			t.Errorf("%s tool not found in tools/list", name)
 		}
 	}
-	if len(result.Tools) != 53 {
-		t.Errorf("expected 53 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 54 {
+		t.Errorf("expected 54 tools, got %d", len(result.Tools))
 	}
 }
 
