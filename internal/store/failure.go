@@ -205,3 +205,14 @@ func (s *SQLiteStore) ClearIssueFailureCount(ctx context.Context, issueNumber in
 	)
 	return err
 }
+
+// ResetAllFailureCounts removes all persisted failure counts, allowing the
+// dispatcher to retry previously-escalated issues. Returns the number of
+// records cleared.
+func (s *SQLiteStore) ResetAllFailureCounts(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM issue_failure_counts`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

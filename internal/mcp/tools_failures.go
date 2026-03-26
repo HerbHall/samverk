@@ -50,6 +50,31 @@ func (h *Handler) handleGetFailureSummary(
 	}, nil, nil
 }
 
+// handleResetFailureCounts clears all persisted failure counts so the
+// dispatcher retries previously-escalated issues.
+func (h *Handler) handleResetFailureCounts(
+	ctx context.Context,
+	_ *gosdk.CallToolRequest,
+	_ struct{},
+) (*gosdk.CallToolResult, any, error) {
+	if h.store == nil {
+		return &gosdk.CallToolResult{
+			Content: []gosdk.Content{&gosdk.TextContent{Text: "Failure tracking not available (no store configured)"}},
+		}, nil, nil
+	}
+
+	cleared, err := h.store.ResetAllFailureCounts(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resetting failure counts: %w", err)
+	}
+
+	return &gosdk.CallToolResult{
+		Content: []gosdk.Content{&gosdk.TextContent{
+			Text: fmt.Sprintf("Reset %d issue failure count(s). Dispatcher will retry previously-escalated issues on next poll.", cleared),
+		}},
+	}, nil, nil
+}
+
 // formatFailureSummary renders the failure summary as human-readable text.
 func formatFailureSummary(s *models.FailureSummary, window time.Duration) string {
 	var b strings.Builder

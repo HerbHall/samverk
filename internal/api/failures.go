@@ -60,3 +60,23 @@ func (a *API) handleFailureSummary(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
+
+// handleResetFailureCounts clears all persisted issue failure counts so the
+// dispatcher retries previously-escalated issues.
+func (a *API) handleResetFailureCounts(w http.ResponseWriter, r *http.Request) {
+	if a.store == nil {
+		http.Error(w, "store not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	cleared, err := a.store.ResetAllFailureCounts(r.Context())
+	if err != nil {
+		a.logger.Error("reset failure counts", zap.Error(err))
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	a.logger.Info("failure counts reset", zap.Int64("cleared", cleared))
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]int64{"reset": cleared})
+}

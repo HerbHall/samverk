@@ -187,6 +187,11 @@ func registerTools(srv *gosdk.Server, h *Handler) {
 		Name:        "get_failure_summary",
 		Description: "Get failure analysis summary: failure counts by class, top failing issues, looping issues, provider health, and circuit breaker status",
 	}, h.handleGetFailureSummary)
+
+	gosdk.AddTool(srv, &gosdk.Tool{
+		Name:        "reset_failure_counts",
+		Description: "Reset all persisted issue failure counts so the dispatcher retries previously-escalated issues. Use after fixing root cause bugs that caused widespread failures.",
+	}, h.handleResetFailureCounts)
 }
 
 // handleGetDigest builds and formats a check-in digest.
