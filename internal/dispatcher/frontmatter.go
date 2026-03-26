@@ -46,11 +46,11 @@ func (d *Dispatcher) autoInjectFrontmatter(ctx context.Context, owner, repo stri
 func derivePriorityFromLabels(labels []string) models.Priority {
 	for _, l := range labels {
 		switch l {
-		case "priority:critical":
+		case models.LabelPriorityCritical:
 			return models.PriorityCritical
-		case "priority:high":
+		case models.LabelPriorityHigh:
 			return models.PriorityHigh
-		case "priority:low":
+		case models.LabelPriorityLow:
 			return models.PriorityLow
 		}
 	}

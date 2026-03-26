@@ -237,7 +237,7 @@ func (d *Dispatcher) applyCorrection(ctx context.Context, result agent.TaskResul
 		CorrectionActionRetry:
 		tracker := d.trackerFor(result.Owner, result.Repo)
 		if tracker != nil {
-			if err := tracker.AddLabel(ctx, result.IssueNumber, "status:queued"); err != nil {
+			if err := tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusQueued); err != nil {
 				d.logger.Error("add queued label for retry",
 					zap.Int("issue", result.IssueNumber),
 					zap.Error(err),

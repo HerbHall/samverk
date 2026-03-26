@@ -86,7 +86,7 @@ func isDone(issue *forge.Issue) bool {
 		return false
 	}
 	for _, label := range issue.Labels {
-		if label == "status:done" {
+		if label == models.LabelStatusDone {
 			return true
 		}
 	}
@@ -184,7 +184,7 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 	for _, entry := range d.trackerEntries {
 		blockedIssues, err := entry.Tracker.ListIssues(ctx, &forge.ListOptions{
 			State:  forge.StateOpen,
-			Labels: []string{"status:blocked"},
+			Labels: []string{models.LabelStatusBlocked},
 		})
 		if err != nil {
 			d.logger.Warn("list blocked issues", zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(err))
@@ -220,11 +220,11 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 			}
 
 			// Unblock: transition from blocked to queued.
-			if removeErr := entry.Tracker.RemoveLabel(ctx, issue.Number, "status:blocked"); removeErr != nil {
-				d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", "blocked"), zap.String("error", removeErr.Error()))
+			if removeErr := entry.Tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusBlocked); removeErr != nil {
+				d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusBlocked), zap.String("error", removeErr.Error()))
 			}
-			if addErr := entry.Tracker.AddLabel(ctx, issue.Number, "status:queued"); addErr != nil {
-				d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", "queued"), zap.String("error", addErr.Error()))
+			if addErr := entry.Tracker.AddLabel(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
+				d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusQueued), zap.String("error", addErr.Error()))
 			}
 
 			comment := fmt.Sprintf(
@@ -254,7 +254,7 @@ func (d *Dispatcher) recheckCrossProjectDeps(ctx context.Context) error {
 	for _, entry := range d.trackerEntries {
 		blockedIssues, err := entry.Tracker.ListIssues(ctx, &forge.ListOptions{
 			State:  forge.StateOpen,
-			Labels: []string{"status:blocked"},
+			Labels: []string{models.LabelStatusBlocked},
 		})
 		if err != nil {
 			d.logger.Warn("list blocked issues for cross-project recheck",
@@ -286,11 +286,11 @@ func (d *Dispatcher) recheckCrossProjectDeps(ctx context.Context) error {
 			}
 
 			// Unblock: transition from blocked to queued.
-			if removeErr := entry.Tracker.RemoveLabel(ctx, issue.Number, "status:blocked"); removeErr != nil {
-				d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", "blocked"), zap.String("error", removeErr.Error()))
+			if removeErr := entry.Tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusBlocked); removeErr != nil {
+				d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusBlocked), zap.String("error", removeErr.Error()))
 			}
-			if addErr := entry.Tracker.AddLabel(ctx, issue.Number, "status:queued"); addErr != nil {
-				d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", "queued"), zap.String("error", addErr.Error()))
+			if addErr := entry.Tracker.AddLabel(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
+				d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusQueued), zap.String("error", addErr.Error()))
 			}
 
 			comment := fmt.Sprintf(
