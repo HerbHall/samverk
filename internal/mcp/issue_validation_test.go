@@ -3,6 +3,8 @@ package mcp
 import (
 	"strings"
 	"testing"
+
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 func TestValidateAndEnrichIssue_TitlePrefix(t *testing.T) {
@@ -58,25 +60,25 @@ func TestValidateAndEnrichIssue_AgentLabelInjection(t *testing.T) {
 			name:           "feat injects code-gen",
 			title:          "feat: add thing",
 			labels:         nil,
-			wantAgentLabel: "agent:code-gen",
+			wantAgentLabel: models.LabelAgentCodeGen,
 		},
 		{
 			name:           "docs injects docs",
 			title:          "docs: update readme",
 			labels:         nil,
-			wantAgentLabel: "agent:docs",
+			wantAgentLabel: models.LabelAgentDocs,
 		},
 		{
 			name:           "fix injects code-gen",
 			title:          "fix: fix thing",
 			labels:         nil,
-			wantAgentLabel: "agent:code-gen",
+			wantAgentLabel: models.LabelAgentCodeGen,
 		},
 		{
 			name:           "existing agent label preserved",
 			title:          "feat: add thing",
-			labels:         []string{"agent:human"},
-			wantAgentLabel: "agent:human",
+			labels:         []string{models.LabelAgentHuman},
+			wantAgentLabel: models.LabelAgentHuman,
 		},
 	}
 
@@ -119,7 +121,7 @@ func TestValidateAndEnrichIssue_PriorityDefault(t *testing.T) {
 		for _, l := range got {
 			if strings.HasPrefix(l, "priority:") {
 				hasPriority = true
-				if l != "priority:normal" {
+				if l != models.LabelPriorityNormal {
 					t.Errorf("expected priority:normal, got %q", l)
 				}
 			}
@@ -131,7 +133,7 @@ func TestValidateAndEnrichIssue_PriorityDefault(t *testing.T) {
 
 	t.Run("preserves existing priority label", func(t *testing.T) {
 		t.Parallel()
-		got, _, err := validateAndEnrichIssue("feat: add thing", "body", []string{"priority:high"}, nil)
+		got, _, err := validateAndEnrichIssue("feat: add thing", "body", []string{models.LabelPriorityHigh}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -145,7 +147,7 @@ func TestValidateAndEnrichIssue_PriorityDefault(t *testing.T) {
 		if len(priorityLabels) != 1 {
 			t.Errorf("expected exactly 1 priority label, got %v", priorityLabels)
 		}
-		if priorityLabels[0] != "priority:high" {
+		if priorityLabels[0] != models.LabelPriorityHigh {
 			t.Errorf("expected priority:high to be preserved, got %q", priorityLabels[0])
 		}
 	})

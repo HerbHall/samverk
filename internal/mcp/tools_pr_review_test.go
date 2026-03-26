@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 func TestReviewPRTool(t *testing.T) {
@@ -18,7 +19,7 @@ func TestReviewPRTool(t *testing.T) {
 				Head:      "docs/readme",
 				Base:      "main",
 				Mergeable: true,
-				Labels:    []string{"agent:docs"},
+				Labels:    []string{models.LabelAgentDocs},
 				CreatedAt: time.Now().Add(-2 * time.Hour),
 			},
 		},

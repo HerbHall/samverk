@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/forge"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 func TestListProjects_NoRegistry(t *testing.T) {
@@ -109,8 +110,8 @@ func TestListProjects_IssueCounts(t *testing.T) {
 	// Tracker with 3 open issues: 1 needs-human, 1 claimed, 1 plain.
 	mt := &projectsMockTracker{
 		issues: []*forge.Issue{
-			{Number: 1, Labels: []string{"status:needs-human"}},
-			{Number: 2, Labels: []string{"status:claimed"}},
+			{Number: 1, Labels: []string{models.LabelStatusNeedsHuman}},
+			{Number: 2, Labels: []string{models.LabelStatusClaimed}},
 			{Number: 3, Labels: []string{}},
 		},
 	}

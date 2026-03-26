@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 func TestIsEligible(t *testing.T) {
@@ -273,7 +274,7 @@ func TestCheckReviewComments_CreatesRemediationIssue(t *testing.T) {
 	if it.createdIssue.Title != wantTitle {
 		t.Errorf("title = %q, want %q", it.createdIssue.Title, wantTitle)
 	}
-	wantLabels := map[string]bool{"agent:code-gen": true, "priority:high": true, "pr:42": true}
+	wantLabels := map[string]bool{models.LabelAgentCodeGen: true, models.LabelPriorityHigh: true, "pr:42": true}
 	for _, l := range it.createdIssue.Labels {
 		if !wantLabels[l] {
 			t.Errorf("unexpected label %q", l)
@@ -308,7 +309,7 @@ func TestCheckReviewComments_SkipsNeedsHumanLabel(t *testing.T) {
 	pr := &forge.PullRequest{
 		Number: 10,
 		Title:  "Some PR",
-		Labels: []string{"status:needs-human"},
+		Labels: []string{models.LabelStatusNeedsHuman},
 	}
 
 	hasBlocking, err := w.checkReviewComments(context.Background(), pr)
@@ -581,7 +582,7 @@ func TestCloseLinkedIssues(t *testing.T) {
 	if it.setLabelsCalls[0].number != 10 {
 		t.Errorf("SetLabels issue number = %d, want 10", it.setLabelsCalls[0].number)
 	}
-	if len(it.setLabelsCalls[0].labels) != 1 || it.setLabelsCalls[0].labels[0] != "status:done" {
+	if len(it.setLabelsCalls[0].labels) != 1 || it.setLabelsCalls[0].labels[0] != models.LabelStatusDone {
 		t.Errorf("SetLabels labels = %v, want [status:done]", it.setLabelsCalls[0].labels)
 	}
 }

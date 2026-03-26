@@ -107,12 +107,12 @@ func TestBuildDigest(t *testing.T) {
 			issues: []*forge.Issue{
 				{
 					Number: 1, Title: "Merge PR #52", State: forge.StateOpen,
-					Labels: []string{"status:needs-human"}, CreatedAt: twoHoursAgo, UpdatedAt: hourAgo,
+					Labels: []string{models.LabelStatusNeedsHuman}, CreatedAt: twoHoursAgo, UpdatedAt: hourAgo,
 					Body: "---\ntype: block\npriority: critical\n---\n\n## Context\n\nQC passed.\n",
 				},
 				{
 					Number: 2, Title: "Add dependency", State: forge.StateOpen,
-					Labels: []string{"status:needs-human"}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
+					Labels: []string{models.LabelStatusNeedsHuman}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
 					Body: "---\ntype: block\npriority: high\n---\n\n## Context\n\nRequired for Gitea.\n",
 				},
 				{
@@ -122,16 +122,16 @@ func TestBuildDigest(t *testing.T) {
 				},
 				{
 					Number: 4, Title: "In progress work", State: forge.StateOpen,
-					Labels: []string{"status:in-progress"}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
+					Labels: []string{models.LabelStatusInProgress}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
 					Body: "---\nagent_type: code-gen\n---\n",
 				},
 				{
 					Number: 5, Title: "Queued task", State: forge.StateOpen,
-					Labels: []string{"status:queued"}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
+					Labels: []string{models.LabelStatusQueued}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
 				},
 				{
 					Number: 6, Title: "Blocked task", State: forge.StateOpen,
-					Labels: []string{"status:blocked"}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
+					Labels: []string{models.LabelStatusBlocked}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
 				},
 			},
 			lastCheckIn:    dayAgo,
@@ -147,12 +147,12 @@ func TestBuildDigest(t *testing.T) {
 			issues: []*forge.Issue{
 				{
 					Number: 10, Title: "Low priority", State: forge.StateOpen,
-					Labels: []string{"status:needs-human"}, CreatedAt: twoHoursAgo, UpdatedAt: hourAgo,
+					Labels: []string{models.LabelStatusNeedsHuman}, CreatedAt: twoHoursAgo, UpdatedAt: hourAgo,
 					Body: "---\ntype: block\npriority: high\n---\n",
 				},
 				{
 					Number: 11, Title: "High priority", State: forge.StateOpen,
-					Labels: []string{"status:needs-human"}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
+					Labels: []string{models.LabelStatusNeedsHuman}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
 					Body: "---\ntype: block\npriority: critical\n---\n",
 				},
 			},
@@ -176,7 +176,7 @@ func TestBuildDigest(t *testing.T) {
 			issues: []*forge.Issue{
 				{
 					Number: 30, Title: "Plain issue", State: forge.StateOpen,
-					Labels: []string{"status:needs-human"}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
+					Labels: []string{models.LabelStatusNeedsHuman}, CreatedAt: hourAgo, UpdatedAt: hourAgo,
 					Body: "Just a plain issue body with no frontmatter.",
 				},
 			},
@@ -255,16 +255,16 @@ func TestBuildDigest_CountDependents(t *testing.T) {
 		issues: []*forge.Issue{
 			{
 				Number: 1, Title: "Blocking issue", State: forge.StateOpen,
-				Labels: []string{"status:needs-human"}, CreatedAt: now, UpdatedAt: now,
+				Labels: []string{models.LabelStatusNeedsHuman}, CreatedAt: now, UpdatedAt: now,
 			},
 			{
 				Number: 2, Title: "Depends on 1", State: forge.StateOpen,
-				Labels: []string{"status:blocked"}, CreatedAt: now, UpdatedAt: now,
+				Labels: []string{models.LabelStatusBlocked}, CreatedAt: now, UpdatedAt: now,
 				Body: "---\ndepends_on:\n  - 1\n---\n",
 			},
 			{
 				Number: 3, Title: "Also depends on 1", State: forge.StateOpen,
-				Labels: []string{"status:blocked"}, CreatedAt: now, UpdatedAt: now,
+				Labels: []string{models.LabelStatusBlocked}, CreatedAt: now, UpdatedAt: now,
 				Body: "---\ndepends_on:\n  - 1\n---\n",
 			},
 		},

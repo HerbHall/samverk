@@ -24,7 +24,7 @@ func TestPhaseGate_RouteSkipsBlockedAgentType(t *testing.T) {
 		Title:  "fix: something",
 		Body:   frontmatterBody("code-gen"),
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.issues[1] = issue
 
@@ -39,7 +39,7 @@ func TestPhaseGate_RouteSkipsBlockedAgentType(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Issue must not be claimed — no "status:claimed" label added.
+	// Issue must not be claimed — no models.LabelStatusClaimed label added.
 	d.mu.Lock()
 	_, claimed := d.claimed[issueKey("test", "repo", 1)]
 	d.mu.Unlock()
@@ -57,7 +57,7 @@ func TestPhaseGate_RouteAllowsPermittedAgentType(t *testing.T) {
 		Title:  "research: competitive analysis",
 		Body:   frontmatterBody("research"),
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 	}
 	tracker.issues[2] = issue
 

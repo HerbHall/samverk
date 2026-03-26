@@ -27,32 +27,32 @@ func TestDerivePriorityFromLabels(t *testing.T) {
 		},
 		{
 			name:   "critical",
-			labels: []string{"priority:critical"},
+			labels: []string{models.LabelPriorityCritical},
 			want:   models.PriorityCritical,
 		},
 		{
 			name:   "high",
-			labels: []string{"priority:high"},
+			labels: []string{models.LabelPriorityHigh},
 			want:   models.PriorityHigh,
 		},
 		{
 			name:   "low",
-			labels: []string{"priority:low"},
+			labels: []string{models.LabelPriorityLow},
 			want:   models.PriorityLow,
 		},
 		{
 			name:   "unrelated labels return normal",
-			labels: []string{"bug", "enhancement", "status:queued"},
+			labels: []string{"bug", "enhancement", models.LabelStatusQueued},
 			want:   models.PriorityNormal,
 		},
 		{
 			name:   "first priority label wins",
-			labels: []string{"priority:critical", "priority:low"},
+			labels: []string{models.LabelPriorityCritical, models.LabelPriorityLow},
 			want:   models.PriorityCritical,
 		},
 		{
 			name:   "priority among other labels",
-			labels: []string{"bug", "priority:high", "status:queued"},
+			labels: []string{"bug", models.LabelPriorityHigh, models.LabelStatusQueued},
 			want:   models.PriorityHigh,
 		},
 	}
@@ -75,7 +75,7 @@ func TestAutoInjectFrontmatter_PersistsBody(t *testing.T) {
 		Title:  "fix: broken thing",
 		Body:   "Plain issue body without frontmatter.",
 		State:  forge.StateOpen,
-		Labels: []string{"bug", "priority:high"},
+		Labels: []string{"bug", models.LabelPriorityHigh},
 	}
 	tracker.issues[42] = issue
 
@@ -119,7 +119,7 @@ func TestAutoInjectFrontmatter_RoundTrips(t *testing.T) {
 		Title:  "feat: new feature",
 		Body:   "## Summary\n\nSome feature description.",
 		State:  forge.StateOpen,
-		Labels: []string{"priority:critical"},
+		Labels: []string{models.LabelPriorityCritical},
 	}
 	tracker.issues[55] = issue
 
@@ -169,7 +169,7 @@ func TestHandleOpened_HeuristicInjectsFrontmatter(t *testing.T) {
 	}
 
 	// Should be routed (not escalated).
-	if !hasLabel(issue.Labels, "status:claimed") {
+	if !hasLabel(issue.Labels, models.LabelStatusClaimed) {
 		t.Error("expected status:claimed after heuristic routing")
 	}
 

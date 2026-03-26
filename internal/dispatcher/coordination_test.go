@@ -61,19 +61,19 @@ func TestCoordination_CrossProjectDependencyBlocking(t *testing.T) {
 		{
 			name:        "blocks when cross-project dep is open",
 			crossState:  forge.StateOpen,
-			crossLabels: []string{"status:in-progress"},
+			crossLabels: []string{models.LabelStatusInProgress},
 			wantBlocked: true,
 		},
 		{
 			name:        "blocks when cross-project dep is closed without done label",
 			crossState:  forge.StateClosed,
-			crossLabels: []string{"status:needs-human"},
+			crossLabels: []string{models.LabelStatusNeedsHuman},
 			wantBlocked: true,
 		},
 		{
 			name:        "unblocked when cross-project dep is closed with done label",
 			crossState:  forge.StateClosed,
-			crossLabels: []string{"status:done"},
+			crossLabels: []string{models.LabelStatusDone},
 			wantBlocked: false,
 		},
 	}
@@ -130,7 +130,7 @@ func TestCoordination_UnblockingViaClose(t *testing.T) {
 	localTracker.issues[10] = &forge.Issue{
 		Number: 10,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	// Create the dependent issue (blocked on #10).
@@ -139,18 +139,18 @@ func TestCoordination_UnblockingViaClose(t *testing.T) {
 		Title:  "Depends on #10",
 		Body:   issueBody("code-gen", []int{10}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	// Verify it's blocked initially.
-	if !hasLabel(localTracker.issues[20].Labels, "status:blocked") {
+	if !hasLabel(localTracker.issues[20].Labels, models.LabelStatusBlocked) {
 		t.Fatal("precondition: issue #20 should be blocked")
 	}
 
 	// Close the dependency.
 	closedAt := time.Now()
 	localTracker.issues[10].State = forge.StateClosed
-	localTracker.issues[10].Labels = []string{"status:done"}
+	localTracker.issues[10].Labels = []string{models.LabelStatusDone}
 	localTracker.issues[10].ClosedAt = &closedAt
 
 	// Trigger unblock via handleClosed event.
@@ -166,10 +166,10 @@ func TestCoordination_UnblockingViaClose(t *testing.T) {
 
 	// Verify #20 is unblocked.
 	issue20 := localTracker.issues[20]
-	if hasLabel(issue20.Labels, "status:blocked") {
+	if hasLabel(issue20.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked to be removed from #20")
 	}
-	if !hasLabel(issue20.Labels, "status:queued") {
+	if !hasLabel(issue20.Labels, models.LabelStatusQueued) {
 		t.Error("expected status:queued on #20 after unblocking")
 	}
 }
@@ -194,7 +194,7 @@ func TestCoordination_CrossProjectUnblockingViaRecheck(t *testing.T) {
 		Title:  "Depends on beta#20",
 		Body:   issueBodyMixed("code-gen", nil, []string{"org/beta#20"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	// Cross-project dep starts open.
@@ -202,7 +202,7 @@ func TestCoordination_CrossProjectUnblockingViaRecheck(t *testing.T) {
 	crossTracker.issues[20] = &forge.Issue{
 		Number: 20,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	resolver := newMockProjectResolver()
@@ -213,14 +213,14 @@ func TestCoordination_CrossProjectUnblockingViaRecheck(t *testing.T) {
 	if err := d.recheckCrossProjectDeps(context.Background()); err != nil {
 		t.Fatalf("recheck error: %v", err)
 	}
-	if !hasLabel(localTracker.issues[5].Labels, "status:blocked") {
+	if !hasLabel(localTracker.issues[5].Labels, models.LabelStatusBlocked) {
 		t.Error("expected issue to stay blocked while cross-project dep is open")
 	}
 
 	// Now close the cross-project dep.
 	closedAt := time.Now()
 	crossTracker.issues[20].State = forge.StateClosed
-	crossTracker.issues[20].Labels = []string{"status:done"}
+	crossTracker.issues[20].Labels = []string{models.LabelStatusDone}
 	crossTracker.issues[20].ClosedAt = &closedAt
 
 	// Second recheck: should unblock.
@@ -229,10 +229,10 @@ func TestCoordination_CrossProjectUnblockingViaRecheck(t *testing.T) {
 	}
 
 	issue5 := localTracker.issues[5]
-	if hasLabel(issue5.Labels, "status:blocked") {
+	if hasLabel(issue5.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked to be removed after cross-project dep done")
 	}
-	if !hasLabel(issue5.Labels, "status:queued") {
+	if !hasLabel(issue5.Labels, models.LabelStatusQueued) {
 		t.Error("expected status:queued after cross-project unblock")
 	}
 }
@@ -352,13 +352,13 @@ func TestCoordination_CycleEscalation(t *testing.T) {
 	tracker.issues[1] = &forge.Issue{
 		Number: 1,
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 		Body:   issueBody("code-gen", []int{2}),
 	}
 	tracker.issues[2] = &forge.Issue{
 		Number: 2,
 		State:  forge.StateOpen,
-		Labels: []string{"status:queued"},
+		Labels: []string{models.LabelStatusQueued},
 		Body:   issueBody("code-gen", []int{1}),
 	}
 
@@ -379,7 +379,7 @@ func TestCoordination_CycleEscalation(t *testing.T) {
 	// Both issues should have needs-human label and an escalation comment.
 	for _, num := range []int{1, 2} {
 		issue := tracker.issues[num]
-		if !hasLabel(issue.Labels, "status:needs-human") {
+		if !hasLabel(issue.Labels, models.LabelStatusNeedsHuman) {
 			t.Errorf("issue #%d: expected status:needs-human label", num)
 		}
 
@@ -451,11 +451,11 @@ func TestCoordination_MixedDependencies_ResolveCorrectly(t *testing.T) {
 			localIssue := &forge.Issue{Number: 42}
 			if tc.localDone {
 				localIssue.State = forge.StateClosed
-				localIssue.Labels = []string{"status:done"}
+				localIssue.Labels = []string{models.LabelStatusDone}
 				localIssue.ClosedAt = &closedAt
 			} else {
 				localIssue.State = forge.StateOpen
-				localIssue.Labels = []string{"status:in-progress"}
+				localIssue.Labels = []string{models.LabelStatusInProgress}
 			}
 			localTracker.issues[42] = localIssue
 
@@ -463,11 +463,11 @@ func TestCoordination_MixedDependencies_ResolveCorrectly(t *testing.T) {
 			crossIssue := &forge.Issue{Number: 50}
 			if tc.crossDone {
 				crossIssue.State = forge.StateClosed
-				crossIssue.Labels = []string{"status:done"}
+				crossIssue.Labels = []string{models.LabelStatusDone}
 				crossIssue.ClosedAt = &closedAt
 			} else {
 				crossIssue.State = forge.StateOpen
-				crossIssue.Labels = []string{"status:queued"}
+				crossIssue.Labels = []string{models.LabelStatusQueued}
 			}
 			crossTracker.issues[50] = crossIssue
 
@@ -606,7 +606,7 @@ func TestCoordination_MultiRepoUnblocking(t *testing.T) {
 	trackerA.issues[10] = &forge.Issue{
 		Number: 10,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	// Repo beta has issue #5 that depends on alpha#10 (local dep reference
@@ -617,14 +617,14 @@ func TestCoordination_MultiRepoUnblocking(t *testing.T) {
 		Title:  "Depends on #10",
 		Body:   issueBody("code-gen", []int{10}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 	// Repo beta also needs issue #10 to exist for GetIssue call during unblock check.
 	closedAt := time.Now()
 	trackerB.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -636,10 +636,10 @@ func TestCoordination_MultiRepoUnblocking(t *testing.T) {
 
 	// Verify beta's issue #5 is unblocked.
 	issue5 := trackerB.issues[5]
-	if hasLabel(issue5.Labels, "status:blocked") {
+	if hasLabel(issue5.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked removed from beta#5")
 	}
-	if !hasLabel(issue5.Labels, "status:queued") {
+	if !hasLabel(issue5.Labels, models.LabelStatusQueued) {
 		t.Error("expected status:queued on beta#5 after unblocking")
 	}
 }
@@ -680,7 +680,7 @@ func TestCoordination_HandleOpenedWithCycle(t *testing.T) {
 
 	// Both issues should be escalated with needs-human.
 	for _, num := range []int{1, 2} {
-		if !hasLabel(tracker.issues[num].Labels, "status:needs-human") {
+		if !hasLabel(tracker.issues[num].Labels, models.LabelStatusNeedsHuman) {
 			t.Errorf("issue #%d: expected status:needs-human after cycle detection", num)
 		}
 	}
@@ -698,14 +698,14 @@ func TestCoordination_PartialUnblock_StillBlocked(t *testing.T) {
 	tracker.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 	// Dep #11 is still open.
 	tracker.issues[11] = &forge.Issue{
 		Number: 11,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	// Issue #20 depends on both #10 and #11.
@@ -714,7 +714,7 @@ func TestCoordination_PartialUnblock_StillBlocked(t *testing.T) {
 		Title:  "Depends on #10 and #11",
 		Body:   issueBody("code-gen", []int{10, 11}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	// Close #10 -- should NOT unblock #20 because #11 is still open.
@@ -729,10 +729,10 @@ func TestCoordination_PartialUnblock_StillBlocked(t *testing.T) {
 	}
 
 	issue20 := tracker.issues[20]
-	if !hasLabel(issue20.Labels, "status:blocked") {
+	if !hasLabel(issue20.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked to remain (one dep still open)")
 	}
-	if hasLabel(issue20.Labels, "status:queued") {
+	if hasLabel(issue20.Labels, models.LabelStatusQueued) {
 		t.Error("did not expect status:queued (partial unblock)")
 	}
 }
@@ -748,13 +748,13 @@ func TestCoordination_FullUnblock_AllDepsResolved(t *testing.T) {
 	tracker.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 	tracker.issues[11] = &forge.Issue{
 		Number:   11,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -764,7 +764,7 @@ func TestCoordination_FullUnblock_AllDepsResolved(t *testing.T) {
 		Title:  "Depends on #10 and #11",
 		Body:   issueBody("code-gen", []int{10, 11}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	// Close #11 (last dep) -- should unblock #20.
@@ -779,10 +779,10 @@ func TestCoordination_FullUnblock_AllDepsResolved(t *testing.T) {
 	}
 
 	issue20 := tracker.issues[20]
-	if hasLabel(issue20.Labels, "status:blocked") {
+	if hasLabel(issue20.Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked to be removed")
 	}
-	if !hasLabel(issue20.Labels, "status:queued") {
+	if !hasLabel(issue20.Labels, models.LabelStatusQueued) {
 		t.Error("expected status:queued after full unblock")
 	}
 }
@@ -806,7 +806,7 @@ func TestCoordination_RecheckCrossProjectDeps_MultipleBlockedIssues(t *testing.T
 		Title:  "Blocked on lib#10",
 		Body:   issueBodyMixed("code-gen", nil, []string{"org/lib#10"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	// Issue #2: blocked on org/lib#20 (which is NOT done).
@@ -815,20 +815,20 @@ func TestCoordination_RecheckCrossProjectDeps_MultipleBlockedIssues(t *testing.T
 		Title:  "Blocked on lib#20",
 		Body:   issueBodyMixed("code-gen", nil, []string{"org/lib#20"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	crossTracker := newMockTracker()
 	crossTracker.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 	crossTracker.issues[20] = &forge.Issue{
 		Number: 20,
 		State:  forge.StateOpen,
-		Labels: []string{"status:in-progress"},
+		Labels: []string{models.LabelStatusInProgress},
 	}
 
 	resolver := newMockProjectResolver()
@@ -841,18 +841,18 @@ func TestCoordination_RecheckCrossProjectDeps_MultipleBlockedIssues(t *testing.T
 	}
 
 	// Issue #1 should be unblocked.
-	if hasLabel(tracker.issues[1].Labels, "status:blocked") {
+	if hasLabel(tracker.issues[1].Labels, models.LabelStatusBlocked) {
 		t.Error("issue #1: expected status:blocked removed")
 	}
-	if !hasLabel(tracker.issues[1].Labels, "status:queued") {
+	if !hasLabel(tracker.issues[1].Labels, models.LabelStatusQueued) {
 		t.Error("issue #1: expected status:queued")
 	}
 
 	// Issue #2 should remain blocked.
-	if !hasLabel(tracker.issues[2].Labels, "status:blocked") {
+	if !hasLabel(tracker.issues[2].Labels, models.LabelStatusBlocked) {
 		t.Error("issue #2: expected status:blocked to remain")
 	}
-	if hasLabel(tracker.issues[2].Labels, "status:queued") {
+	if hasLabel(tracker.issues[2].Labels, models.LabelStatusQueued) {
 		t.Error("issue #2: did not expect status:queued")
 	}
 }
@@ -874,7 +874,7 @@ func TestCoordination_GracefulDegradation_RecheckWithUnreachableForge(t *testing
 		Title:  "Blocked on unreachable dep",
 		Body:   issueBodyMixed("code-gen", nil, []string{"dead/forge#1"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	// Issue blocked on a reachable forge (done).
@@ -883,7 +883,7 @@ func TestCoordination_GracefulDegradation_RecheckWithUnreachableForge(t *testing
 		Title:  "Blocked on reachable dep",
 		Body:   issueBodyMixed("code-gen", nil, []string{"org/lib#10"}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	errTracker := newErrorTracker()
@@ -895,7 +895,7 @@ func TestCoordination_GracefulDegradation_RecheckWithUnreachableForge(t *testing
 	goodTracker.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 
@@ -911,15 +911,15 @@ func TestCoordination_GracefulDegradation_RecheckWithUnreachableForge(t *testing
 	}
 
 	// Issue #1 should remain blocked (unreachable dep).
-	if !hasLabel(tracker.issues[1].Labels, "status:blocked") {
+	if !hasLabel(tracker.issues[1].Labels, models.LabelStatusBlocked) {
 		t.Error("issue #1: expected to stay blocked (unreachable forge)")
 	}
 
 	// Issue #2 should be unblocked (reachable dep is done).
-	if hasLabel(tracker.issues[2].Labels, "status:blocked") {
+	if hasLabel(tracker.issues[2].Labels, models.LabelStatusBlocked) {
 		t.Error("issue #2: expected status:blocked removed")
 	}
-	if !hasLabel(tracker.issues[2].Labels, "status:queued") {
+	if !hasLabel(tracker.issues[2].Labels, models.LabelStatusQueued) {
 		t.Error("issue #2: expected status:queued")
 	}
 }
@@ -1020,7 +1020,7 @@ func TestCoordination_UnblockComment_ContainsClosedIssue(t *testing.T) {
 	tracker.issues[10] = &forge.Issue{
 		Number:   10,
 		State:    forge.StateClosed,
-		Labels:   []string{"status:done"},
+		Labels:   []string{models.LabelStatusDone},
 		ClosedAt: &closedAt,
 	}
 	tracker.issues[20] = &forge.Issue{
@@ -1028,7 +1028,7 @@ func TestCoordination_UnblockComment_ContainsClosedIssue(t *testing.T) {
 		Title:  "Depends on #10",
 		Body:   issueBody("code-gen", []int{10}),
 		State:  forge.StateOpen,
-		Labels: []string{"status:blocked"},
+		Labels: []string{models.LabelStatusBlocked},
 	}
 
 	err := d.unblockDependents(context.Background(), 10)
@@ -1072,7 +1072,7 @@ func TestCoordination_BlockComment_ContainsBlockers(t *testing.T) {
 		t.Fatalf("blockIssue error: %v", err)
 	}
 
-	if !hasLabel(tracker.issues[1].Labels, "status:blocked") {
+	if !hasLabel(tracker.issues[1].Labels, models.LabelStatusBlocked) {
 		t.Error("expected status:blocked label")
 	}
 

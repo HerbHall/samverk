@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // TestPipelineStages_Classification verifies that each status:* label maps to the
@@ -26,37 +27,37 @@ func TestPipelineStages_Classification(t *testing.T) {
 		},
 		{
 			name:      "open with no status label goes to open",
-			issue:     &forge.Issue{Number: 2, Title: "unrouted", State: forge.StateOpen, Labels: []string{"agent:code-gen"}, CreatedAt: now, UpdatedAt: now},
+			issue:     &forge.Issue{Number: 2, Title: "unrouted", State: forge.StateOpen, Labels: []string{models.LabelAgentCodeGen}, CreatedAt: now, UpdatedAt: now},
 			wantStage: "open",
 		},
 		{
-			name:      "status:queued",
-			issue:     &forge.Issue{Number: 3, Title: "queued issue", State: forge.StateOpen, Labels: []string{"status:queued"}, CreatedAt: now, UpdatedAt: now},
+			name:      models.LabelStatusQueued,
+			issue:     &forge.Issue{Number: 3, Title: "queued issue", State: forge.StateOpen, Labels: []string{models.LabelStatusQueued}, CreatedAt: now, UpdatedAt: now},
 			wantStage: "queued",
 		},
 		{
-			name:      "status:claimed",
-			issue:     &forge.Issue{Number: 4, Title: "claimed issue", State: forge.StateOpen, Labels: []string{"status:claimed"}, CreatedAt: now, UpdatedAt: now},
+			name:      models.LabelStatusClaimed,
+			issue:     &forge.Issue{Number: 4, Title: "claimed issue", State: forge.StateOpen, Labels: []string{models.LabelStatusClaimed}, CreatedAt: now, UpdatedAt: now},
 			wantStage: "claimed",
 		},
 		{
-			name:      "status:in-progress",
-			issue:     &forge.Issue{Number: 5, Title: "in progress", State: forge.StateOpen, Labels: []string{"status:in-progress"}, CreatedAt: now, UpdatedAt: now},
+			name:      models.LabelStatusInProgress,
+			issue:     &forge.Issue{Number: 5, Title: "in progress", State: forge.StateOpen, Labels: []string{models.LabelStatusInProgress}, CreatedAt: now, UpdatedAt: now},
 			wantStage: "in_progress",
 		},
 		{
-			name:      "status:needs-qc",
-			issue:     &forge.Issue{Number: 6, Title: "needs qc", State: forge.StateOpen, Labels: []string{"status:needs-qc"}, CreatedAt: now, UpdatedAt: now},
+			name:      models.LabelStatusNeedsQc,
+			issue:     &forge.Issue{Number: 6, Title: "needs qc", State: forge.StateOpen, Labels: []string{models.LabelStatusNeedsQc}, CreatedAt: now, UpdatedAt: now},
 			wantStage: "needs_qc",
 		},
 		{
-			name:      "status:needs-human",
-			issue:     &forge.Issue{Number: 7, Title: "needs human", State: forge.StateOpen, Labels: []string{"status:needs-human"}, CreatedAt: now, UpdatedAt: now},
+			name:      models.LabelStatusNeedsHuman,
+			issue:     &forge.Issue{Number: 7, Title: "needs human", State: forge.StateOpen, Labels: []string{models.LabelStatusNeedsHuman}, CreatedAt: now, UpdatedAt: now},
 			wantStage: "needs_human",
 		},
 		{
-			name:      "status:blocked",
-			issue:     &forge.Issue{Number: 8, Title: "blocked", State: forge.StateOpen, Labels: []string{"status:blocked"}, CreatedAt: now, UpdatedAt: now},
+			name:      models.LabelStatusBlocked,
+			issue:     &forge.Issue{Number: 8, Title: "blocked", State: forge.StateOpen, Labels: []string{models.LabelStatusBlocked}, CreatedAt: now, UpdatedAt: now},
 			wantStage: "blocked",
 		},
 		{
@@ -124,7 +125,7 @@ func TestPipelineStages_Response(t *testing.T) {
 
 	openIssues := []*forge.Issue{
 		{Number: 1, Title: "open issue", State: forge.StateOpen, CreatedAt: now, UpdatedAt: now},
-		{Number: 2, Title: "queued issue", State: forge.StateOpen, Labels: []string{"status:queued"}, CreatedAt: now, UpdatedAt: now},
+		{Number: 2, Title: "queued issue", State: forge.StateOpen, Labels: []string{models.LabelStatusQueued}, CreatedAt: now, UpdatedAt: now},
 	}
 	closedIssues := []*forge.Issue{
 		{Number: 3, Title: "done issue", State: forge.StateClosed, CreatedAt: now, UpdatedAt: recent, ClosedAt: &recent},

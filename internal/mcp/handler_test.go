@@ -15,6 +15,7 @@ import (
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/forge"
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // mockTracker implements forge.IssueTracker for testing.
@@ -319,7 +320,7 @@ func TestGetDigestTool(t *testing.T) {
 		issues: []*forge.Issue{
 			{
 				Number: 1, Title: "Merge PR #10", State: forge.StateOpen,
-				Labels:    []string{"status:needs-human"},
+				Labels:    []string{models.LabelStatusNeedsHuman},
 				CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-1 * time.Hour),
 				Body: "---\ntype: block\npriority: critical\n---\n\n## Context\n\nTests passed.\n",
 			},
@@ -330,7 +331,7 @@ func TestGetDigestTool(t *testing.T) {
 			},
 			{
 				Number: 3, Title: "Queued work", State: forge.StateOpen,
-				Labels:    []string{"status:queued"},
+				Labels:    []string{models.LabelStatusQueued},
 				CreatedAt: now.Add(-1 * time.Hour), UpdatedAt: now,
 			},
 		},
@@ -842,7 +843,7 @@ func TestCreateIssueTool(t *testing.T) {
 			"arguments": map[string]any{
 				"title":     "fix: login bug -- users cannot authenticate",
 				"body":      "Users cannot log in when...",
-				"labels":    []string{"bug", "priority:high"},
+				"labels":    []string{"bug", models.LabelPriorityHigh},
 				"assignees": []string{"alice"},
 			},
 		},
@@ -1437,7 +1438,7 @@ func TestSetLabelsTool(t *testing.T) {
 			"name": "set_labels",
 			"arguments": map[string]any{
 				"issue_number": 15,
-				"labels":       []string{"bug", "priority:high"},
+				"labels":       []string{"bug", models.LabelPriorityHigh},
 			},
 		},
 	})
