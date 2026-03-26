@@ -17,6 +17,7 @@ import (
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // claimedIssue tracks in-memory heartbeat state for a single routed issue.
@@ -235,8 +236,8 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		return
 	}
 
-	_ = tracker.RemoveLabel(ctx, result.IssueNumber, "status:claimed")
-	_ = tracker.RemoveLabel(ctx, result.IssueNumber, "status:in-progress")
+	_ = tracker.RemoveLabel(ctx, result.IssueNumber, models.LabelStatusClaimed)
+	_ = tracker.RemoveLabel(ctx, result.IssueNumber, models.LabelStatusInProgress)
 
 	if result.Success {
 		d.clearFailure(ctx, result.IssueNumber)
@@ -249,10 +250,10 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		// provider will be added in #492 (multi-machine routing).
 		d.checkCompletionQuality(ctx, result)
 
-		if err := tracker.AddLabel(ctx, result.IssueNumber, "status:needs-qc"); err != nil {
-			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", "needs-qc"), zap.String("error", err.Error()))
+		if err := tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc); err != nil {
+			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", models.LabelStatusNeedsQc), zap.String("error", err.Error()))
 		}
-		d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, "status:in-progress", "status:needs-qc", "agent")
+		d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, models.LabelStatusNeedsQc, "agent")
 		d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
 		broadcastEvent(d.broadcaster, "worker.complete", map[string]any{
 			"issue_number": result.IssueNumber,
@@ -596,9 +597,9 @@ func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
 	for _, l := range issue.Labels {
 		labels[l] = true
 	}
-	if labels["status:needs-human"] || labels["status:human-pending"] ||
-		labels["status:blocked"] || labels["status:claimed"] ||
-		labels["status:in-progress"] || labels["status:needs-qc"] {
+	if labels[models.LabelStatusNeedsHuman] || labels["status:human-pending"] ||
+		labels[models.LabelStatusBlocked] || labels[models.LabelStatusClaimed] ||
+		labels[models.LabelStatusInProgress] || labels[models.LabelStatusNeedsQc] {
 		d.logger.Debug("skipping issue with terminal status", zap.Int("issue", issue.Number))
 		return nil
 	}
@@ -671,7 +672,7 @@ func (d *Dispatcher) handleClosed(ctx context.Context, ev forge.Event) error {
 // (e.g., after a correction or manual label change) without requiring a
 // dispatcher restart.
 func (d *Dispatcher) handleLabeled(ctx context.Context, ev forge.Event) error {
-	if ev.Label != "status:queued" {
+	if ev.Label != models.LabelStatusQueued {
 		return nil
 	}
 
@@ -688,7 +689,7 @@ func (d *Dispatcher) handleLabeled(ctx context.Context, ev forge.Event) error {
 	// Never re-route closed issues.
 	if issue.State == forge.StateClosed {
 		d.logger.Debug("skipping closed re-queued issue", zap.Int("issue", issue.Number))
-		_ = tracker.RemoveLabel(ctx, issue.Number, "status:queued")
+		_ = tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusQueued)
 		return nil
 	}
 
@@ -697,9 +698,9 @@ func (d *Dispatcher) handleLabeled(ctx context.Context, ev forge.Event) error {
 		labels[l] = true
 	}
 	// Skip if already actively worked on, awaiting human, or in QC.
-	if labels["status:needs-human"] || labels["status:human-pending"] ||
-		labels["status:blocked"] || labels["status:claimed"] ||
-		labels["status:in-progress"] || labels["status:needs-qc"] {
+	if labels[models.LabelStatusNeedsHuman] || labels["status:human-pending"] ||
+		labels[models.LabelStatusBlocked] || labels[models.LabelStatusClaimed] ||
+		labels[models.LabelStatusInProgress] || labels[models.LabelStatusNeedsQc] {
 		d.logger.Debug("skipping re-queued issue with active status", zap.Int("issue", issue.Number))
 		return nil
 	}
@@ -763,15 +764,15 @@ func (d *Dispatcher) escalate(ctx context.Context, owner, repo string, issueNumb
 		time.Now().UTC().Format(time.RFC3339), trigger, details,
 	)
 	// Clear in-progress status labels before marking as needs-human.
-	_ = tracker.RemoveLabel(ctx, issueNumber, "status:claimed")
-	_ = tracker.RemoveLabel(ctx, issueNumber, "status:in-progress")
-	if err := tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
+	_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusClaimed)
+	_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusInProgress)
+	if err := tracker.AddLabel(ctx, issueNumber, models.LabelStatusNeedsHuman); err != nil {
 		return fmt.Errorf("add needs-human label: %w", err)
 	}
 	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
 		return fmt.Errorf("add escalation comment: %w", err)
 	}
-	d.recordPipelineEvent(ctx, owner, repo, issueNumber, "", "status:needs-human", "dispatcher")
+	d.recordPipelineEvent(ctx, owner, repo, issueNumber, "", models.LabelStatusNeedsHuman, "dispatcher")
 	return nil
 }
 
@@ -791,8 +792,8 @@ func (d *Dispatcher) escalateCycle(ctx context.Context, owner, repo string, cycl
 			"ESCALATE [dispatcher] [%s]\ntrigger: dependency_cycle\ndetails: Cycle detected: %s\naction_needed: Break the dependency cycle.",
 			time.Now().UTC().Format(time.RFC3339), cyclePath,
 		)
-		if err := tracker.AddLabel(ctx, num, "status:needs-human"); err != nil {
-			d.logger.Error("add label", zap.Int("issue", num), zap.String("label", "needs-human"), zap.String("error", err.Error()))
+		if err := tracker.AddLabel(ctx, num, models.LabelStatusNeedsHuman); err != nil {
+			d.logger.Error("add label", zap.Int("issue", num), zap.String("label", models.LabelStatusNeedsHuman), zap.String("error", err.Error()))
 		}
 		if _, err := tracker.AddComment(ctx, num, comment); err != nil {
 			d.logger.Error("add comment", zap.Int("issue", num), zap.String("context", "cycle"), zap.String("error", err.Error()))
@@ -811,12 +812,12 @@ func (d *Dispatcher) blockIssue(ctx context.Context, owner, repo string, issueNu
 		"BLOCKED [dispatcher] [%s]\nWaiting on: %v\nWill auto-unblock when all dependencies reach status:done.",
 		time.Now().UTC().Format(time.RFC3339), blockers,
 	)
-	if err := tracker.AddLabel(ctx, issueNumber, "status:blocked"); err != nil {
+	if err := tracker.AddLabel(ctx, issueNumber, models.LabelStatusBlocked); err != nil {
 		return fmt.Errorf("add blocked label: %w", err)
 	}
 	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
 		return fmt.Errorf("add block comment: %w", err)
 	}
-	d.recordPipelineEvent(ctx, owner, repo, issueNumber, "", "status:blocked", "dispatcher")
+	d.recordPipelineEvent(ctx, owner, repo, issueNumber, "", models.LabelStatusBlocked, "dispatcher")
 	return nil
 }

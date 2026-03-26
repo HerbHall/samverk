@@ -67,7 +67,7 @@ func classifyByHeuristic(issue *forge.Issue) models.AgentType {
 	}
 
 	// Label-based rules (highest priority).
-	if labels["agent:human"] {
+	if labels[models.LabelAgentHuman] {
 		return models.AgentTypeHuman
 	}
 	if labels["type:spike"] || labels["type:research"] {
@@ -119,8 +119,8 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 	}
 
 	// Complex: critical priority, high complexity, or architectural title keywords.
-	if labels["priority:critical"] {
-		return "complex", "label priority:critical"
+	if labels[models.LabelPriorityCritical] {
+		return "complex", "label " + models.LabelPriorityCritical
 	}
 	if labels["complexity:high"] {
 		return "complex", "label complexity:high"
@@ -161,8 +161,8 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 	}
 
 	// Triage: low priority or short prose body (excluding YAML frontmatter).
-	if labels["priority:low"] {
-		return "triage", "label priority:low"
+	if labels[models.LabelPriorityLow] {
+		return "triage", "label " + models.LabelPriorityLow
 	}
 	proseBody := stripFrontmatter(issue.Body)
 	if wordCount := len(strings.Fields(proseBody)); wordCount < 200 {
@@ -211,7 +211,7 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	// claim-fail-requeue loop when a closed issue has status:queued.
 	if issue.State == forge.StateClosed {
 		d.logger.Info("skipping closed issue", zap.Int("issue", issue.Number))
-		_ = tracker.RemoveLabel(ctx, issue.Number, "status:queued")
+		_ = tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusQueued)
 		return nil
 	}
 
@@ -238,8 +238,8 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	// Human-typed issues are tracked but never submitted to the agent pool.
 	if agentType == models.AgentTypeHuman {
 		d.logger.Info("issue classified as human", zap.Int("issue", issue.Number))
-		if err := tracker.AddLabel(ctx, issue.Number, "status:needs-human"); err != nil {
-			d.logger.Error("add label", zap.Int("issue", issue.Number), zap.String("label", "needs-human"), zap.String("error", err.Error()))
+		if err := tracker.AddLabel(ctx, issue.Number, models.LabelStatusNeedsHuman); err != nil {
+			d.logger.Error("add label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusNeedsHuman), zap.String("error", err.Error()))
 		}
 		return nil
 	}
@@ -267,13 +267,13 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		return nil
 	}
 
-	if err := tracker.RemoveLabel(ctx, issue.Number, "status:queued"); err != nil {
+	if err := tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusQueued); err != nil {
 		d.logger.Debug("remove queued label", zap.Int("issue", issue.Number), zap.String("error", err.Error()))
 	}
-	if err := tracker.AddLabel(ctx, issue.Number, "status:claimed"); err != nil {
+	if err := tracker.AddLabel(ctx, issue.Number, models.LabelStatusClaimed); err != nil {
 		return fmt.Errorf("add claimed label to #%d: %w", issue.Number, err)
 	}
-	d.recordPipelineEvent(ctx, owner, repo, issue.Number, "status:queued", "status:claimed", "dispatcher")
+	d.recordPipelineEvent(ctx, owner, repo, issue.Number, models.LabelStatusQueued, models.LabelStatusClaimed, "dispatcher")
 	if err := tracker.Assign(ctx, issue.Number, string(agentType)); err != nil {
 		// Best-effort: Gitea requires assignee to be a repo collaborator,
 		// GitHub silently ignores invalid assignees. Don't block routing.
@@ -370,7 +370,7 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		if err := d.pool.Submit(task); err != nil {
 			return fmt.Errorf("submit agent task for #%d: %w", issue.Number, err)
 		}
-		d.recordPipelineEvent(ctx, owner, repo, issue.Number, "status:claimed", "status:in-progress", "dispatcher")
+		d.recordPipelineEvent(ctx, owner, repo, issue.Number, models.LabelStatusClaimed, models.LabelStatusInProgress, "dispatcher")
 	}
 	return nil
 }

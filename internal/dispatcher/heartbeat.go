@@ -3,10 +3,13 @@ package dispatcher
 import (
 	"context"
 	"fmt"
-	"go.uber.org/zap"
 	"regexp"
 	"strconv"
 	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/herbhall/samverk/pkg/models"
 )
 
 // Heartbeat represents a parsed heartbeat comment from an agent.
@@ -145,11 +148,11 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, key string) error {
 	}
 
 	// Remove in-progress or claimed label.
-	_ = tracker.RemoveLabel(ctx, issueNumber, "status:in-progress")
-	_ = tracker.RemoveLabel(ctx, issueNumber, "status:claimed")
+	_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusInProgress)
+	_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusClaimed)
 
-	if err := tracker.AddLabel(ctx, issueNumber, "status:queued"); err != nil {
-		d.logger.Warn("add label", zap.Int("issue", issueNumber), zap.String("label", "queued"), zap.String("error", err.Error()))
+	if err := tracker.AddLabel(ctx, issueNumber, models.LabelStatusQueued); err != nil {
+		d.logger.Warn("add label", zap.Int("issue", issueNumber), zap.String("label", models.LabelStatusQueued), zap.String("error", err.Error()))
 	}
 	if err := tracker.Unassign(ctx, issueNumber, agentID); err != nil {
 		d.logger.Warn("unassign", zap.Int("issue", issueNumber), zap.String("agent", agentID), zap.String("error", err.Error()))
@@ -167,15 +170,15 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, key string) error {
 		// Remove status:queued BEFORE adding needs-human to prevent a race
 		// where handleLabeled fires on the queued event before needs-human
 		// is applied, causing the issue to be re-routed.
-		_ = tracker.RemoveLabel(ctx, issueNumber, "status:queued")
+		_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusQueued)
 
 		escalateComment := fmt.Sprintf(
 			"ESCALATE [dispatcher] [%s]\ntrigger: %d_consecutive_failures\nseverity: high\nissue: #%d\ndetails: Agent %s failed %d times on this issue.\naction_needed: Review issue complexity and acceptance criteria.",
 			time.Now().UTC().Format(time.RFC3339),
 			failureCount, issueNumber, agentID, failureCount,
 		)
-		if err := tracker.AddLabel(ctx, issueNumber, "status:needs-human"); err != nil {
-			d.logger.Error("add label", zap.Int("issue", issueNumber), zap.String("label", "needs-human"), zap.String("error", err.Error()))
+		if err := tracker.AddLabel(ctx, issueNumber, models.LabelStatusNeedsHuman); err != nil {
+			d.logger.Error("add label", zap.Int("issue", issueNumber), zap.String("label", models.LabelStatusNeedsHuman), zap.String("error", err.Error()))
 		}
 		if _, err := tracker.AddComment(ctx, issueNumber, escalateComment); err != nil {
 			d.logger.Error("add comment", zap.Int("issue", issueNumber), zap.String("context", "escalate"), zap.String("error", err.Error()))
