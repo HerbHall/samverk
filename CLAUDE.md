@@ -102,6 +102,11 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 - Follow language-specific idioms (Go: gofmt, Python: ruff)
 - No over-engineering -- implement only what's needed now
 - Comments only where logic isn't self-evident
+- **Two-location rule (ADR-039):** If a value, format, or behavioral contract
+  appears in 2+ locations, extract it to a single authoritative source. Before
+  defining a constant or format string, search for an existing definition. Key
+  sources of truth: `internal/agent/format.go` (output format), `pkg/models/`
+  (labels, types), `overlay/labels.json` (label definitions).
 - Validate at system boundaries, not internal calls
 
 ## Known Constraints
@@ -140,6 +145,7 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 - Adaptive worker scaling ([ADR-032](docs/decisions/ADR-032-adaptive-worker-scaling.md))
 - Multi-machine free agent runtime ([ADR-033](docs/decisions/ADR-033-multi-machine-free-agent-runtime.md))
 - Solo developer agent model ([ADR-035](docs/decisions/ADR-035-solo-developer-agent-model.md))
+- Two-location centralization rule ([ADR-039](docs/decisions/ADR-039-two-location-centralization-rule.md))
 - Unified execution plan -- Q2 2026 ([docs/unified-execution-plan.md](docs/unified-execution-plan.md))
 
 ## Infrastructure
