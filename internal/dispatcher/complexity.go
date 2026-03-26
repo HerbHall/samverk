@@ -111,7 +111,7 @@ func estimateFromSignals(sig complexitySignals) time.Duration {
 	if sig.Labels["complexity:high"] {
 		minutes = max(minutes, 30.0)
 	}
-	if sig.Labels["priority:critical"] {
+	if sig.Labels[models.LabelPriorityCritical] {
 		minutes *= 1.2 // critical tasks get more headroom
 	}
 
