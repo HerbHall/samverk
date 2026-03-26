@@ -422,7 +422,7 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	}
 
 	// Step 8: Mark session completed (use cleanup context to survive timeout).
-	if err = r.completeSession(r.safeCtx(ctx), task.SessionID); err != nil {
+	if err = r.completeSession(r.safeCtx(ctx), task.SessionID, resp.MaxTurnsHit, resp.TurnsUsed); err != nil {
 		return fmt.Errorf("complete session: %w", err)
 	}
 
@@ -864,8 +864,9 @@ func estimateMaxTurns(task Task) int {
 	return turns
 }
 
-// completeSession marks a session as completed with a finish timestamp.
-func (r *Runner) completeSession(ctx context.Context, sessionID string) error {
+// completeSession marks a session as completed with a finish timestamp and stores
+// max-turns metadata from the provider response.
+func (r *Runner) completeSession(ctx context.Context, sessionID string, maxTurnsHit bool, turnsUsed int) error {
 	session, err := r.store.GetSession(ctx, sessionID)
 	if err != nil {
 		return err
@@ -875,6 +876,8 @@ func (r *Runner) completeSession(ctx context.Context, sessionID string) error {
 	session.Status = models.SessionStatusCompleted
 	session.FinishedAt = &now
 	session.UpdatedAt = now
+	session.MaxTurnsHit = maxTurnsHit
+	session.TurnsUsed = turnsUsed
 
 	return r.store.UpdateSession(ctx, session)
 }

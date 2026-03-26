@@ -20,7 +20,9 @@ type QualityResult struct {
 
 // checkOutputQuality evaluates agent output for basic quality signals.
 // Returns a QualityResult indicating if the output meets minimum standards.
-func checkOutputQuality(output string, agentType models.AgentType) QualityResult {
+// maxTurnsHit and turnsUsed are optional signals from the provider; when maxTurnsHit
+// is true, it indicates actual truncation (not string matching false positive).
+func checkOutputQuality(output string, agentType models.AgentType, maxTurnsHit bool, turnsUsed int) QualityResult {
 	output = strings.TrimSpace(output)
 
 	// Empty or near-empty output.
@@ -28,9 +30,21 @@ func checkOutputQuality(output string, agentType models.AgentType) QualityResult
 		return QualityResult{Pass: false, Reason: "output too short", Score: 0.0}
 	}
 
-	// Truncation markers: only match patterns that strongly indicate forced
-	// cutoff rather than natural language transitions. "I'll continue" and
-	// "Let me continue" produce false positives on normal agent prose.
+	// Primary signal: MaxTurnsHit from provider indicates actual truncation at the
+	// provider level (stream-json is_error signal for CLI providers).
+	if maxTurnsHit {
+		reason := "output truncated: max turns hit"
+		if turnsUsed > 0 {
+			reason = fmt.Sprintf("output truncated: max turns hit (%d turns used)", turnsUsed)
+		}
+		return QualityResult{Pass: false, Reason: reason, Score: 0.3}
+	}
+
+	// Secondary fallback: string matching for truncation markers. This detects
+	// agents that ran out of space on non-CLI providers or wrote the marker naturally.
+	// Only match patterns that strongly indicate forced cutoff rather than natural
+	// language transitions. "I'll continue" and "Let me continue" produce false
+	// positives on normal agent prose.
 	truncationMarkers := []string{
 		"...truncated",
 		"output limit reached",
@@ -73,7 +87,7 @@ func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.Ta
 		return
 	}
 
-	qr := checkOutputQuality(session.PartialOutput, result.AgentType)
+	qr := checkOutputQuality(session.PartialOutput, result.AgentType, session.MaxTurnsHit, session.TurnsUsed)
 	if !qr.Pass {
 		d.logger.Warn("quality gate failed",
 			zap.Int("issue", result.IssueNumber),

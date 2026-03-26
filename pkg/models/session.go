@@ -27,6 +27,8 @@ type Session struct {
 	EstimatedTimeout time.Duration `json:"estimated_timeout_ms,omitempty"` // timeout predicted at dispatch time
 	PartialOutput    string        `json:"partial_output,omitempty"`       // last checkpoint of streaming output
 	CheckpointHash   string        `json:"checkpoint_hash,omitempty"`      // SHA-256 of posted checkpoint for dedup
+	MaxTurnsHit      bool          `json:"max_turns_hit,omitempty"`        // true when session hit max turns limit
+	TurnsUsed        int           `json:"turns_used,omitempty"`           // number of assistant turns completed
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
