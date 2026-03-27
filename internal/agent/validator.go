@@ -14,10 +14,11 @@ import (
 
 // ValidationResult reports the outcome of pre-posting validation.
 type ValidationResult struct {
-	Pass      bool
-	Retryable bool // false for infrastructure failures; true for code errors
-	Errors    []ValidationError
-	Duration  time.Duration
+	Pass       bool
+	Retryable  bool // false for infrastructure failures; true for code errors
+	Errors     []ValidationError
+	Duration   time.Duration
+	LintOutput string // truncated golangci-lint output on lint failure
 }
 
 // ValidationError describes a single validation failure.
@@ -72,7 +73,7 @@ func ValidateBeforePost(ctx context.Context, agentType models.AgentType, workDir
 	}
 }
 
-// validateWorktree runs `go build ./...` and `go test ./...` in the worktree.
+// validateWorktree runs `go build ./...`, `go test ./...`, and golangci-lint in the worktree.
 // If the `go` tool is not installed on the host, validation is skipped gracefully.
 func validateWorktree(ctx context.Context, workDir string, logger *zap.Logger) *ValidationResult {
 	result := &ValidationResult{Pass: true, Retryable: true}
@@ -116,6 +117,28 @@ func validateWorktree(ctx context.Context, workDir string, logger *zap.Logger) *
 			Message: fmt.Sprintf("go test failed: %v", testErr),
 			Output:  truncate(testOut, maxValidationOutput),
 		})
+		return result // Don't run lint if tests fail.
+	}
+
+	// Lint check. Uses go run to avoid requiring a pre-installed binary.
+	// 300s timeout because first invocation downloads the tool (~60s).
+	// Subsequent runs are fast due to Go module cache on CT 202.
+	lintOut, lintErr := runInDirWithTimeout(ctx, workDir, 300*time.Second,
+		"go", "run",
+		"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1",
+		"run", "./...")
+	if lintErr != nil {
+		logger.Warn("validation: lint failed",
+			zap.String("workDir", workDir),
+			zap.String("output", truncate(lintOut, maxValidationOutput)),
+		)
+		result.Pass = false
+		result.LintOutput = truncate(lintOut, maxValidationOutput)
+		result.Errors = append(result.Errors, ValidationError{
+			Phase:   "lint",
+			Message: fmt.Sprintf("golangci-lint failed: %v", lintErr),
+			Output:  truncate(lintOut, maxValidationOutput),
+		})
 	}
 
 	return result
@@ -142,7 +165,12 @@ func validateAnalytical(response string) *ValidationResult {
 // runInDir executes a command in the given directory and returns combined output.
 // Uses a 120-second timeout to prevent hung builds from blocking the pipeline.
 func runInDir(ctx context.Context, dir, name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	return runInDirWithTimeout(ctx, dir, 120*time.Second, name, args...)
+}
+
+// runInDirWithTimeout executes a command in the given directory with a custom timeout.
+func runInDirWithTimeout(ctx context.Context, dir string, timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // G204: args are internally constructed
 	cmd.Dir = dir
