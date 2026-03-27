@@ -191,6 +191,9 @@ type mockIssueTracker struct {
 	updateErr      error
 	setLabelsCalls []setLabelsCall
 	setLabelsErr   error
+	addLabelCalls  map[int][]string   // Issue number -> labels added
+	removeLabelCalls map[int][]string // Issue number -> labels removed
+	comments       map[int][]*forge.Comment // Issue number -> comments
 }
 
 func (m *mockIssueTracker) CreateIssue(_ context.Context, req *forge.CreateIssueRequest) (*forge.Issue, error) {
@@ -220,15 +223,30 @@ func (m *mockIssueTracker) AddComment(_ context.Context, number int, body string
 	m.prComments[number] = append(m.prComments[number], body)
 	return &forge.Comment{ID: 1, Body: body}, nil
 }
-func (m *mockIssueTracker) ListComments(context.Context, int) ([]*forge.Comment, error) {
-	panic("not called")
+func (m *mockIssueTracker) ListComments(_ context.Context, number int) ([]*forge.Comment, error) {
+	if m.comments == nil {
+		return nil, nil
+	}
+	return m.comments[number], nil
 }
 func (m *mockIssueTracker) SetLabels(_ context.Context, number int, labels []string) error {
 	m.setLabelsCalls = append(m.setLabelsCalls, setLabelsCall{number: number, labels: labels})
 	return m.setLabelsErr
 }
-func (m *mockIssueTracker) AddLabel(context.Context, int, string) error    { panic("not called") }
-func (m *mockIssueTracker) RemoveLabel(context.Context, int, string) error { panic("not called") }
+func (m *mockIssueTracker) AddLabel(_ context.Context, number int, label string) error {
+	if m.addLabelCalls == nil {
+		m.addLabelCalls = make(map[int][]string)
+	}
+	m.addLabelCalls[number] = append(m.addLabelCalls[number], label)
+	return nil
+}
+func (m *mockIssueTracker) RemoveLabel(_ context.Context, number int, label string) error {
+	if m.removeLabelCalls == nil {
+		m.removeLabelCalls = make(map[int][]string)
+	}
+	m.removeLabelCalls[number] = append(m.removeLabelCalls[number], label)
+	return nil
+}
 func (m *mockIssueTracker) Assign(context.Context, int, string) error      { panic("not called") }
 func (m *mockIssueTracker) Unassign(context.Context, int, string) error    { panic("not called") }
 func (m *mockIssueTracker) Watch(context.Context, func(forge.Event)) error { panic("not called") }

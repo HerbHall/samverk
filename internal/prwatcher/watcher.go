@@ -124,6 +124,16 @@ func (w *Watcher) poll(ctx context.Context) error {
 		ciPassed := w.allChecksPassed(checks)
 		tier := ClassifyPRTier(pr, nil)
 
+		// Handle stale CI-failed PRs before checking tier eligibility.
+		if !ciPassed && w.isStaleCI(pr) {
+			failedChecks := w.getFailedCheckNames(checks)
+			if remediateErr := w.remediateStaleCIFailure(ctx, pr, failedChecks); remediateErr != nil {
+				w.logger.Error("pr-watcher: remediate stale CI failure", zap.Int("pr", pr.Number), zap.Error(remediateErr))
+			}
+			skippedCI++
+			continue
+		}
+
 		switch tier {
 		case PRTier3:
 			tier3++
@@ -588,4 +598,184 @@ func (w *Watcher) checkAllDependenciesSatisfied(ctx context.Context, fm *models.
 
 	// All dependencies satisfied.
 	return false
+}
+
+// isStaleCI checks if a PR has been in CI-failed state for longer than the configured threshold.
+func (w *Watcher) isStaleCI(pr *forge.PullRequest) bool {
+	thresholdMinutes := w.mergeCfg.CIFailureThresholdMinutes
+	if thresholdMinutes <= 0 {
+		thresholdMinutes = 120 // default 2 hours
+	}
+	return time.Since(pr.UpdatedAt) > time.Duration(thresholdMinutes)*time.Minute
+}
+
+// getFailedCheckNames extracts the names of failed checks from a list of checks.
+func (w *Watcher) getFailedCheckNames(checks []forge.Check) []string {
+	failed := make([]string, 0, len(checks))
+	for _, c := range checks {
+		if c.Status != forge.CheckStatusSuccess {
+			failed = append(failed, c.Name)
+		}
+	}
+	return failed
+}
+
+// countCIFailures counts the number of CI failure comments on an issue.
+// It looks for comments matching the pattern "CI FAILED [prwatcher]".
+func (w *Watcher) countCIFailures(ctx context.Context, issueNum int) (int, error) {
+	if w.issueTracker == nil {
+		return 0, nil
+	}
+
+	comments, err := w.issueTracker.ListComments(ctx, issueNum)
+	if err != nil {
+		return 0, fmt.Errorf("list comments: %w", err)
+	}
+
+	count := 0
+	for _, c := range comments {
+		if strings.Contains(c.Body, "CI FAILED [prwatcher]") {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// remediateStaleCIFailure closes a stale CI-failed PR and re-queues or escalates its source issue.
+//
+// It:
+// 1. Closes the PR with a comment listing failed checks
+// 2. Finds the source issue from "Closes #NNN" in the PR body
+// 3. Counts existing CI failures for that issue
+// 4. If count < 3: removes status:needs-qc, adds status:queued
+// 5. If count >= 3: removes status:needs-qc, adds status:needs-human + human:review
+// 6. Adds a comment with failure details to the issue
+func (w *Watcher) remediateStaleCIFailure(ctx context.Context, pr *forge.PullRequest, failedChecks []string) error {
+	if w.issueTracker == nil {
+		return fmt.Errorf("issue tracker is nil")
+	}
+
+	// Close the PR with a comment listing failed checks.
+	closedState := forge.StateClosed
+	_, err := w.issueTracker.UpdateIssue(ctx, pr.Number, &forge.UpdateIssueRequest{State: &closedState})
+	if err != nil {
+		return fmt.Errorf("close PR #%d: %w", pr.Number, err)
+	}
+
+	// Build a comment with the failed checks.
+	comment := buildCIFailureComment(pr, failedChecks)
+	if _, err := w.issueTracker.AddComment(ctx, pr.Number, comment); err != nil {
+		w.log().Warn("pr-watcher: failed to add comment to closed PR",
+			zap.Int("pr", pr.Number), zap.Error(err))
+	}
+
+	// Find the source issue.
+	sourceIssueNum := 0
+	issueNums := parseLinkedIssues(pr)
+	if len(issueNums) > 0 {
+		sourceIssueNum = issueNums[0]
+	}
+	if sourceIssueNum == 0 {
+		w.log().Warn("pr-watcher: no linked issue found for PR", zap.Int("pr", pr.Number))
+		w.log().Info("pr-watcher: closed stale CI-failed PR",
+			zap.Int("pr", pr.Number),
+			zap.Int("failed_checks", len(failedChecks)))
+		return nil
+	}
+
+	// Count existing CI failures.
+	ciFailCount, err := w.countCIFailures(ctx, sourceIssueNum)
+	if err != nil {
+		w.log().Warn("pr-watcher: count CI failures", zap.Int("issue", sourceIssueNum), zap.Error(err))
+		ciFailCount = 0
+	}
+
+	// Increment the CI failure count.
+	ciFailCount++
+
+	// Remove status:needs-qc from the issue.
+	if err := w.issueTracker.RemoveLabel(ctx, sourceIssueNum, models.LabelStatusNeedsQc); err != nil {
+		w.log().Warn("pr-watcher: remove status:needs-qc",
+			zap.Int("issue", sourceIssueNum), zap.Error(err))
+	}
+
+	// Add failure comment to the issue.
+	issueComment := buildCIFailureIssueComment(pr, failedChecks, ciFailCount)
+	if _, err := w.issueTracker.AddComment(ctx, sourceIssueNum, issueComment); err != nil {
+		w.log().Warn("pr-watcher: add comment to issue",
+			zap.Int("issue", sourceIssueNum), zap.Error(err))
+	}
+
+	// Re-queue or escalate based on CI failure count.
+	if ciFailCount < 3 {
+		if err := w.issueTracker.AddLabel(ctx, sourceIssueNum, models.LabelStatusQueued); err != nil {
+			w.log().Warn("pr-watcher: add status:queued",
+				zap.Int("issue", sourceIssueNum), zap.Error(err))
+		}
+
+		w.log().Info("pr-watcher: closed stale CI-failed PR and re-queued issue",
+			zap.Int("pr", pr.Number),
+			zap.Int("issue", sourceIssueNum),
+			zap.Int("ci_fail_count", ciFailCount),
+			zap.Strings("failed_checks", failedChecks))
+	} else {
+		// Escalate to needs-human.
+		if err := w.issueTracker.AddLabel(ctx, sourceIssueNum, models.LabelStatusNeedsHuman); err != nil {
+			w.log().Warn("pr-watcher: add status:needs-human",
+				zap.Int("issue", sourceIssueNum), zap.Error(err))
+		}
+		if err := w.issueTracker.AddLabel(ctx, sourceIssueNum, models.LabelHumanReview); err != nil {
+			w.log().Warn("pr-watcher: add human:review",
+				zap.Int("issue", sourceIssueNum), zap.Error(err))
+		}
+
+		w.log().Info("pr-watcher: escalated issue to needs-human after 3 CI failures",
+			zap.Int("pr", pr.Number),
+			zap.Int("issue", sourceIssueNum),
+			zap.Int("ci_fail_count", ciFailCount),
+			zap.Strings("failed_checks", failedChecks))
+	}
+
+	return nil
+}
+
+// buildCIFailureComment creates a comment for a closed stale CI-failed PR.
+func buildCIFailureComment(pr *forge.PullRequest, failedChecks []string) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "CLOSED [prwatcher] [%s]\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "PR #%d has had failing CI checks for too long. Closing and re-queuing the source issue.\n\n", pr.Number)
+
+	if len(failedChecks) > 0 {
+		b.WriteString("**Failed Checks:**\n")
+		for _, check := range failedChecks {
+			fmt.Fprintf(&b, "- %s\n", check)
+		}
+	}
+
+	return b.String()
+}
+
+// buildCIFailureIssueComment creates a comment for the source issue of a CI-failed PR.
+func buildCIFailureIssueComment(pr *forge.PullRequest, failedChecks []string, ciFailCount int) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "CI FAILED [prwatcher] [%s] (attempt %d)\n", time.Now().UTC().Format(time.RFC3339), ciFailCount)
+	fmt.Fprintf(&b, "PR #%d closed due to failing CI checks.\n\n", pr.Number)
+
+	if len(failedChecks) > 0 {
+		b.WriteString("**Failed Checks:**\n")
+		for _, check := range failedChecks {
+			fmt.Fprintf(&b, "- %s\n", check)
+		}
+		b.WriteString("\n")
+	}
+
+	if ciFailCount < 3 {
+		fmt.Fprintf(&b, "Re-queuing for retry (attempt %d of 3).\n", ciFailCount)
+	} else {
+		b.WriteString("Escalating to status:needs-human (3 CI failures reached).\n")
+	}
+
+	return b.String()
 }

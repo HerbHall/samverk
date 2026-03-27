@@ -21,12 +21,13 @@ type Config struct {
 
 // MergeConfig controls auto-merge behavior for agent PRs.
 type MergeConfig struct {
-	AutoMergeOnCIPass     bool     `yaml:"auto_merge_on_ci_pass"`
-	Tier2DelayMinutes     int      `yaml:"tier2_delay_minutes"`
-	TrustedAuthors        []string `yaml:"trusted_authors"`
-	TrustedReviewers      []string `yaml:"trusted_reviewers"`
-	RequireAllChecksPass  bool     `yaml:"require_all_checks_pass"`
-	ExcludeLabels         []string `yaml:"exclude_labels"`
+	AutoMergeOnCIPass        bool     `yaml:"auto_merge_on_ci_pass"`
+	Tier2DelayMinutes        int      `yaml:"tier2_delay_minutes"`
+	TrustedAuthors           []string `yaml:"trusted_authors"`
+	TrustedReviewers         []string `yaml:"trusted_reviewers"`
+	RequireAllChecksPass     bool     `yaml:"require_all_checks_pass"`
+	ExcludeLabels            []string `yaml:"exclude_labels"`
+	CIFailureThresholdMinutes int      `yaml:"ci_failure_threshold_minutes"`
 }
 
 // Defaults holds global default values.
