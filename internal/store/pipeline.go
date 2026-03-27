@@ -11,6 +11,12 @@ type PipelineStageName = string
 
 // Pipeline stage name constants used across the application.
 const (
+	// Planning stages (before dispatch)
+	StageReadinessReview PipelineStageName = "readiness_review"
+	StagePlanning        PipelineStageName = "planning"
+	StageImpactReview    PipelineStageName = "impact_review"
+
+	// Dispatch and work stages
 	StageOpen       PipelineStageName = "open"
 	StageQueued     PipelineStageName = "queued"
 	StageClaimed    PipelineStageName = "claimed"
@@ -24,6 +30,7 @@ const (
 
 // StageOrder is the canonical ordering of pipeline stages for display.
 var StageOrder = []PipelineStageName{
+	StageReadinessReview, StagePlanning, StageImpactReview,
 	StageOpen, StageQueued, StageClaimed, StageInProgress,
 	StageNeedsQC, StageNeedsHuman, StageBlocked, StageDone, StageFailed,
 }

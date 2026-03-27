@@ -221,6 +221,9 @@ func (m *mockStore) GetKPIReport(_ context.Context) (*models.KPIReport, error) {
 		RootCauseBreakdown: []models.RootCauseBreakdownEntry{},
 	}, nil
 }
+func (m *mockStore) ReadinessGapRate(_ context.Context, _ int) (float64, error) { return 0, nil }
+func (m *mockStore) PlanningEscalationRate(_ context.Context, _ int) (float64, error) { return 0, nil }
+func (m *mockStore) ImpactConflictRate(_ context.Context, _ int) (float64, error) { return 0, nil }
 func (m *mockStore) RecordPipelineEvent(_ context.Context, _ store.PipelineEvent) error { return nil }
 func (m *mockStore) GetPipelineEvents(_ context.Context, _ int, _ time.Time, _ int) ([]store.PipelineEvent, error) {
 	return nil, nil

@@ -158,11 +158,11 @@ func TestPipelineStages_Response(t *testing.T) {
 	}
 	decodeJSON(t, resp, &body)
 
-	if len(body.Stages) != 9 {
-		t.Errorf("stage count = %d, want 9", len(body.Stages))
+	if len(body.Stages) != 12 {
+		t.Errorf("stage count = %d, want 12", len(body.Stages))
 	}
 
-	wantOrder := []string{"open", "queued", "claimed", "in_progress", "needs_qc", "needs_human", "blocked", "done", "failed"}
+	wantOrder := []string{"readiness_review", "planning", "impact_review", "open", "queued", "claimed", "in_progress", "needs_qc", "needs_human", "blocked", "done", "failed"}
 	for i, stage := range body.Stages {
 		if stage.Name != wantOrder[i] {
 			t.Errorf("stages[%d].name = %q, want %q", i, stage.Name, wantOrder[i])

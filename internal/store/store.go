@@ -70,6 +70,11 @@ type Store interface {
 	GetFailureSummary(ctx context.Context, since time.Time) (*models.FailureSummary, error)
 	GetKPIReport(ctx context.Context) (*models.KPIReport, error)
 
+	// Planning stage KPI rates (read by API and continuous improvement engine)
+	ReadinessGapRate(ctx context.Context, days int) (float64, error)
+	PlanningEscalationRate(ctx context.Context, days int) (float64, error)
+	ImpactConflictRate(ctx context.Context, days int) (float64, error)
+
 	// Persisted issue failure counter (survives restarts, unlike in-memory map)
 	GetIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
 	IncrementIssueFailureCount(ctx context.Context, issueNumber int) (int, error)

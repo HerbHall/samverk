@@ -255,3 +255,66 @@ ORDER BY cnt DESC
 	}
 	return rows.Err()
 }
+
+// ReadinessGapRate returns the percentage of failure events with root_cause_category = 'readiness_gap'
+// in the given number of days. Returns 0 if no events exist.
+func (s *SQLiteStore) ReadinessGapRate(ctx context.Context, days int) (float64, error) {
+	var val sql.NullFloat64
+	dayStr := fmt.Sprintf("-%d days", days)
+	err := s.db.QueryRowContext(ctx, `
+SELECT
+  CAST(SUM(CASE WHEN root_cause_category = 'readiness_gap' THEN 1 ELSE 0 END) AS REAL)
+    / NULLIF(COUNT(*), 0) * 100
+FROM failure_events
+WHERE created_at >= datetime('now', ?)
+`, dayStr).Scan(&val)
+	if err != nil {
+		return 0, fmt.Errorf("readiness gap rate: %w", err)
+	}
+	if val.Valid {
+		return val.Float64, nil
+	}
+	return 0, nil
+}
+
+// PlanningEscalationRate returns the percentage of failure events with root_cause_category = 'planning_gap'
+// in the given number of days. Returns 0 if no events exist.
+func (s *SQLiteStore) PlanningEscalationRate(ctx context.Context, days int) (float64, error) {
+	var val sql.NullFloat64
+	dayStr := fmt.Sprintf("-%d days", days)
+	err := s.db.QueryRowContext(ctx, `
+SELECT
+  CAST(SUM(CASE WHEN root_cause_category = 'planning_gap' THEN 1 ELSE 0 END) AS REAL)
+    / NULLIF(COUNT(*), 0) * 100
+FROM failure_events
+WHERE created_at >= datetime('now', ?)
+`, dayStr).Scan(&val)
+	if err != nil {
+		return 0, fmt.Errorf("planning escalation rate: %w", err)
+	}
+	if val.Valid {
+		return val.Float64, nil
+	}
+	return 0, nil
+}
+
+// ImpactConflictRate returns the percentage of failure events with root_cause_category = 'impact_conflict'
+// in the given number of days. Returns 0 if no events exist.
+func (s *SQLiteStore) ImpactConflictRate(ctx context.Context, days int) (float64, error) {
+	var val sql.NullFloat64
+	dayStr := fmt.Sprintf("-%d days", days)
+	err := s.db.QueryRowContext(ctx, `
+SELECT
+  CAST(SUM(CASE WHEN root_cause_category = 'impact_conflict' THEN 1 ELSE 0 END) AS REAL)
+    / NULLIF(COUNT(*), 0) * 100
+FROM failure_events
+WHERE created_at >= datetime('now', ?)
+`, dayStr).Scan(&val)
+	if err != nil {
+		return 0, fmt.Errorf("impact conflict rate: %w", err)
+	}
+	if val.Valid {
+		return val.Float64, nil
+	}
+	return 0, nil
+}
