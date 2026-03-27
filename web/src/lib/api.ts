@@ -68,6 +68,30 @@ export interface ActiveWorker {
   elapsed_s: number
 }
 
+export interface ToolVersions {
+  go?: string
+  node?: string
+  pnpm?: string
+  git?: string
+  claude_cli?: string
+}
+
+export interface PCWorker {
+  agent_id: string
+  hostname: string
+  capabilities: string[]
+  max_concurrent: number
+  workspace_root: string
+  status: string
+  current_task?: number | null
+  cpu_percent: number
+  memory_percent: number
+  active_worktrees: number
+  tool_versions: ToolVersions
+  registered_at: string
+  last_heartbeat: string
+}
+
 export interface CostSummary {
   tokens_used: number
   estimated_cost_usd: number
@@ -608,6 +632,9 @@ export const api = {
 
   getActiveWorkers: () =>
     fetchJSON<ActiveWorker[]>('/workers/active'),
+
+  getPCWorkers: () =>
+    fetchJSON<PCWorker[]>('/workers'),
 
   getCosts: () =>
     fetchJSON<CostSummary>('/costs'),
