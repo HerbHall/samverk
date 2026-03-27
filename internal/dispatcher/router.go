@@ -236,6 +236,53 @@ func stripFrontmatter(body string) string {
 	return body[start+len(marker)+end+len(marker):]
 }
 
+// classifyHumanSubtype determines what kind of human action is needed.
+// Returns one of: human:decision, human:review, human:credentials, or human:workstation.
+// When in doubt, defaults to human:workstation (most conservative).
+func classifyHumanSubtype(issue *forge.Issue) string {
+	lower := strings.ToLower(issue.Title + " " + issue.Body)
+
+	// Check for credentials/secrets keywords
+	credentialsKeywords := []string{"api key", "api token", "secret", "password", "credentials", "token", "auth key"}
+	for _, kw := range credentialsKeywords {
+		if strings.Contains(lower, kw) {
+			return models.LabelHumanCredentials
+		}
+	}
+
+	// Check for workstation keywords
+	workstationKeywords := []string{"ssh", "workstation", "terminal", "cli", "command line", "browser", "cloudflare", "dashboard", "physical access", "localhost"}
+	for _, kw := range workstationKeywords {
+		if strings.Contains(lower, kw) {
+			return models.LabelHumanWorkstation
+		}
+	}
+
+	// Check for review keywords
+	reviewKeywords := []string{"review", "approve", "pr", "pull request", "merge", "reject"}
+	hasReviewKeyword := false
+	for _, kw := range reviewKeywords {
+		if strings.Contains(lower, kw) {
+			hasReviewKeyword = true
+			break
+		}
+	}
+	if hasReviewKeyword {
+		return models.LabelHumanReview
+	}
+
+	// Check for decision keywords
+	decisionKeywords := []string{"decide", "choice", "which", "approve", "go/no-go", "yes or no", "pick one", "select"}
+	for _, kw := range decisionKeywords {
+		if strings.Contains(lower, kw) {
+			return models.LabelHumanDecision
+		}
+	}
+
+	// Default to workstation (most conservative)
+	return models.LabelHumanWorkstation
+}
+
 // route assigns the issue to the agent pool matching agentType.
 // It selects a provider routing chain based on issue signals, logs the selection,
 // and records the claim in memory. Any failure count accumulated from prior
@@ -285,8 +332,14 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	// Human-typed issues are tracked but never submitted to the agent pool.
 	if agentType == models.AgentTypeHuman {
 		d.logger.Info("issue classified as human", zap.Int("issue", issue.Number))
+		// Apply status:needs-human label
 		if err := tracker.AddLabel(ctx, issue.Number, models.LabelStatusNeedsHuman); err != nil {
 			d.logger.Error("add label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusNeedsHuman), zap.String("error", err.Error()))
+		}
+		// Classify and apply human:* subtype label
+		subtype := classifyHumanSubtype(issue)
+		if err := tracker.AddLabel(ctx, issue.Number, subtype); err != nil {
+			d.logger.Debug("add human subtype label (non-fatal)", zap.Int("issue", issue.Number), zap.String("label", subtype), zap.String("error", err.Error()))
 		}
 		return nil
 	}

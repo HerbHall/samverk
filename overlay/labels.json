@@ -153,5 +153,25 @@
     "name": "phase:killed",
     "color": "000000",
     "description": "Abandoned with documented rationale"
+  },
+  {
+    "name": "human:decision",
+    "color": "0075CA",
+    "description": "Judgment call or approval, no tools required"
+  },
+  {
+    "name": "human:review",
+    "color": "0075CA",
+    "description": "Read and approve/reject, content is self-contained"
+  },
+  {
+    "name": "human:credentials",
+    "color": "0075CA",
+    "description": "Needs API keys, tokens, or secrets only user holds"
+  },
+  {
+    "name": "human:workstation",
+    "color": "0075CA",
+    "description": "Requires physical access, SSH, browser auth, or running agent session"
   }
 ]

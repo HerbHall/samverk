@@ -52,21 +52,87 @@ func renderPendingActions(b *strings.Builder, actions []PendingAction) {
 	fmt.Fprintf(b, "\n--- NEEDS YOUR DECISION (%d item%s, blocking work) ---\n",
 		len(actions), plural(len(actions)))
 
-	for i, a := range actions {
-		idx := i + 1
-		actionType := string(a.ActionType)
-		if actionType == "" {
-			actionType = "action"
-		}
+	// Group by human:* subtype
+	groups := groupPendingBySubtype(actions)
 
-		fmt.Fprintf(b, "\n[%d] %s: %s\n", idx, strings.ToUpper(actionType), a.Title)
-		if a.Context != "" {
-			fmt.Fprintf(b, "    Why: %s\n", truncate(a.Context, 80))
+	// Render groups with headers for multi-subtype situations
+	if len(groups) > 1 {
+		// Multiple groups - use headers for each
+		for _, group := range groups {
+			renderSubtypeGroup(b, group)
 		}
-		fmt.Fprintf(b, "    Blocks: %d dependent issue%s\n", a.BlockedCount, plural(a.BlockedCount))
-		fmt.Fprintf(b, "    Waiting: %s\n", models.FormatDuration(time.Since(a.RequestedAt)))
-		fmt.Fprintf(b, "    > %d approve | %dr reject | %d? more context\n", idx, idx, idx)
+	} else if len(groups) == 1 {
+		// Single group - no headers needed
+		for i, a := range groups[0].actions {
+			idx := i + 1
+			renderPendingAction(b, a, idx)
+		}
 	}
+}
+
+func renderSubtypeGroup(b *strings.Builder, group subtypeGroup) {
+	fmt.Fprintf(b, "\n%s:\n", group.header)
+	for i, a := range group.actions {
+		idx := i + 1
+		renderPendingAction(b, a, idx)
+	}
+}
+
+func renderPendingAction(b *strings.Builder, a PendingAction, idx int) {
+	actionType := string(a.ActionType)
+	if actionType == "" {
+		actionType = "action"
+	}
+
+	fmt.Fprintf(b, "\n[%d] %s: %s\n", idx, strings.ToUpper(actionType), a.Title)
+	if a.Context != "" {
+		fmt.Fprintf(b, "    Why: %s\n", truncate(a.Context, 80))
+	}
+	fmt.Fprintf(b, "    Blocks: %d dependent issue%s\n", a.BlockedCount, plural(a.BlockedCount))
+	fmt.Fprintf(b, "    Waiting: %s\n", models.FormatDuration(time.Since(a.RequestedAt)))
+	fmt.Fprintf(b, "    > %d approve | %dr reject | %d? more context\n", idx, idx, idx)
+}
+
+type subtypeGroup struct {
+	header  string
+	subtype string
+	actions []PendingAction
+}
+
+func groupPendingBySubtype(actions []PendingAction) []subtypeGroup {
+	// Map subtypes to friendly headers
+	headers := map[string]string{
+		"human:decision":     "ACTIONABLE NOW (any device) — Decisions",
+		"human:review":       "ACTIONABLE NOW (any device) — Reviews",
+		"human:credentials":  "ACTIONABLE NOW (any device) — Credentials",
+		"human:workstation":  "NEEDS WORKSTATION — Physical access, SSH, browser auth",
+	}
+
+	// Order for deterministic output
+	subtypeOrder := []string{"human:decision", "human:review", "human:credentials", "human:workstation"}
+
+	// Group actions by subtype
+	grouped := make(map[string][]PendingAction)
+	for _, a := range actions {
+		subtype := a.HumanSubtype
+		if subtype == "" {
+			subtype = "human:workstation" // Default to most conservative
+		}
+		grouped[subtype] = append(grouped[subtype], a)
+	}
+
+	// Build result in order
+	var result []subtypeGroup
+	for _, subtype := range subtypeOrder {
+		if acts, ok := grouped[subtype]; ok && len(acts) > 0 {
+			result = append(result, subtypeGroup{
+				header:  headers[subtype],
+				subtype: subtype,
+				actions: acts,
+			})
+		}
+	}
+	return result
 }
 
 func renderCompletedActions(b *strings.Builder, actions []CompletedAction) {

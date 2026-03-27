@@ -25,6 +25,19 @@ Lifecycle state labels indicate where an issue sits in the dispatcher workflow.
 | status:claimed | #6f42c1 | Claimed by an agent (work in progress) |
 | status:needs-qc | #fd7e14 | Awaiting quality control review |
 
+## Human Action Subtypes
+
+When an issue is labeled `status:needs-human`, it MUST also have one of the following labels to indicate what kind of human action is required and what context is needed:
+
+| Label | Color | Description | Actionable from |
+|-------|-------|-------------|---|
+| human:decision | #0075CA | Judgment call or approval, no tools required | Any device |
+| human:review | #0075CA | Read and approve/reject, content is self-contained | Any device |
+| human:credentials | #0075CA | Needs API keys, tokens, or secrets only user holds | Any device (if keys accessible) |
+| human:workstation | #0075CA | Requires physical access, SSH, browser auth, or running agent session | Workstation only |
+
+**Note:** Every `status:needs-human` issue MUST have exactly one `human:*` subtype label. If the dispatcher cannot determine the correct subtype, it defaults to `human:workstation` (most conservative — never falsely promises mobile actionability).
+
 ## Type Labels
 
 Issue classification labels describe the kind of work being done.

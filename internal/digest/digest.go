@@ -41,6 +41,7 @@ type PendingAction struct {
 	Context      string
 	BlockedCount int
 	RequestedAt  time.Time
+	HumanSubtype string // human:decision, human:review, human:credentials, or human:workstation
 }
 
 // CompletedAction is a Tier 2 item the agent executed autonomously.
@@ -114,6 +115,8 @@ func BuildDigest(ctx context.Context, tracker forge.IssueTracker, costs CostSour
 		}
 		pa.Context = extractSection(iss.Body, "Context")
 		pa.BlockedCount = countDependents(ctx, tracker, iss.Number)
+		// Extract the human:* subtype from the issue labels
+		pa.HumanSubtype = extractHumanSubtype(iss.Labels)
 		d.PendingActions = append(d.PendingActions, pa)
 	}
 	sortPendingActions(d.PendingActions)
@@ -241,6 +244,22 @@ func extractSection(body, section string) string {
 	}
 
 	return strings.TrimSpace(strings.Join(result, "\n"))
+}
+
+// extractHumanSubtype finds the human:* subtype label from the issue's labels.
+// Returns the first match, or empty string if none found.
+func extractHumanSubtype(labels []string) string {
+	subtypes := models.HumanSubtypes()
+	subtypeSet := make(map[string]bool, len(subtypes))
+	for _, st := range subtypes {
+		subtypeSet[st] = true
+	}
+	for _, label := range labels {
+		if subtypeSet[label] {
+			return label
+		}
+	}
+	return ""
 }
 
 // countDependents counts open issues whose depends_on includes the given issue number.
