@@ -24,7 +24,7 @@ const defaultProbeTimeout = 10 * time.Second
 type Endpoint struct {
 	Name   string // human-readable name (e.g. "vm-300")
 	URL    string // base URL (e.g. "http://192.168.1.207:11434")
-	Kind   string // "ollama", "samverk", "gitea"
+	Kind   string // "ollama", "samverk", "gitea", "gitea-runners"
 	Source string // Synapset source key for query_memory
 }
 
@@ -67,7 +67,7 @@ func DefaultEndpoints() []Endpoint {
 		{Name: "cm-asus", URL: "http://100.88.37.47:11434", Kind: "ollama", Source: "cm-asus"},
 		{Name: "samverk-ct202", URL: "http://192.168.1.162:8080", Kind: "samverk", Source: "samverk-ct202"},
 		{Name: "gitea-ct200", URL: "http://192.168.1.160:3000", Kind: "gitea", Source: "gitea-ct200"},
-		// TODO: Add Proxmox API probing once API tokens are configured.
+		{Name: "gitea-runners", URL: "http://192.168.1.160:9090", Kind: "gitea-runners", Source: "gitea-runners"},
 	}
 }
 
@@ -114,6 +114,8 @@ func (p *Prober) probeEndpoint(ctx context.Context, ep Endpoint) ProbeResult {
 		return p.probeSamverk(ctx, ep)
 	case "gitea":
 		return p.probeGitea(ctx, ep)
+	case "gitea-runners":
+		return p.probeGiteaRunners(ctx, ep)
 	default:
 		return ProbeResult{
 			Endpoint: ep,
@@ -254,6 +256,56 @@ func (p *Prober) probeGitea(ctx context.Context, ep Endpoint) ProbeResult {
 	}
 
 	result.Fields["version"] = ver.Version
+	result.Reachable = true
+
+	return result
+}
+
+// giteaRunner is a single runner entry from the runner health endpoint.
+type giteaRunner struct {
+	ID               int    `json:"id"`
+	Name             string `json:"name"`
+	Version          string `json:"version"`
+	Status           string `json:"status"`
+	SecondsSinceOnline int  `json:"seconds_since_online"`
+}
+
+// probeGiteaRunners queries the runner health endpoint on CT 200 and reports
+// total/online/offline counts. Logs a warning for each offline runner.
+func (p *Prober) probeGiteaRunners(ctx context.Context, ep Endpoint) ProbeResult {
+	result := ProbeResult{Endpoint: ep, Fields: make(map[string]string)}
+
+	body, err := p.httpGet(ctx, ep.URL+"/runners")
+	if err != nil {
+		return ProbeResult{Endpoint: ep, Error: fmt.Sprintf("runners: %v", err)}
+	}
+
+	var runners []giteaRunner
+	if err = json.Unmarshal(body, &runners); err != nil {
+		return ProbeResult{Endpoint: ep, Error: fmt.Sprintf("parse runners: %v", err)}
+	}
+
+	var online, offline int
+	offlineNames := make([]string, 0)
+	for i := range runners {
+		if runners[i].Status == "online" {
+			online++
+		} else {
+			offline++
+			offlineNames = append(offlineNames, runners[i].Name)
+			p.logger.Warn("CI runner offline",
+				zap.String("runner", runners[i].Name),
+				zap.Int("id", runners[i].ID),
+				zap.Int("seconds_since_online", runners[i].SecondsSinceOnline))
+		}
+	}
+
+	result.Fields["total"] = fmt.Sprintf("%d", len(runners))
+	result.Fields["online"] = fmt.Sprintf("%d", online)
+	result.Fields["offline"] = fmt.Sprintf("%d", offline)
+	if len(offlineNames) > 0 {
+		result.Fields["offline_runners"] = strings.Join(offlineNames, ", ")
+	}
 	result.Reachable = true
 
 	return result

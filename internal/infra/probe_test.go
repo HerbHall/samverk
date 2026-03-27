@@ -132,6 +132,45 @@ func TestProbeGitea(t *testing.T) {
 	}
 }
 
+func TestProbeGiteaRunners(t *testing.T) {
+	runners := []giteaRunner{
+		{ID: 2, Name: "samverk-runner", Version: "v0.3.0", Status: "online", SecondsSinceOnline: 1},
+		{ID: 4, Name: "hdh-nzxt-win", Version: "v0.3.0", Status: "online", SecondsSinceOnline: 0},
+		{ID: 5, Name: "unraid-runner", Version: "v0.3.0", Status: "offline", SecondsSinceOnline: 600},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/runners" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(runners)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	p := NewProber(nil, zap.NewNop(), nil)
+	ep := Endpoint{Name: "test-runners", URL: srv.URL, Kind: "gitea-runners", Source: "test"}
+
+	result := p.probeGiteaRunners(context.Background(), ep)
+
+	if !result.Reachable {
+		t.Fatalf("expected reachable, got error: %s", result.Error)
+	}
+	if got := result.Fields["total"]; got != "3" {
+		t.Errorf("total = %q, want 3", got)
+	}
+	if got := result.Fields["online"]; got != "2" {
+		t.Errorf("online = %q, want 2", got)
+	}
+	if got := result.Fields["offline"]; got != "1" {
+		t.Errorf("offline = %q, want 1", got)
+	}
+	if got := result.Fields["offline_runners"]; got != "unraid-runner" {
+		t.Errorf("offline_runners = %q, want unraid-runner", got)
+	}
+}
+
 func TestProbeEndpointUnknownKind(t *testing.T) {
 	p := NewProber(nil, zap.NewNop(), nil)
 	ep := Endpoint{Name: "mystery", URL: "http://localhost:1", Kind: "unknown", Source: "test"}
@@ -362,8 +401,8 @@ func TestRunIntegration(t *testing.T) {
 
 func TestDefaultEndpoints(t *testing.T) {
 	eps := DefaultEndpoints()
-	if len(eps) < 5 {
-		t.Errorf("got %d default endpoints, want at least 5", len(eps))
+	if len(eps) < 6 {
+		t.Errorf("got %d default endpoints, want at least 6", len(eps))
 	}
 
 	kinds := make(map[string]int)
@@ -378,6 +417,9 @@ func TestDefaultEndpoints(t *testing.T) {
 	}
 	if kinds["gitea"] < 1 {
 		t.Errorf("want at least 1 gitea endpoint, got %d", kinds["gitea"])
+	}
+	if kinds["gitea-runners"] < 1 {
+		t.Errorf("want at least 1 gitea-runners endpoint, got %d", kinds["gitea-runners"])
 	}
 }
 
