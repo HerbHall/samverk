@@ -156,8 +156,20 @@ func (c *Client) GetPRChecks(ctx context.Context, number int) ([]forge.Check, er
 		}, nil
 	}
 
-	checks := make([]forge.Check, 0, len(combined.Statuses))
-	for _, s := range combined.Statuses {
+	// Deduplicate by context name, keeping the most recent status.
+	// Gitea's combined status API returns ALL statuses ever posted for a
+	// commit SHA, including stale entries from previous CI runs. Without
+	// dedup, a re-run that passes still shows the old "failure" entry.
+	latest := make(map[string]*gogitea.Status, len(combined.Statuses))
+	for i := range combined.Statuses {
+		s := combined.Statuses[i]
+		if prev, ok := latest[s.Context]; !ok || s.Created.After(prev.Created) {
+			latest[s.Context] = s
+		}
+	}
+
+	checks := make([]forge.Check, 0, len(latest))
+	for _, s := range latest {
 		checks = append(checks, forge.Check{
 			Name:   s.Context,
 			Status: mapCheckStatus(s.State),

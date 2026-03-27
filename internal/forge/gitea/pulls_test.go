@@ -261,14 +261,15 @@ func TestGetPRChecks(t *testing.T) {
 	if len(checks) != 2 {
 		t.Fatalf("len(checks) = %d, want 2", len(checks))
 	}
-	if checks[0].Name != "ci/build" {
-		t.Errorf("checks[0].Name = %q, want %q", checks[0].Name, "ci/build")
+	byName := make(map[string]forge.CheckStatus, len(checks))
+	for _, c := range checks {
+		byName[c.Name] = c.Status
 	}
-	if checks[0].Status != forge.CheckStatusSuccess {
-		t.Errorf("checks[0].Status = %q, want %q", checks[0].Status, forge.CheckStatusSuccess)
+	if byName["ci/build"] != forge.CheckStatusSuccess {
+		t.Errorf("ci/build status = %q, want %q", byName["ci/build"], forge.CheckStatusSuccess)
 	}
-	if checks[1].Name != "ci/test" {
-		t.Errorf("checks[1].Name = %q, want %q", checks[1].Name, "ci/test")
+	if byName["ci/test"] != forge.CheckStatusSuccess {
+		t.Errorf("ci/test status = %q, want %q", byName["ci/test"], forge.CheckStatusSuccess)
 	}
 }
 
@@ -341,6 +342,63 @@ func TestGetPRChecksEmptyHeadSHA(t *testing.T) {
 
 	if checks != nil {
 		t.Errorf("checks = %v, want nil", checks)
+	}
+}
+
+func TestGetPRChecksDeduplicatesStaleStatuses(t *testing.T) {
+	created := time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)
+	staleTime := time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)
+	freshTime := time.Date(2026, 3, 7, 13, 0, 0, 0, time.UTC) // 1 hour later
+
+	handler := http.NewServeMux()
+
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/pulls/4", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogitea.PullRequest{
+			Index:   4,
+			Title:   "PR with stale statuses",
+			State:   gogitea.StateOpen,
+			Head:    &gogitea.PRBranchInfo{Ref: "feature/dedup", Sha: "dedup123"},
+			Base:    &gogitea.PRBranchInfo{Ref: "main"},
+			Created: &created,
+			Updated: &created,
+		})
+	})
+
+	// Simulate Gitea returning both stale (failure) and fresh (success)
+	// statuses for the same context -- the exact scenario from PR #368.
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/commits/dedup123/status", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, http.StatusOK, &gogitea.CombinedStatus{
+			State: gogitea.StatusSuccess,
+			SHA:   "dedup123",
+			Statuses: []*gogitea.Status{
+				{Context: "CI / Lint", State: gogitea.StatusSuccess, Created: freshTime},
+				{Context: "CI / Lint", State: gogitea.StatusFailure, Created: staleTime},
+				{Context: "CI / Build", State: gogitea.StatusSuccess, Created: freshTime},
+				{Context: "CI / Build", State: gogitea.StatusPending, Created: staleTime},
+			},
+		})
+	})
+
+	c, _ := newTestClient(t, handler)
+
+	checks, err := c.GetPRChecks(context.Background(), 4)
+	if err != nil {
+		t.Fatalf("GetPRChecks: %v", err)
+	}
+
+	// Should deduplicate to 2 checks (one per context), both success.
+	if len(checks) != 2 {
+		t.Fatalf("len(checks) = %d, want 2 (deduped)", len(checks))
+	}
+	byName := make(map[string]forge.CheckStatus, len(checks))
+	for _, c := range checks {
+		byName[c.Name] = c.Status
+	}
+	if byName["CI / Lint"] != forge.CheckStatusSuccess {
+		t.Errorf("CI / Lint status = %q, want %q (stale failure should be filtered)", byName["CI / Lint"], forge.CheckStatusSuccess)
+	}
+	if byName["CI / Build"] != forge.CheckStatusSuccess {
+		t.Errorf("CI / Build status = %q, want %q (stale pending should be filtered)", byName["CI / Build"], forge.CheckStatusSuccess)
 	}
 }
 
