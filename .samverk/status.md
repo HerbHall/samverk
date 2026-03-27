@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-25T20:30:00Z
+updated: 2026-03-26T17:00:00Z
 updated_by: claude-code
 ---
 
@@ -9,7 +9,7 @@ updated_by: claude-code
 ## Phase
 
 Agent Autonomy -- getting Samverk to run itself. Infrastructure complete.
-Multi-project dispatch now operational. Critical routing fix needed (#270).
+Pipeline PR creation gap fixed. 29 issues re-queued for autonomous processing.
 
 ## What Is Running
 
@@ -33,23 +33,22 @@ Multi-project dispatch now operational. Critical routing fix needed (#270).
 
 ## Blocking Issue
 
-None -- two critical pipeline bugs fixed this session.
+None.
 
 ## Open Issues Summary
 
 | Status | Count | Notes |
 |--------|-------|-------|
-| queued | ~17 | Most have failure count caps from pre-fix era; may need reset |
+| queued | ~29 | Re-queued from needs-qc after pipeline fix; dispatcher will process |
 | needs-human | 4 | Genuinely blocked: #70, #74, #128, #218 |
-| needs-qc | 4 | Remaining agent branches (3 reviewed and merged this session) |
-| blocked (deps) | 11 | Waiting on #247 label chain (now merged) |
+| blocked (deps) | 11 | Dependency chains |
 
 ### Recommended Next Session
 
-1. Reset failure counts on queued issues so dispatcher retries with fixed code
-2. Observe pipeline throughput -- two root cause fixes should dramatically reduce failures
+1. Monitor pipeline throughput -- 29 re-queued issues should now create PRs (not comments)
+2. Verify PR creation is working (check for new open PRs on Gitea)
 3. Address #218 (CF Access OAuth proxy) when ready for focused session
-4. Complete #247 follow-up: migrate hardcoded label strings to generated constants
+4. Clean up stale local branches (20+ unmerged branches from prior sessions)
 
 ### Planned Next Waves
 
@@ -59,6 +58,36 @@ None -- two critical pipeline bugs fixed this session.
 | B | #57 Option B | Structured JSON output for Ollama code-gen |
 | C | #70 sub-issues (#64, #67, #69) | MCP parity tools |
 | D | #72 Phase 1+2 | WebSocket hub + expanded API |
+
+## Session Summary (2026-03-26)
+
+Pipeline gap diagnosis and fix. Root cause: Pool missing repoWriter/prManager wiring.
+
+### PRs Merged
+
+- **#332** -- Dispatcher re-scan after label changes (#324) -- pollQueued method, claimed guard
+- **#333** -- Auto-populate RCA category from failure class (#320) -- 13 class mappings, component extraction
+- **#334** -- communication-protocol.md schema v1.1.0 (#317) -- file_context, constraints, handoff_ready
+- **#335** -- Wire repoWriter/prManager into Pool (#331) -- CRITICAL pipeline fix
+
+### Root Cause: Pipeline PR Creation Gap
+
+All 33 needs-qc issues had agent code posted as **comments** instead of branches/PRs. Root cause: `Pool` struct in `pool.go` had no `repoWriter`/`prManager` fields. Runners created in `processTask()` always had `nil` prManager, causing `postProcess()` to silently fall through to `postComment()`. Integration test masked this by setting dependencies directly on the runner.
+
+Fix: 3 files, ~100 lines. Added fields + setters to Pool, wired forge client in main.go, passed to Runner in processTask.
+
+### Pipeline Health
+
+- 503 failures in 168h (pre-fix). 71% from two root causes fixed last session (CLAUDE.md corruption + CLI buffering)
+- Failure counts reset, 29 issues re-queued from needs-qc to queued
+- Deployed v0.1.24-43 to CT 202 with pipeline fix active
+- Label constants migration (#247) confirmed complete -- no further work needed
+
+### Issues Closed
+
+- #324, #320, #317 -- implemented and merged
+- #247 -- label constants already complete
+- #331 -- filed and merged (pipeline fix)
 
 ## Session Summary (2026-03-25, session 3)
 

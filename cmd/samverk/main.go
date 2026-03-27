@@ -379,6 +379,7 @@ func serveCmd() *cobra.Command {
 			}
 			if ls != nil {
 				apiHandler.SetLogStore(ls)
+				mcpHandler.SetLogQuerier(ls)
 			}
 			apiHandler.SetProjectRegistry(registry)
 			apiHandler.SetSynapsetProxy("https://synapset.herbhall.net")
@@ -444,6 +445,19 @@ func serveCmd() *cobra.Command {
 			// Wire worker lister from API into MCP digest so the get_digest tool
 			// shows registered PC agent workers in the RUNTIME METRICS section.
 			mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
+
+			// Audit MCP handler wiring -- surface missing dependencies at startup
+			// instead of silently degrading tools at runtime.
+			if gaps := mcpHandler.AuditWiring(); len(gaps) > 0 {
+				for _, g := range gaps {
+					logger.Warn("MCP wiring gap: tool will degrade",
+						zap.String("dependency", g.Dependency),
+						zap.String("affected_tools", g.Tool),
+						zap.String("impact", g.Description),
+					)
+				}
+			}
+
 			cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
 			apiHandler.SetToolCount(internalmcp.CountTools())
 			logger.Info("MCP handler enabled",

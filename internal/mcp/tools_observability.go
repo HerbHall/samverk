@@ -196,6 +196,8 @@ func (h *Handler) handleGetProviderHealth(
 	_ *gosdk.CallToolRequest,
 	_ getProviderHealthInput,
 ) (*gosdk.CallToolResult, any, error) {
+	h.touchCheckIn(ctx)
+
 	if h.healthM == nil {
 		return &gosdk.CallToolResult{
 			Content: []gosdk.Content{

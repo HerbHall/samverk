@@ -28,6 +28,8 @@ func (h *Handler) handleGetFailureSummary(
 		}, nil, nil
 	}
 
+	h.touchCheckIn(ctx)
+
 	dur := 24 * time.Hour
 	if input.Since != "" {
 		parsed, err := time.ParseDuration(input.Since)

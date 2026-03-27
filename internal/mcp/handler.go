@@ -1,11 +1,13 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
@@ -59,6 +61,17 @@ func NewHandler(tracker forge.IssueTracker, costs digest.CostSource, s store.Sto
 	}
 }
 
+// touchCheckIn persists the current time as the last human check-in.
+// Called from status-check tools (get_digest, get_failure_summary,
+// get_project_summary, get_provider_health) so the "away" duration
+// reflects the last time the user looked at the system, not just the
+// last get_digest call.
+func (h *Handler) touchCheckIn(ctx context.Context) {
+	if h.store != nil {
+		_ = h.store.SetLastCheckIn(ctx, time.Now())
+	}
+}
+
 // SetPRManager attaches a PullRequestManager to the handler.
 func (h *Handler) SetPRManager(prm forge.PullRequestManager) {
 	h.prManager = prm
@@ -99,6 +112,51 @@ func (h *Handler) SetLogQuerier(lq logQuerier) {
 // SetProviderRegistry attaches a provider registry for routing chain and last-success data.
 func (h *Handler) SetProviderRegistry(reg *provider.Registry) {
 	h.provReg = reg
+}
+
+// WiringGap describes an MCP handler dependency that is expected but not wired.
+type WiringGap struct {
+	Dependency  string // field name
+	Tool        string // MCP tool that degrades without it
+	Description string // what the user loses
+}
+
+// AuditWiring checks that all expected production dependencies are wired.
+// Returns a list of gaps. An empty list means the handler is fully wired.
+// Call this after all Set* calls during startup to surface missing wiring
+// before it silently degrades a tool at runtime.
+func (h *Handler) AuditWiring() []WiringGap {
+	type check struct {
+		ok          bool
+		dep, tool   string
+		description string
+	}
+	checks := []check{
+		{h.store != nil, "store", "get_digest/get_failure_summary/scaling", "session recording, failure tracking, check-in persistence"},
+		{h.costs != nil, "costs", "get_digest", "cost and token attribution in digest"},
+		{h.repo != nil, "repo", "read_file/list_files/search_code", "repository browsing"},
+		{h.writer != nil, "writer", "write_file/create_branch", "repository write operations"},
+		{h.prManager != nil, "prManager", "create_pr/merge_pr/review_pr", "pull request operations"},
+		{h.projects != nil, "projects", "set_project/list_projects", "multi-project routing"},
+		{h.logs != nil, "logs", "get_session_log", "session log queries"},
+		{h.sysM != nil, "sysM", "get_digest (runtime metrics)", "system metrics in digest"},
+		{h.workersM != nil, "workersM", "get_digest (worker status)", "PC worker status in digest"},
+		{h.work != nil, "work", "request_work/claim_issue/complete_issue", "work coordination"},
+		{h.scalingEvents != nil, "scalingEvents", "scale_history", "scaling event history"},
+		{h.policy != nil, "policy", "approve_action/reject_action", "autonomy policy enforcement"},
+	}
+
+	var gaps []WiringGap
+	for _, c := range checks {
+		if !c.ok {
+			gaps = append(gaps, WiringGap{
+				Dependency:  c.dep,
+				Tool:        c.tool,
+				Description: c.description,
+			})
+		}
+	}
+	return gaps
 }
 
 // activeOwnerRepo returns the owner and repo for the currently active project.

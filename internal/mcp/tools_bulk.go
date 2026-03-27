@@ -314,6 +314,8 @@ func (h *Handler) handleGetProjectSummary(
 	_ *gosdk.CallToolRequest,
 	_ getProjectSummaryInput,
 ) (*gosdk.CallToolResult, any, error) {
+	h.touchCheckIn(ctx)
+
 	tracker := h.activeTracker()
 	if tracker == nil {
 		return nil, nil, fmt.Errorf("no issue tracker configured")

@@ -225,9 +225,7 @@ func (h *Handler) handleGetDigest(
 	}
 
 	// Persist the current time as the new check-in anchor for the next call.
-	if h.store != nil {
-		_ = h.store.SetLastCheckIn(ctx, time.Now())
-	}
+	h.touchCheckIn(ctx)
 
 	// Enrich digest with PR data from all registered projects.
 	h.populateDigestPRs(ctx, &data)
