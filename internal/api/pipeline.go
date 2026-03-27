@@ -68,8 +68,35 @@ func classifyStage(iss *forge.Issue) string {
 // handlePipelineStages handles GET /api/v1/pipeline/stages.
 // It fetches all issues (open and closed) from the forge, classifies each by
 // its status:* label and state, then returns the pipeline breakdown.
+// Accepts an optional ?project=<name> query parameter to query a specific project.
+// If omitted, uses the active project (if projectRegistry is available) or the default tracker.
 func (a *API) handlePipelineStages(w http.ResponseWriter, r *http.Request) {
-	if a.tracker == nil {
+	// Determine which tracker to use based on the project parameter.
+	tracker := a.tracker
+
+	projectName := r.URL.Query().Get("project")
+	if projectName != "" {
+		if a.projectRegistry == nil {
+			// Project requested but registry not available.
+			writeError(w, http.StatusBadRequest, "project registry not configured")
+			return
+		}
+		// Project explicitly specified - use its tracker.
+		project, ok := a.projectRegistry.Get(projectName)
+		if !ok {
+			writeError(w, http.StatusNotFound, "project not found: "+projectName)
+			return
+		}
+		tracker = project.Tracker
+	} else if a.projectRegistry != nil {
+		// No project specified; use the active project from registry if available.
+		activeProject, err := a.projectRegistry.Active()
+		if err == nil && activeProject != nil && activeProject.Tracker != nil {
+			tracker = activeProject.Tracker
+		}
+	}
+
+	if tracker == nil {
 		writeError(w, http.StatusServiceUnavailable, "issue tracker not available")
 		return
 	}
@@ -79,7 +106,7 @@ func (a *API) handlePipelineStages(w http.ResponseWriter, r *http.Request) {
 	cutoff := now.Add(-24 * time.Hour)
 
 	// Fetch open issues.
-	openIssues, err := a.tracker.ListIssues(ctx, &forge.ListOptions{
+	openIssues, err := tracker.ListIssues(ctx, &forge.ListOptions{
 		State:   forge.StateOpen,
 		PerPage: maxLimit,
 		Page:    1,
@@ -90,7 +117,7 @@ func (a *API) handlePipelineStages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch closed issues (for "done" stage and throughput_24h).
-	closedIssues, err := a.tracker.ListIssues(ctx, &forge.ListOptions{
+	closedIssues, err := tracker.ListIssues(ctx, &forge.ListOptions{
 		State:   forge.StateClosed,
 		PerPage: maxLimit,
 		Page:    1,

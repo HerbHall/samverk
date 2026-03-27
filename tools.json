@@ -1,7 +1,7 @@
 {
   "description": "Pinned tool versions -- single source of truth for CI, local dev, and deploy.",
   "tools": {
-    "go": "1.26.1",
+    "go": "1.25.8",
     "node": "22",
     "pnpm": "10",
     "golangci-lint": "v2.10.1",
