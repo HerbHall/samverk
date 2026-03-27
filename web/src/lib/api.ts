@@ -767,4 +767,15 @@ export const api = {
     const qs = searchParams.toString()
     return fetchJSON<PipelineEvent[]>(`/pipeline/events${qs ? '?' + qs : ''}`)
   },
+
+  approveAction: (issueNumber: number) =>
+    fetchJSON<{ success: boolean; message: string }>(`/actions/${issueNumber}/approve`, {
+      method: 'POST',
+    }),
+
+  rejectAction: (issueNumber: number, reason?: string) =>
+    fetchJSON<{ success: boolean; message: string }>(`/actions/${issueNumber}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    }),
 }

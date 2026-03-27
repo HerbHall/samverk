@@ -159,7 +159,10 @@ export function Issues() {
     const id = ++toastCounter
     setToasts((prev) => [...prev, { id, message, isError }])
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000)
-  }, [])
+    if (!isError) {
+      void queryClient.invalidateQueries({ queryKey: ['issues'] })
+    }
+  }, [queryClient])
 
   const runBulkAction = useCallback(async (action: 'close' | 'label' | 'assign', value?: string) => {
     const numbers = Array.from(selectedIssues)
@@ -336,6 +339,7 @@ export function Issues() {
                           selected={selectedIssues.has(issue.number)}
                           onToggle={() => toggleExpand(issue.number)}
                           onSelect={() => toggleSelectIssue(issue.number)}
+                          onActionComplete={addToast}
                         />
                       ))}
                     </tbody>
@@ -431,13 +435,46 @@ function IssueRow({
   selected,
   onToggle,
   onSelect,
+  onActionComplete,
 }: {
   issue: Issue
   expanded: boolean
   selected: boolean
   onToggle: () => void
   onSelect: () => void
+  onActionComplete?: (message: string, isError: boolean) => void
 }) {
+  const [actionLoading, setActionLoading] = useState(false)
+  const isBlocked = issue.labels.includes('status:blocked')
+
+  const handleApprove = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (actionLoading) return
+    setActionLoading(true)
+    try {
+      await api.approveAction(issue.number)
+      onActionComplete?.('Issue approved and moved to queued', false)
+    } catch (err) {
+      onActionComplete?.(err instanceof Error ? err.message : 'Failed to approve issue', true)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleReject = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (actionLoading) return
+    setActionLoading(true)
+    try {
+      await api.rejectAction(issue.number, 'Rejected from Issues page')
+      onActionComplete?.('Issue rejected and closed', false)
+    } catch (err) {
+      onActionComplete?.(err instanceof Error ? err.message : 'Failed to reject issue', true)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   return (
     <>
       <tr
@@ -510,6 +547,24 @@ function IssueRow({
                 </pre>
               ) : (
                 <p className="text-sm italic text-gray-400 dark:text-gray-500">No description provided.</p>
+              )}
+              {isBlocked && (
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={handleApprove}
+                    disabled={actionLoading}
+                    className="rounded-lg bg-green-100 dark:bg-green-900/30 px-3 py-1.5 text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800/40 disabled:opacity-50"
+                  >
+                    {actionLoading ? 'Loading...' : 'Approve'}
+                  </button>
+                  <button
+                    onClick={handleReject}
+                    disabled={actionLoading}
+                    className="rounded-lg bg-red-100 dark:bg-red-900/30 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-800/40 disabled:opacity-50"
+                  >
+                    {actionLoading ? 'Loading...' : 'Reject'}
+                  </button>
+                </div>
               )}
             </div>
           </td>
