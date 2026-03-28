@@ -196,7 +196,7 @@ func (c *Client) HealthDetail(ctx context.Context) (*provider.HealthDetail, erro
 		detail.ModelLoaded = true
 	}
 
-	// Sum VRAM usage from running models.
+	// Sum VRAM usage from running models and check GPU offloading.
 	var totalVRAM int64
 	for i := range running {
 		totalVRAM += running[i].SizeVRAM
@@ -205,6 +205,11 @@ func (c *Client) HealthDetail(ctx context.Context) (*provider.HealthDetail, erro
 	// VRAMFree cannot be determined from Ollama's API alone, so we
 	// report total VRAM in use. The dashboard can interpret this.
 	detail.VRAMTotal = totalVRAM
+
+	// GPUOffloaded is true if any running model has VRAM allocated,
+	// meaning inference is at least partially on GPU. SizeVRAM==0 on a
+	// running model means the model is fully CPU-resident.
+	detail.GPUOffloaded = len(running) > 0 && totalVRAM > 0
 
 	return detail, nil
 }

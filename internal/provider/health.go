@@ -18,6 +18,12 @@ type ProviderHealth struct {
 	LastChecked time.Time `json:"last_checked"`
 	LastHealthy time.Time `json:"last_healthy"`
 	Error       string    `json:"error,omitempty"`
+	// GPU capability (from config, not runtime-detected).
+	GPUEnabled bool `json:"gpu_enabled,omitempty"`
+	// GPUDegraded is true when a gpu:true provider has a running model with
+	// SizeVRAM==0, meaning the model fell back to CPU despite GPU being configured.
+	// This is informational only — it does NOT affect Healthy status.
+	GPUDegraded bool `json:"gpu_degraded,omitempty"`
 	// Ollama-specific fields (zero values for non-Ollama providers).
 	ModelLoaded bool  `json:"model_loaded,omitempty"`
 	VRAMFree    int64 `json:"vram_free_bytes,omitempty"`
@@ -33,9 +39,10 @@ type HealthDetailer interface {
 // HealthDetail contains extended health information from providers that
 // support it (currently Ollama).
 type HealthDetail struct {
-	ModelLoaded bool
-	VRAMFree    int64
-	VRAMTotal   int64
+	ModelLoaded  bool
+	VRAMFree     int64
+	VRAMTotal    int64
+	GPUOffloaded bool // true if at least one running model has SizeVRAM > 0
 }
 
 // HealthMonitor runs periodic health checks against all providers in
@@ -190,6 +197,17 @@ func (hm *HealthMonitor) probeAll(ctx context.Context) {
 				existing.ModelLoaded = detail.ModelLoaded
 				existing.VRAMFree = detail.VRAMFree
 				existing.VRAMTotal = detail.VRAMTotal
+
+				// Populate GPU fields from config + runtime VRAM data.
+				existing.GPUEnabled = hm.registry.IsGPUEnabled(name)
+				if existing.GPUEnabled && detail.ModelLoaded && !detail.GPUOffloaded {
+					existing.GPUDegraded = true
+					hm.logger.Warn("GPU provider running model on CPU (SizeVRAM=0)",
+						zap.String("provider", name),
+					)
+				} else {
+					existing.GPUDegraded = false
+				}
 			}
 		}
 	}

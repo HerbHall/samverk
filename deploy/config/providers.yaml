@@ -42,6 +42,7 @@ providers:
     base_url: http://192.168.1.202:11434
     default_model: qwen3-coder:30b
     timeout_seconds: 600
+    gpu: true
     wol_mac: "E8-9C-25-78-69-D6"
 
   ollama-vm300:
@@ -49,12 +50,14 @@ providers:
     base_url: http://192.168.1.207:11434
     default_model: qwen2.5-coder:32b
     timeout_seconds: 600
+    gpu: true
 
   ollama-cmasus:
     type: ollama
     base_url: http://100.88.37.47:11434
     default_model: qwen2.5-coder:7b
     timeout_seconds: 300
+    gpu: true
     wol_mac: "FC-34-97-A5-27-E4"
 
 routing:

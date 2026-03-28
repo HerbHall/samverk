@@ -538,6 +538,224 @@ func TestValidateRoutingConfig_OllamaInTriageOnly(t *testing.T) {
 	}
 }
 
+// --- GPU-aware routing tests ---
+
+func TestGet_GPUPreference_SkipsCPUWhenGPUHealthy(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	cpu := &mockProvider{name: "cpu-ollama", healthy: true}
+	gpu := &mockProvider{name: "gpu-ollama", healthy: true}
+
+	reg.Register("cpu-ollama", "ollama", cpu, "qwen2.5-coder:7b")
+	reg.Register("gpu-ollama", "ollama", gpu, "qwen3-coder:30b")
+	reg.SetRouting(map[string][]string{
+		"default": {"cpu-ollama", "gpu-ollama"},
+	})
+	reg.SetGPUFlags(map[string]bool{
+		"cpu-ollama": false,
+		"gpu-ollama": true,
+	})
+
+	got, model, err := reg.Get(ctx, "default")
+	if err != nil {
+		t.Fatalf("Get: unexpected error: %v", err)
+	}
+	if got != gpu {
+		t.Errorf("Get: expected GPU provider, got CPU provider")
+	}
+	if model != "qwen3-coder:30b" {
+		t.Errorf("Get: model = %q, want %q", model, "qwen3-coder:30b")
+	}
+}
+
+func TestGet_GPUPreference_FallsThroughWhenGPUUnhealthy(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	cpu := &mockProvider{name: "cpu-ollama", healthy: true}
+	gpu := &mockProvider{name: "gpu-ollama", healthy: false}
+
+	reg.Register("cpu-ollama", "ollama", cpu, "qwen2.5-coder:7b")
+	reg.Register("gpu-ollama", "ollama", gpu, "qwen3-coder:30b")
+	reg.SetRouting(map[string][]string{
+		"default": {"cpu-ollama", "gpu-ollama"},
+	})
+	reg.SetGPUFlags(map[string]bool{
+		"cpu-ollama": false,
+		"gpu-ollama": true,
+	})
+
+	got, model, err := reg.Get(ctx, "default")
+	if err != nil {
+		t.Fatalf("Get: unexpected error: %v", err)
+	}
+	if got != cpu {
+		t.Errorf("Get: expected CPU fallback, got different provider")
+	}
+	if model != "qwen2.5-coder:7b" {
+		t.Errorf("Get: model = %q, want %q", model, "qwen2.5-coder:7b")
+	}
+}
+
+func TestGet_NoGPUInChain_ExistingBehaviorUnchanged(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	first := &mockProvider{name: "first", healthy: true}
+	second := &mockProvider{name: "second", healthy: true}
+
+	reg.Register("first", "ollama", first, "model-a")
+	reg.Register("second", "claude", second, "model-b")
+	reg.SetRouting(map[string][]string{
+		"default": {"first", "second"},
+	})
+	// No GPU flags set — all default to false.
+
+	got, _, err := reg.Get(ctx, "default")
+	if err != nil {
+		t.Fatalf("Get: unexpected error: %v", err)
+	}
+	if got != first {
+		t.Errorf("Get: expected first provider (chain order), got second")
+	}
+}
+
+func TestGet_AllGPUChain_FirstHealthyGPUWins(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	gpu1 := &mockProvider{name: "gpu1", healthy: false}
+	gpu2 := &mockProvider{name: "gpu2", healthy: true}
+	gpu3 := &mockProvider{name: "gpu3", healthy: true}
+
+	reg.Register("gpu1", "ollama", gpu1, "model-1")
+	reg.Register("gpu2", "ollama", gpu2, "model-2")
+	reg.Register("gpu3", "ollama", gpu3, "model-3")
+	reg.SetRouting(map[string][]string{
+		"default": {"gpu1", "gpu2", "gpu3"},
+	})
+	reg.SetGPUFlags(map[string]bool{
+		"gpu1": true,
+		"gpu2": true,
+		"gpu3": true,
+	})
+
+	got, model, err := reg.Get(ctx, "default")
+	if err != nil {
+		t.Fatalf("Get: unexpected error: %v", err)
+	}
+	if got != gpu2 {
+		t.Errorf("Get: expected gpu2 (first healthy GPU), got different")
+	}
+	if model != "model-2" {
+		t.Errorf("Get: model = %q, want %q", model, "model-2")
+	}
+}
+
+func TestGetAfter_GPUPreference_RespectseCursor(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	gpu1 := &mockProvider{name: "gpu1", healthy: true}
+	cpu := &mockProvider{name: "cpu", healthy: true}
+	gpu2 := &mockProvider{name: "gpu2", healthy: true}
+
+	reg.Register("gpu1", "ollama", gpu1, "model-1")
+	reg.Register("cpu", "ollama", cpu, "model-cpu")
+	reg.Register("gpu2", "ollama", gpu2, "model-2")
+	reg.SetRouting(map[string][]string{
+		"default": {"gpu1", "cpu", "gpu2"},
+	})
+	reg.SetGPUFlags(map[string]bool{
+		"gpu1": true,
+		"cpu":  false,
+		"gpu2": true,
+	})
+
+	// After gpu1 (cursor past it) — should pick gpu2, skipping cpu.
+	got, model, err := reg.GetAfter(ctx, "default", "gpu1")
+	if err != nil {
+		t.Fatalf("GetAfter: unexpected error: %v", err)
+	}
+	if got != gpu2 {
+		t.Errorf("GetAfter: expected gpu2 (GPU after cursor), got different")
+	}
+	if model != "model-2" {
+		t.Errorf("GetAfter: model = %q, want %q", model, "model-2")
+	}
+}
+
+func TestGetAfter_GPUPreference_FallbackToCPUAfterCursor(t *testing.T) {
+	ctx := context.Background()
+	reg := NewRegistry(nil)
+
+	gpu1 := &mockProvider{name: "gpu1", healthy: true}
+	cpu := &mockProvider{name: "cpu", healthy: true}
+	gpu2 := &mockProvider{name: "gpu2", healthy: false}
+
+	reg.Register("gpu1", "ollama", gpu1, "model-1")
+	reg.Register("cpu", "ollama", cpu, "model-cpu")
+	reg.Register("gpu2", "ollama", gpu2, "model-2")
+	reg.SetRouting(map[string][]string{
+		"default": {"gpu1", "cpu", "gpu2"},
+	})
+	reg.SetGPUFlags(map[string]bool{
+		"gpu1": true,
+		"cpu":  false,
+		"gpu2": true,
+	})
+
+	// After gpu1, gpu2 unhealthy — should fall back to cpu.
+	got, model, err := reg.GetAfter(ctx, "default", "gpu1")
+	if err != nil {
+		t.Fatalf("GetAfter: unexpected error: %v", err)
+	}
+	if got != cpu {
+		t.Errorf("GetAfter: expected cpu fallback, got different")
+	}
+	if model != "model-cpu" {
+		t.Errorf("GetAfter: model = %q, want %q", model, "model-cpu")
+	}
+}
+
+func TestIsGPUEnabled(t *testing.T) {
+	reg := NewRegistry(nil)
+	reg.SetGPUFlags(map[string]bool{
+		"ollama-nzxt": true,
+		"claude-api":  false,
+	})
+
+	if !reg.IsGPUEnabled("ollama-nzxt") {
+		t.Error("IsGPUEnabled: expected true for ollama-nzxt")
+	}
+	if reg.IsGPUEnabled("claude-api") {
+		t.Error("IsGPUEnabled: expected false for claude-api")
+	}
+	if reg.IsGPUEnabled("nonexistent") {
+		t.Error("IsGPUEnabled: expected false for nonexistent provider")
+	}
+}
+
+func TestChainAfter(t *testing.T) {
+	chain := []string{"a", "b", "c", "d"}
+
+	tail := chainAfter(chain, "b")
+	if len(tail) != 2 || tail[0] != "c" || tail[1] != "d" {
+		t.Errorf("chainAfter(b): got %v, want [c d]", tail)
+	}
+
+	tail = chainAfter(chain, "d")
+	if tail != nil {
+		t.Errorf("chainAfter(d): got %v, want nil (last element)", tail)
+	}
+
+	tail = chainAfter(chain, "nonexistent")
+	if tail != nil {
+		t.Errorf("chainAfter(nonexistent): got %v, want nil", tail)
+	}
+}
+
 func TestValidateRoutingConfig_NilInputs(t *testing.T) {
 	t.Parallel()
 

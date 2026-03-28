@@ -24,6 +24,7 @@ type ProviderConfig struct {
 	AllowedTools   string `yaml:"allowed_tools"`   // claude-cli: comma-separated tool list (e.g. "Bash,Read,Edit,Write,Glob,Grep")
 	MaxTurns       int    `yaml:"max_turns"`       // claude-cli: max agentic turns per session; 0 means no limit
 	WoLMAC         string `yaml:"wol_mac"`         // optional Wake-on-LAN MAC address (e.g. "AA:BB:CC:DD:EE:FF")
+	GPU            bool   `yaml:"gpu"`             // true if the provider host has GPU access for model inference
 }
 
 // RegistryConfig is the top-level YAML structure for provider configuration.
@@ -47,11 +48,12 @@ type ProviderFactory func(name string, cfg ProviderConfig) (Provider, error)
 
 // Registry holds constructed providers and routing rules.
 type Registry struct {
-	providers map[string]Provider  // name -> Provider instance
-	models    map[string]string    // name -> default model
-	types     map[string]string    // name -> provider type
-	routing   map[string][]string  // agent_type -> provider names
-	logger    *zap.Logger
+	providers  map[string]Provider  // name -> Provider instance
+	models     map[string]string    // name -> default model
+	types      map[string]string    // name -> provider type
+	routing    map[string][]string  // agent_type -> provider names
+	gpuEnabled map[string]bool      // name -> true if provider host has GPU
+	logger     *zap.Logger
 }
 
 // NewRegistry creates an empty provider registry.
@@ -60,11 +62,12 @@ func NewRegistry(logger *zap.Logger) *Registry {
 		logger = zap.NewNop()
 	}
 	return &Registry{
-		providers: make(map[string]Provider),
-		models:    make(map[string]string),
-		types:     make(map[string]string),
-		routing:   make(map[string][]string),
-		logger:    logger,
+		providers:  make(map[string]Provider),
+		models:     make(map[string]string),
+		types:      make(map[string]string),
+		routing:    make(map[string][]string),
+		gpuEnabled: make(map[string]bool),
+		logger:     logger,
 	}
 }
 
@@ -85,8 +88,26 @@ func (r *Registry) SetRouting(routing map[string][]string) {
 	r.routing = routing
 }
 
+// SetGPUFlags configures which providers have GPU acceleration available.
+// Providers not in the map default to GPU-disabled. Called by LoadRegistry
+// after all providers are registered.
+func (r *Registry) SetGPUFlags(flags map[string]bool) {
+	r.gpuEnabled = flags
+}
+
+// IsGPUEnabled returns whether the named provider has GPU acceleration.
+func (r *Registry) IsGPUEnabled(name string) bool {
+	return r.gpuEnabled[name]
+}
+
 // Get returns the first healthy provider from the routing chain for the given
 // agent type. If the agent type is not configured, it falls back to "default".
+//
+// GPU preference: when at least one GPU-enabled provider in the chain is healthy,
+// non-GPU providers are skipped. If no GPU provider is healthy, chain order is
+// used as-is. This preserves operator-defined chain priority while avoiding
+// CPU-only inference when a GPU alternative is available.
+//
 // Returns (provider, model, error).
 func (r *Registry) Get(ctx context.Context, agentType string) (Provider, string, error) {
 	chain, ok := r.routing[agentType]
@@ -103,10 +124,19 @@ func (r *Registry) Get(ctx context.Context, agentType string) (Provider, string,
 		)
 	}
 
+	hasHealthyGPU := r.chainHasHealthyGPU(ctx, chain)
+
 	for _, name := range chain {
 		p, exists := r.providers[name]
 		if !exists {
 			r.logger.Warn("provider in chain not registered",
+				zap.String("agent_type", agentType),
+				zap.String("provider", name),
+			)
+			continue
+		}
+		if hasHealthyGPU && !r.gpuEnabled[name] {
+			r.logger.Debug("skipping non-GPU provider (GPU alternative available)",
 				zap.String("agent_type", agentType),
 				zap.String("provider", name),
 			)
@@ -117,6 +147,7 @@ func (r *Registry) Get(ctx context.Context, agentType string) (Provider, string,
 				zap.String("agent_type", agentType),
 				zap.String("provider", name),
 				zap.String("model", r.models[name]),
+				zap.Bool("gpu", r.gpuEnabled[name]),
 			)
 			return p, r.models[name], nil
 		}
@@ -133,10 +164,29 @@ func (r *Registry) Get(ctx context.Context, agentType string) (Provider, string,
 	return nil, "", ErrNoHealthyProvider
 }
 
+// chainHasHealthyGPU checks whether at least one GPU-enabled provider in the
+// chain is currently healthy. Used to decide whether non-GPU providers should
+// be skipped during routing.
+func (r *Registry) chainHasHealthyGPU(ctx context.Context, chain []string) bool {
+	for _, name := range chain {
+		if !r.gpuEnabled[name] {
+			continue
+		}
+		if p, ok := r.providers[name]; ok && p.Healthy(ctx) {
+			return true
+		}
+	}
+	return false
+}
+
 // GetAfter returns the first healthy provider in the routing chain that comes
 // after the named provider. This enables timeout failover: when a provider
 // times out, the pool can retry with the next one in the chain without
 // re-checking providers already tried.
+//
+// GPU preference applies only to providers after the cursor. If no GPU
+// provider after the cursor is healthy, non-GPU providers are used as fallback.
+//
 // Returns ErrNoHealthyProvider if no subsequent healthy provider exists.
 func (r *Registry) GetAfter(ctx context.Context, agentType, afterProvider string) (p Provider, model string, err error) {
 	chain, ok := r.routing[agentType]
@@ -147,17 +197,21 @@ func (r *Registry) GetAfter(ctx context.Context, agentType, afterProvider string
 		}
 	}
 
-	// Find afterProvider in the chain, then check subsequent entries.
-	found := false
-	for _, name := range chain {
-		if !found {
-			if name == afterProvider {
-				found = true
-			}
-			continue
-		}
+	// Build the tail of the chain after the cursor.
+	tail := chainAfter(chain, afterProvider)
+
+	hasHealthyGPU := r.chainHasHealthyGPU(ctx, tail)
+
+	for _, name := range tail {
 		prov, exists := r.providers[name]
 		if !exists {
+			continue
+		}
+		if hasHealthyGPU && !r.gpuEnabled[name] {
+			r.logger.Debug("failover: skipping non-GPU provider",
+				zap.String("agent_type", agentType),
+				zap.String("provider", name),
+			)
 			continue
 		}
 		if prov.Healthy(ctx) {
@@ -166,6 +220,7 @@ func (r *Registry) GetAfter(ctx context.Context, agentType, afterProvider string
 				zap.String("after", afterProvider),
 				zap.String("provider", name),
 				zap.String("model", r.models[name]),
+				zap.Bool("gpu", r.gpuEnabled[name]),
 			)
 			return prov, r.models[name], nil
 		}
@@ -176,6 +231,16 @@ func (r *Registry) GetAfter(ctx context.Context, agentType, afterProvider string
 	}
 
 	return nil, "", ErrNoHealthyProvider
+}
+
+// chainAfter returns the portion of the chain after the named provider.
+func chainAfter(chain []string, after string) []string {
+	for i, name := range chain {
+		if name == after && i+1 < len(chain) {
+			return chain[i+1:]
+		}
+	}
+	return nil
 }
 
 // Routing returns a copy of the routing table mapping chain names to provider names.
@@ -316,6 +381,13 @@ func LoadRegistry(path string, factory ProviderFactory, logger *zap.Logger) (*Re
 		}
 		reg.Register(name, pcfg.Type, p, pcfg.DefaultModel)
 	}
+
+	// Wire GPU flags from config into the registry.
+	gpuFlags := make(map[string]bool, len(cfg.Providers))
+	for name := range cfg.Providers {
+		gpuFlags[name] = cfg.Providers[name].GPU
+	}
+	reg.SetGPUFlags(gpuFlags)
 
 	if cfg.Routing != nil {
 		reg.SetRouting(cfg.Routing)
