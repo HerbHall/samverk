@@ -186,6 +186,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/pipeline/stages", a.handlePipelineStages)
 	mux.HandleFunc("GET /api/v1/system/version", a.handleSystemVersion)
 	mux.HandleFunc("GET /api/v1/system/subsystems", a.handleSystemSubsystems)
+	mux.HandleFunc("GET /api/v1/diagnostics", a.handleDiagnostics)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)
