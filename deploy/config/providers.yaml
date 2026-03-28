@@ -60,11 +60,18 @@ providers:
     gpu: true
     wol_mac: "FC-34-97-A5-27-E4"
 
+  ollama-nzxt-docker:
+    type: ollama
+    base_url: http://192.168.1.202:11435
+    default_model: qwen2.5-coder:3b
+    timeout_seconds: 300
+    gpu: false
+
 routing:
-  triage:   [ollama-cmasus, ollama-vm300, claude-haiku]
-  default:  [ollama-nzxt, claude-sonnet]
+  triage:   [ollama-nzxt-docker, ollama-cmasus, ollama-vm300, claude-haiku]
+  default:  [ollama-nzxt, ollama-nzxt-docker, claude-sonnet]
   code-gen: [claude-sonnet, claude-haiku]
   complex:  [claude-opus, claude-sonnet]
-  local:    [ollama-nzxt, ollama-vm300, ollama-cmasus, claude-sonnet]
+  local:    [ollama-nzxt, ollama-vm300, ollama-cmasus, ollama-nzxt-docker, claude-sonnet]
   frontend:  [claude-sonnet]
   local-cc:  [claudecli-nzxt, claudecli-vm300, claude-sonnet]

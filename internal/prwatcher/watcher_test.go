@@ -891,8 +891,8 @@ func TestIsStaleCI(t *testing.T) {
 		{
 			name: "all old failures - stale",
 			checks: []forge.Check{
-				{Name: "ci/build", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-3 * time.Hour)},
-				{Name: "ci/test", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-2 * time.Hour)},
+				{Name: "ci/build", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-4 * time.Hour)},
+				{Name: "ci/test", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-3 * time.Hour)},
 			},
 			want: true,
 		},
