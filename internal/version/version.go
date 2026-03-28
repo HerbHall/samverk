@@ -13,6 +13,9 @@ var (
 	BuildDate = "unknown"
 )
 
+// CanaryOpus verifies the claude-opus provider path.
+const CanaryOpus = "complex-chain"
+
 // ParseGitDescribe extracts the commit SHA from a git describe format version.
 // Handles formats like: v0.1.24, v0.1.24-58-ge6ceaf9
 // Returns the commit SHA (e.g., "e6ceaf9" or the full hash if only a version).
