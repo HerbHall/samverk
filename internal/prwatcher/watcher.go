@@ -135,7 +135,8 @@ func (w *Watcher) poll(ctx context.Context) error {
 		tier := ClassifyPRTier(pr, nil)
 
 		// Handle stale CI-failed PRs before checking tier eligibility.
-		if !ciPassed && w.isStaleCI(pr) {
+		// Only remediate if all checks are terminal (CI done running), at least one failed, and stale.
+		if !ciPassed && w.allChecksTerminal(checks) && w.hasCIFailures(checks) && w.isStaleCI(pr, checks) {
 			failedChecks := w.getFailedCheckNames(checks)
 			if remediateErr := w.remediateStaleCIFailure(ctx, pr, failedChecks); remediateErr != nil {
 				w.logger.Error("pr-watcher: remediate stale CI failure", zap.Int("pr", pr.Number), zap.Error(remediateErr))
@@ -502,6 +503,34 @@ func (w *Watcher) allChecksPassed(checks []forge.Check) bool {
 	return true
 }
 
+// allChecksTerminal returns true only when every check is either success or failure.
+// Returns false if any check is pending (CI still running).
+func (w *Watcher) allChecksTerminal(checks []forge.Check) bool {
+	if len(checks) == 0 {
+		return false
+	}
+
+	for _, c := range checks {
+		if c.Status == forge.CheckStatusPending {
+			return false
+		}
+	}
+
+	return true
+}
+
+// hasCIFailures returns true if at least one check has failed status.
+// Pending checks are not considered failures.
+func (w *Watcher) hasCIFailures(checks []forge.Check) bool {
+	for _, c := range checks {
+		if c.Status == forge.CheckStatusFailure {
+			return true
+		}
+	}
+
+	return false
+}
+
 // unblockDependents scans blocked issues and transitions any whose dependencies
 // are all satisfied after closedIssueNumber was closed.
 // It removes status:blocked and adds status:queued for unblocked issues.
@@ -610,20 +639,52 @@ func (w *Watcher) checkAllDependenciesSatisfied(ctx context.Context, fm *models.
 	return false
 }
 
-// isStaleCI checks if a PR has been in CI-failed state for longer than the configured threshold.
-func (w *Watcher) isStaleCI(pr *forge.PullRequest) bool {
+// mostRecentCheckTime returns the timestamp of the most recent check,
+// or the zero time if the check list is empty.
+func (w *Watcher) mostRecentCheckTime(checks []forge.Check) time.Time {
+	if len(checks) == 0 {
+		return time.Time{}
+	}
+
+	latest := checks[0].CreatedAt
+	for i := 1; i < len(checks); i++ {
+		if checks[i].CreatedAt.After(latest) {
+			latest = checks[i].CreatedAt
+		}
+	}
+
+	return latest
+}
+
+// isStaleCI checks if a PR's CI checks have been in failed state for longer than
+// the configured threshold. It measures staleness from the most recent check
+// status timestamp, not from PR activity (which can be reset by comments, labels, etc).
+// Returns false if all checks are not terminal (CI still running).
+func (w *Watcher) isStaleCI(pr *forge.PullRequest, checks []forge.Check) bool {
+	// Don't remediate if CI is still running.
+	if !w.allChecksTerminal(checks) {
+		return false
+	}
+
 	thresholdMinutes := w.mergeCfg.CIFailureThresholdMinutes
 	if thresholdMinutes <= 0 {
 		thresholdMinutes = 120 // default 2 hours
 	}
-	return time.Since(pr.UpdatedAt) > time.Duration(thresholdMinutes)*time.Minute
+
+	mostRecent := w.mostRecentCheckTime(checks)
+	if mostRecent.IsZero() {
+		return false
+	}
+
+	return time.Since(mostRecent) > time.Duration(thresholdMinutes)*time.Minute
 }
 
-// getFailedCheckNames extracts the names of failed checks from a list of checks.
+// getFailedCheckNames extracts the names of checks with failure status.
+// Pending checks are not included; only checks that have actually failed.
 func (w *Watcher) getFailedCheckNames(checks []forge.Check) []string {
 	failed := make([]string, 0, len(checks))
 	for _, c := range checks {
-		if c.Status != forge.CheckStatusSuccess {
+		if c.Status == forge.CheckStatusFailure {
 			failed = append(failed, c.Name)
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
@@ -642,5 +643,419 @@ func TestIsActionableComment(t *testing.T) {
 				t.Errorf("isActionableComment(%q) = %v, want %v", tt.body, got, tt.want)
 			}
 		})
+	}
+}
+
+// --- Tests for remediation functions (new coverage) ---
+
+func TestAllChecksTerminal(t *testing.T) {
+	w := &Watcher{}
+
+	tests := []struct {
+		name   string
+		checks []forge.Check
+		want   bool
+	}{
+		{
+			name:   "empty checks",
+			checks: nil,
+			want:   false,
+		},
+		{
+			name: "all success",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusSuccess},
+				{Name: "ci/test", Status: forge.CheckStatusSuccess},
+			},
+			want: true,
+		},
+		{
+			name: "all failure",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusFailure},
+				{Name: "ci/test", Status: forge.CheckStatusFailure},
+			},
+			want: true,
+		},
+		{
+			name: "mixed success and failure - terminal",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusSuccess},
+				{Name: "ci/test", Status: forge.CheckStatusFailure},
+			},
+			want: true,
+		},
+		{
+			name: "one pending - not terminal",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusSuccess},
+				{Name: "ci/test", Status: forge.CheckStatusPending},
+			},
+			want: false,
+		},
+		{
+			name: "all pending - not terminal",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusPending},
+				{Name: "ci/test", Status: forge.CheckStatusPending},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.allChecksTerminal(tt.checks)
+			if got != tt.want {
+				t.Errorf("allChecksTerminal() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasCIFailures(t *testing.T) {
+	w := &Watcher{}
+
+	tests := []struct {
+		name   string
+		checks []forge.Check
+		want   bool
+	}{
+		{
+			name:   "empty checks",
+			checks: nil,
+			want:   false,
+		},
+		{
+			name: "all success",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusSuccess},
+				{Name: "ci/test", Status: forge.CheckStatusSuccess},
+			},
+			want: false,
+		},
+		{
+			name: "one failure",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusSuccess},
+				{Name: "ci/test", Status: forge.CheckStatusFailure},
+			},
+			want: true,
+		},
+		{
+			name: "multiple failures",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusFailure},
+				{Name: "ci/test", Status: forge.CheckStatusFailure},
+			},
+			want: true,
+		},
+		{
+			name: "pending only - no failures",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusPending},
+				{Name: "ci/test", Status: forge.CheckStatusPending},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.hasCIFailures(tt.checks)
+			if got != tt.want {
+				t.Errorf("hasCIFailures() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetFailedCheckNames(t *testing.T) {
+	w := &Watcher{}
+
+	tests := []struct {
+		name      string
+		checks    []forge.Check
+		wantNames []string
+	}{
+		{
+			name:      "empty checks",
+			checks:    nil,
+			wantNames: []string{},
+		},
+		{
+			name: "all success",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusSuccess},
+				{Name: "ci/test", Status: forge.CheckStatusSuccess},
+			},
+			wantNames: []string{},
+		},
+		{
+			name: "one failure",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusSuccess},
+				{Name: "ci/test", Status: forge.CheckStatusFailure},
+			},
+			wantNames: []string{"ci/test"},
+		},
+		{
+			name: "multiple failures",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusFailure},
+				{Name: "ci/lint", Status: forge.CheckStatusSuccess},
+				{Name: "ci/test", Status: forge.CheckStatusFailure},
+			},
+			wantNames: []string{"ci/build", "ci/test"},
+		},
+		{
+			name: "pending only - not failures",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusPending},
+				{Name: "ci/test", Status: forge.CheckStatusPending},
+			},
+			wantNames: []string{},
+		},
+		{
+			name: "mixed pending failure success",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusFailure},
+				{Name: "ci/lint", Status: forge.CheckStatusPending},
+				{Name: "ci/test", Status: forge.CheckStatusSuccess},
+			},
+			wantNames: []string{"ci/build"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.getFailedCheckNames(tt.checks)
+			if len(got) != len(tt.wantNames) {
+				t.Fatalf("getFailedCheckNames() = %v, want %v", got, tt.wantNames)
+			}
+			for i, v := range got {
+				if v != tt.wantNames[i] {
+					t.Errorf("getFailedCheckNames()[%d] = %q, want %q", i, v, tt.wantNames[i])
+				}
+			}
+		})
+	}
+}
+
+func TestIsStaleCI(t *testing.T) {
+	w := &Watcher{
+		mergeCfg: autonomy.MergeConfig{CIFailureThresholdMinutes: 120},
+	}
+
+	now := time.Now()
+
+	tests := []struct {
+		name   string
+		checks []forge.Check
+		want   bool
+	}{
+		{
+			name:   "empty checks - not stale",
+			checks: nil,
+			want:   false,
+		},
+		{
+			name: "pending checks - not terminal, not stale",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusPending, CreatedAt: now.Add(-2 * time.Hour)},
+			},
+			want: false,
+		},
+		{
+			name: "recent failure - not stale",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-30 * time.Minute)},
+			},
+			want: false,
+		},
+		{
+			name: "old failure - stale",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-3 * time.Hour)},
+			},
+			want: true,
+		},
+		{
+			name: "multiple checks - use most recent",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusSuccess, CreatedAt: now.Add(-5 * time.Hour)},
+				{Name: "ci/test", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-30 * time.Minute)},
+			},
+			want: false,
+		},
+		{
+			name: "all old failures - stale",
+			checks: []forge.Check{
+				{Name: "ci/build", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-3 * time.Hour)},
+				{Name: "ci/test", Status: forge.CheckStatusFailure, CreatedAt: now.Add(-2 * time.Hour)},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.isStaleCI(&forge.PullRequest{}, tt.checks)
+			if got != tt.want {
+				t.Errorf("isStaleCI() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRemediateStaleCIFailure_Close_RequeueFirstAttempt(t *testing.T) {
+	it := &mockIssueTracker{
+		comments: make(map[int][]*forge.Comment),
+	}
+	w := &Watcher{
+		issueTracker: it,
+		mergeCfg:     autonomy.MergeConfig{},
+	}
+
+	pr := &forge.PullRequest{
+		Number: 42,
+		Title:  "feat: add feature",
+		Body:   "Closes #10",
+	}
+	failedChecks := []string{"ci/build", "ci/test"}
+
+	err := w.remediateStaleCIFailure(context.Background(), pr, failedChecks)
+	if err != nil {
+		t.Fatalf("remediateStaleCIFailure: %v", err)
+	}
+
+	// Verify PR was closed.
+	if len(it.updateCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIssue call, got %d", len(it.updateCalls))
+	}
+	if it.updateCalls[0].number != 42 {
+		t.Errorf("UpdateIssue PR number = %d, want 42", it.updateCalls[0].number)
+	}
+	if it.updateCalls[0].req.State == nil || *it.updateCalls[0].req.State != forge.StateClosed {
+		t.Errorf("UpdateIssue state = %v, want StateClosed", it.updateCalls[0].req.State)
+	}
+
+	// Verify status:needs-qc was removed from issue.
+	if _, ok := it.removeLabelCalls[10]; !ok {
+		t.Fatalf("expected RemoveLabel call for issue 10")
+	}
+	if it.removeLabelCalls[10][0] != models.LabelStatusNeedsQc {
+		t.Errorf("RemoveLabel = %q, want %q", it.removeLabelCalls[10][0], models.LabelStatusNeedsQc)
+	}
+
+	// Verify status:queued was added (first attempt).
+	if _, ok := it.addLabelCalls[10]; !ok {
+		t.Fatalf("expected AddLabel call for issue 10")
+	}
+	found := false
+	for _, label := range it.addLabelCalls[10] {
+		if label == models.LabelStatusQueued {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected status:queued label to be added, got %v", it.addLabelCalls[10])
+	}
+
+	// Verify status:needs-human was NOT added (first attempt).
+	if labels, ok := it.addLabelCalls[10]; ok {
+		for _, label := range labels {
+			if label == models.LabelStatusNeedsHuman {
+				t.Error("status:needs-human should not be added on first attempt")
+			}
+		}
+	}
+}
+
+func TestRemediateStaleCIFailure_EscalateThirdAttempt(t *testing.T) {
+	// Mock with 2 existing CI failures to simulate third attempt.
+	it := &mockIssueTracker{
+		comments: map[int][]*forge.Comment{
+			10: {
+				{Body: "CI FAILED [prwatcher] [2026-01-01T00:00:00Z] (attempt 1)"},
+				{Body: "CI FAILED [prwatcher] [2026-01-02T00:00:00Z] (attempt 2)"},
+			},
+		},
+	}
+	w := &Watcher{
+		issueTracker: it,
+		mergeCfg:     autonomy.MergeConfig{},
+	}
+
+	pr := &forge.PullRequest{
+		Number: 43,
+		Title:  "fix: resolve bug",
+		Body:   "Closes #10",
+	}
+	failedChecks := []string{"ci/build"}
+
+	err := w.remediateStaleCIFailure(context.Background(), pr, failedChecks)
+	if err != nil {
+		t.Fatalf("remediateStaleCIFailure: %v", err)
+	}
+
+	// Verify status:needs-human was added (third attempt/escalation).
+	if _, ok := it.addLabelCalls[10]; !ok {
+		t.Fatalf("expected AddLabel call for issue 10")
+	}
+	found := false
+	for _, label := range it.addLabelCalls[10] {
+		if label == models.LabelStatusNeedsHuman {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected status:needs-human label to be added on escalation")
+	}
+
+	// Verify human:review was added.
+	foundReview := false
+	for _, label := range it.addLabelCalls[10] {
+		if label == models.LabelHumanReview {
+			foundReview = true
+			break
+		}
+	}
+	if !foundReview {
+		t.Error("expected human:review label to be added on escalation")
+	}
+}
+
+func TestRemediateStaleCIFailure_NoLinkedIssue(t *testing.T) {
+	it := &mockIssueTracker{}
+	w := &Watcher{issueTracker: it}
+
+	pr := &forge.PullRequest{
+		Number: 99,
+		Title:  "chore: update deps",
+		Body:   "No linked issue",
+	}
+
+	err := w.remediateStaleCIFailure(context.Background(), pr, []string{"ci/lint"})
+	if err != nil {
+		t.Fatalf("remediateStaleCIFailure: %v", err)
+	}
+
+	// PR should still be closed, but no issue updates.
+	if len(it.updateCalls) != 1 {
+		t.Errorf("expected 1 UpdateIssue call (PR close), got %d", len(it.updateCalls))
+	}
+	if it.updateCalls[0].number != 99 {
+		t.Errorf("UpdateIssue number = %d, want 99", it.updateCalls[0].number)
+	}
+
+	// No issue labels should be added/removed.
+	if len(it.addLabelCalls) > 0 {
+		t.Error("should not add labels when no linked issue")
+	}
+	if len(it.removeLabelCalls) > 0 {
+		t.Error("should not remove labels when no linked issue")
 	}
 }

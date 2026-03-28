@@ -171,8 +171,9 @@ func (c *Client) GetPRChecks(ctx context.Context, number int) ([]forge.Check, er
 	checks := make([]forge.Check, 0, len(latest))
 	for _, s := range latest {
 		checks = append(checks, forge.Check{
-			Name:   s.Context,
-			Status: mapCheckStatus(s.State),
+			Name:      s.Context,
+			Status:    mapCheckStatus(s.State),
+			CreatedAt: s.Created,
 		})
 	}
 

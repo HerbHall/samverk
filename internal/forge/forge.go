@@ -154,8 +154,9 @@ const (
 
 // Check represents a single CI status check on a pull request.
 type Check struct {
-	Name   string      `json:"name"`
-	Status CheckStatus `json:"status"`
+	Name      string      `json:"name"`
+	Status    CheckStatus `json:"status"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 // ReviewComment represents a review comment on a pull request.

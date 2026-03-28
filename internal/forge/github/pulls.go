@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"time"
 
 	gogithub "github.com/google/go-github/v68/github"
 
@@ -109,9 +110,14 @@ func (c *Client) GetPRChecks(ctx context.Context, number int) ([]forge.Check, er
 		return nil, fmt.Errorf("github: get combined status for %s: %w", ref, err)
 	}
 	for _, s := range status.Statuses {
+		createdAt := time.Time{}
+		if s.CreatedAt != nil {
+			createdAt = s.CreatedAt.Time
+		}
 		byName[s.GetContext()] = forge.Check{
-			Name:   s.GetContext(),
-			Status: mapCommitStatus(s.GetState()),
+			Name:      s.GetContext(),
+			Status:    mapCommitStatus(s.GetState()),
+			CreatedAt: createdAt,
 		}
 	}
 
@@ -121,9 +127,17 @@ func (c *Client) GetPRChecks(ctx context.Context, number int) ([]forge.Check, er
 		return nil, fmt.Errorf("github: list check runs for %s: %w", ref, err)
 	}
 	for _, run := range runs.CheckRuns {
+		createdAt := time.Time{}
+		// Use CompletedAt if available (more accurate for completion time), otherwise StartedAt.
+		if run.CompletedAt != nil {
+			createdAt = run.CompletedAt.Time
+		} else if run.StartedAt != nil {
+			createdAt = run.StartedAt.Time
+		}
 		byName[run.GetName()] = forge.Check{
-			Name:   run.GetName(),
-			Status: mapCheckRunStatus(run.GetStatus(), run.GetConclusion()),
+			Name:      run.GetName(),
+			Status:    mapCheckRunStatus(run.GetStatus(), run.GetConclusion()),
+			CreatedAt: createdAt,
 		}
 	}
 
