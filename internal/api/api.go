@@ -15,6 +15,7 @@ import (
 	internalmcp "github.com/herbhall/samverk/internal/mcp"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/provider"
+	"github.com/herbhall/samverk/internal/status"
 	"github.com/herbhall/samverk/internal/store"
 )
 
@@ -62,6 +63,7 @@ type API struct {
 	primaryDBPath      string                        // file-system path to the primary SQLite database
 	logsDBPath         string                        // file-system path to the logs SQLite database
 	configReloadSrc    configReloadErrorSource       // may be nil; reports project.yaml reload errors
+	subsystems         *status.Registry              // may be nil; subsystem liveness registry
 	logger             *zap.Logger
 }
 
@@ -136,6 +138,11 @@ func (a *API) SetToolCount(n int) {
 	a.toolCount = n
 }
 
+// SetSubsystemRegistry attaches the subsystem liveness registry.
+func (a *API) SetSubsystemRegistry(r *status.Registry) {
+	a.subsystems = r
+}
+
 // RegisterRoutes registers all API endpoints on the given mux.
 // Routes use Go 1.22+ method+path patterns.
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
@@ -177,6 +184,8 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/pipeline/events", a.handlePipelineEvents)
 	mux.HandleFunc("GET /api/v1/pipeline/throughput", a.handlePipelineThroughput)
 	mux.HandleFunc("GET /api/v1/pipeline/stages", a.handlePipelineStages)
+	mux.HandleFunc("GET /api/v1/system/version", a.handleSystemVersion)
+	mux.HandleFunc("GET /api/v1/system/subsystems", a.handleSystemSubsystems)
 
 	// Synapset proxy routes (no-op if proxy not configured).
 	a.RegisterSynapsetRoutes(mux)
@@ -188,15 +197,15 @@ type errorResponse struct {
 }
 
 // writeJSON encodes v as JSON and writes it with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
+func writeJSON(w http.ResponseWriter, statusCode int, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		zap.L().Error("api: failed to encode JSON response", zap.Error(err))
 	}
 }
 
 // writeError writes a JSON error response with the given status code.
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, errorResponse{Error: msg})
+func writeError(w http.ResponseWriter, statusCode int, msg string) {
+	writeJSON(w, statusCode, errorResponse{Error: msg})
 }

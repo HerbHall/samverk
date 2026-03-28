@@ -480,6 +480,12 @@ func serveCmd() *cobra.Command {
 			logger.Info("MCP handler enabled",
 				zap.String("owner", owner), zap.String("repo", repo))
 
+			// Create subsystem liveness registry and register serve-process subsystems.
+			subsystemReg := status.NewRegistry()
+			apiHandler.SetSubsystemRegistry(subsystemReg)
+			subsystemReg.Register("serve", true)
+			logger.Info("subsystem liveness registry created")
+
 			s := server.New(cfg, logger)
 			// Wire log.entry WS broadcasts: each persisted log entry is pushed
 			// to all connected dashboard clients via the Hub broadcaster.
