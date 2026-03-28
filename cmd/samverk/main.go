@@ -324,10 +324,21 @@ func serveCmd() *cobra.Command {
 				}
 			}
 
+			// Resolve primary PR manager for watcher and MCP handler.
+			// GitHub default takes priority; fall back to first registered project.
+			var primaryPRMgr forge.PullRequestManager
+			if ghDefaultClient != nil {
+				primaryPRMgr = ghDefaultClient
+			} else if projects := registry.List(); len(projects) > 0 && projects[0].PRManager != nil {
+				primaryPRMgr = projects[0].PRManager
+				logger.Info("using first project as PR manager",
+					zap.String("name", projects[0].Name))
+			}
+
 			// Always create the MCP handler with the resolved tracker.
 			mcpHandler = internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
-			if ghDefaultClient != nil {
-				mcpHandler.SetPRManager(ghDefaultClient)
+			if primaryPRMgr != nil {
+				mcpHandler.SetPRManager(primaryPRMgr)
 			}
 			mcpHandler.SetProjects(registry)
 			mcpHandler.SetWorkCoordinator(internalmcp.NewForgeWorkCoordinator(registry, logger))
@@ -541,6 +552,28 @@ func serveCmd() *cobra.Command {
 					}
 				}
 			}()
+
+			// Start PR watcher if auto-merge is enabled.
+			switch {
+			case !policyCfg.Merge.AutoMergeOnCIPass:
+				logger.Info("pr-watcher disabled (auto_merge_on_ci_pass = false)")
+			case primaryPRMgr == nil:
+				logger.Error("auto_merge_on_ci_pass enabled but no PR manager available -- watcher will NOT start",
+					zap.String("fix", "configure a forge project with PR support"))
+			case tracker == nil:
+				logger.Error("auto_merge_on_ci_pass enabled but no issue tracker available -- watcher will NOT start")
+			default:
+				pollInterval := 30 * time.Second
+				pw := prwatcher.New(primaryPRMgr, tracker, policyCfg.Merge, pollInterval, logger)
+				go func() {
+					if watchErr := pw.Run(ctx); watchErr != nil && !errors.Is(watchErr, context.Canceled) {
+						logger.Error("pr-watcher stopped unexpectedly", zap.Error(watchErr))
+					}
+				}()
+				logger.Info("pr-watcher started",
+					zap.Duration("poll_interval", pollInterval),
+					zap.Strings("trusted_authors", policyCfg.Merge.TrustedAuthors))
+			}
 
 			if err := s.Start(ctx); err != nil {
 				return fmt.Errorf("server error: %w", err)
