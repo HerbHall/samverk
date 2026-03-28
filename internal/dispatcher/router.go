@@ -22,6 +22,7 @@ var knownAgentTypes = map[models.AgentType]bool{
 	models.AgentTypeResearch:     true,
 	models.AgentTypeQC:           true,
 	models.AgentTypeHuman:        true,
+	models.AgentTypeInfra:        true,
 }
 
 // complexTitleKeywords are title signals that indicate architectural/heavy work.
@@ -191,7 +192,7 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 		return "qc", "agent type qc (cross-model validation)"
 	}
 
-	// Code-gen and test agents require CLI-capable providers that can produce
+	// Code-gen, test, and infra agents require CLI-capable providers that can produce
 	// file changes (EDIT blocks or worktree commits). Ollama providers return
 	// prose only, wasting sessions (#269, #270). Route to "code-gen" chain
 	// which contains only CLI providers.
@@ -199,7 +200,7 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 	// Placed after complex/local so critical/high-complexity code-gen issues
 	// still get the complex chain (which is already CLI-only). But before
 	// triage/default to prevent code-gen from falling into Ollama-first chains.
-	if agentType == models.AgentTypeCodeGen || agentType == models.AgentTypeTest {
+	if agentType == models.AgentTypeCodeGen || agentType == models.AgentTypeTest || agentType == models.AgentTypeInfra {
 		return "code-gen", "agent type " + string(agentType) + " (requires CLI provider)"
 	}
 
