@@ -270,3 +270,67 @@ func TestPartialOutputRoundTrip(t *testing.T) {
 		t.Errorf("list partial_output = %q, want %q", sessions[0].PartialOutput, "streaming output chunk 1...")
 	}
 }
+
+func TestMaxTurnsHitAndTurnsUsedRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	sess := &models.Session{
+		IssueNumber: 88,
+		AgentType:   "code-gen",
+		Provider:    "claude",
+		Model:       "opus-4",
+		Status:      models.SessionStatusActive,
+		StartedAt:   now,
+	}
+
+	if err := s.CreateSession(ctx, sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Initially should be false/0.
+	got, err := s.GetSession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.MaxTurnsHit {
+		t.Errorf("initial max_turns_hit = %v, want false", got.MaxTurnsHit)
+	}
+	if got.TurnsUsed != 0 {
+		t.Errorf("initial turns_used = %d, want 0", got.TurnsUsed)
+	}
+
+	// Update with turns tracking.
+	sess.MaxTurnsHit = true
+	sess.TurnsUsed = 5
+	if err := s.UpdateSession(ctx, sess); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err = s.GetSession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get after update: %v", err)
+	}
+	if !got.MaxTurnsHit {
+		t.Errorf("max_turns_hit = %v, want true", got.MaxTurnsHit)
+	}
+	if got.TurnsUsed != 5 {
+		t.Errorf("turns_used = %d, want 5", got.TurnsUsed)
+	}
+
+	// Verify it appears in list results too.
+	sessions, err := s.ListSessions(ctx, models.SessionStatusActive)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions count = %d, want 1", len(sessions))
+	}
+	if !sessions[0].MaxTurnsHit {
+		t.Errorf("list max_turns_hit = %v, want true", sessions[0].MaxTurnsHit)
+	}
+	if sessions[0].TurnsUsed != 5 {
+		t.Errorf("list turns_used = %d, want 5", sessions[0].TurnsUsed)
+	}
+}

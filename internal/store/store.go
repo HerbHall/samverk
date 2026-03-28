@@ -154,6 +154,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	estimated_timeout_ms INTEGER NOT NULL DEFAULT 0,
 	partial_output  TEXT NOT NULL DEFAULT '',
 	checkpoint_hash TEXT NOT NULL DEFAULT '',
+	max_turns_hit  BOOLEAN DEFAULT FALSE,
+	turns_used     INTEGER DEFAULT 0,
 	created_at      TEXT NOT NULL,
 	updated_at      TEXT NOT NULL
 );
@@ -312,6 +314,9 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_occurred ON pipeline_events(occurred_at 
 		`ALTER TABLE sessions ADD COLUMN partial_output TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN checkpoint_hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN estimated_timeout_ms INTEGER NOT NULL DEFAULT 0`,
+		// Session max turns tracking (issue #348).
+		`ALTER TABLE sessions ADD COLUMN max_turns_hit BOOLEAN DEFAULT FALSE`,
+		`ALTER TABLE sessions ADD COLUMN turns_used INTEGER DEFAULT 0`,
 		// RCA fields for failure_events (issue #117).
 		`ALTER TABLE failure_events ADD COLUMN root_cause_category TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE failure_events ADD COLUMN fix_classification TEXT NOT NULL DEFAULT ''`,
