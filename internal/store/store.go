@@ -104,6 +104,12 @@ type Store interface {
 	RecordPipelineEvent(ctx context.Context, e PipelineEvent) error
 	GetPipelineEvents(ctx context.Context, issueNumber int, since time.Time, limit int) ([]PipelineEvent, error)
 
+	// Triage decisions (written by triage agent, read by API and digest)
+	SaveTriageDecision(ctx context.Context, d *TriageDecision) error
+	ListTriageDecisions(ctx context.Context, since time.Time, limit int) ([]TriageDecision, error)
+	GetTriageDecisionForIssue(ctx context.Context, issueNumber int) (*TriageDecision, error)
+	UpdateTriageReview(ctx context.Context, id int64, reviewedBy, outcome string) error
+
 	Close() error
 }
 
@@ -302,6 +308,24 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_issue ON pipeline_events(issue_number);
 CREATE INDEX IF NOT EXISTS idx_pipeline_occurred ON pipeline_events(occurred_at DESC);
+
+CREATE TABLE IF NOT EXISTS triage_decisions (
+	id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+	issue_number        INTEGER NOT NULL,
+	project             TEXT NOT NULL,
+	verdict             TEXT NOT NULL,
+	reasoning           TEXT NOT NULL,
+	criteria_met        TEXT,
+	docs_referenced     TEXT,
+	sub_issues_created  TEXT,
+	created_at          TEXT NOT NULL,
+	reviewed_by         TEXT,
+	review_outcome      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_triage_issue ON triage_decisions(issue_number);
+CREATE INDEX IF NOT EXISTS idx_triage_verdict ON triage_decisions(verdict);
+CREATE INDEX IF NOT EXISTS idx_triage_created ON triage_decisions(created_at DESC);
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
 		return err

@@ -128,6 +128,17 @@ func (m *mockStore) ListCorrectionEvents(_ context.Context, _ int) ([]*models.Co
 	return nil, nil
 }
 
+func (m *mockStore) SaveTriageDecision(_ context.Context, _ *store.TriageDecision) error {
+	return nil
+}
+func (m *mockStore) ListTriageDecisions(_ context.Context, _ time.Time, _ int) ([]store.TriageDecision, error) {
+	return nil, nil
+}
+func (m *mockStore) GetTriageDecisionForIssue(_ context.Context, _ int) (*store.TriageDecision, error) {
+	return nil, store.ErrNotFound
+}
+func (m *mockStore) UpdateTriageReview(_ context.Context, _ int64, _, _ string) error { return nil }
+
 func (m *mockStore) getSession(id string) *models.Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()

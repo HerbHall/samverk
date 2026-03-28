@@ -1097,6 +1097,17 @@ func (m *mockStore) RecentFailuresForIssue(_ context.Context, _, _ int) ([]strin
 	return nil, nil
 }
 
+func (m *mockStore) SaveTriageDecision(_ context.Context, _ *store.TriageDecision) error {
+	return nil
+}
+func (m *mockStore) ListTriageDecisions(_ context.Context, _ time.Time, _ int) ([]store.TriageDecision, error) {
+	return nil, nil
+}
+func (m *mockStore) GetTriageDecisionForIssue(_ context.Context, _ int) (*store.TriageDecision, error) {
+	return nil, store.ErrNotFound
+}
+func (m *mockStore) UpdateTriageReview(_ context.Context, _ int64, _, _ string) error { return nil }
+
 func (m *mockStore) Close() error {
 	return nil
 }

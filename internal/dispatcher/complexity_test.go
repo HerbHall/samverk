@@ -202,6 +202,19 @@ func (m *calibrationMockStore) GetTaskProfile(_ context.Context, _, _ string) (*
 	return m.profile, m.err
 }
 
+func (m *calibrationMockStore) SaveTriageDecision(_ context.Context, _ *store.TriageDecision) error {
+	return nil
+}
+func (m *calibrationMockStore) ListTriageDecisions(_ context.Context, _ time.Time, _ int) ([]store.TriageDecision, error) {
+	return nil, nil
+}
+func (m *calibrationMockStore) GetTriageDecisionForIssue(_ context.Context, _ int) (*store.TriageDecision, error) {
+	return nil, store.ErrNotFound
+}
+func (m *calibrationMockStore) UpdateTriageReview(_ context.Context, _ int64, _, _ string) error {
+	return nil
+}
+
 func TestCalibratedTimeout_FallbackWhenNoData(t *testing.T) {
 	st := &calibrationMockStore{profile: nil}
 	issue := &forge.Issue{Number: 1, Title: "test", Body: "short body"}

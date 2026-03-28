@@ -66,6 +66,7 @@ type Dispatcher struct {
 	configReloadError error          // last config reload error; nil = OK
 	primaryForgeType  string         // current primary forge type label (for logging)
 	primaryForgeURL   string         // current primary forge URL (for logging)
+	triageAgent       *TriageAgent   // optional autonomous triage agent
 	mu                sync.RWMutex
 	logger            *zap.Logger
 	stop              context.CancelFunc
@@ -154,6 +155,12 @@ func (d *Dispatcher) SetProjectResolver(pr ProjectResolver) {
 // SetBroadcaster configures an optional event broadcaster for real-time WebSocket updates.
 func (d *Dispatcher) SetBroadcaster(b EventBroadcaster) {
 	d.broadcaster = b
+}
+
+// SetTriageAgent configures the optional autonomous triage agent that evaluates
+// needs-human issues on a periodic interval.
+func (d *Dispatcher) SetTriageAgent(ta *TriageAgent) {
+	d.triageAgent = ta
 }
 
 // Snapshot returns a point-in-time snapshot of dispatcher metrics.
@@ -326,6 +333,15 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 	if d.projectYAMLPath != "" {
 		w := newProjectYAMLWatcher(d.projectYAMLPath, d.trackerFactory, d, d.logger)
 		go w.run(ctx)
+	}
+
+	// Start autonomous triage agent if configured.
+	if d.triageAgent != nil {
+		go func() {
+			if err := d.triageAgent.Run(ctx); err != nil && ctx.Err() == nil {
+				d.logger.Error("triage agent exited with error", zap.Error(err))
+			}
+		}()
 	}
 
 	type watcherError struct {
