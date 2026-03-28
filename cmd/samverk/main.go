@@ -462,6 +462,7 @@ func serveCmd() *cobra.Command {
 			// Wire worker lister from API into MCP digest so the get_digest tool
 			// shows registered PC agent workers in the RUNTIME METRICS section.
 			mcpHandler.SetWorkerLister(&apiWorkerAdapter{api: apiHandler})
+			mcpHandler.SetDiagnosticsSource(apiHandler)
 
 			// Audit MCP handler wiring -- surface missing dependencies at startup
 			// instead of silently degrading tools at runtime.

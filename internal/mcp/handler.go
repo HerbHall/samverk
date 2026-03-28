@@ -41,6 +41,7 @@ type Handler struct {
 	healthM       providerHealthSource   // may be nil (no health monitor)
 	logs          logQuerier             // may be nil (no log store)
 	provReg       *provider.Registry    // may be nil (no provider registry for routing chains)
+	diagnostics   diagnosticsSource    // may be nil (no API diagnostics wired)
 }
 
 // NewHandler creates a new MCP tool handler with its dependencies.
@@ -282,6 +283,7 @@ func newMCPServer(h *Handler) *gosdk.Server {
 	registerWorkerTools(srv, h)
 	registerRepoWriteTools(srv, h)
 	registerObservabilityTools(srv, h)
+	registerDiagnosticsTools(srv, h)
 	registerSearchTools(srv, h)
 	registerBulkTools(srv, h)
 	return srv
