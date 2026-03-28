@@ -324,10 +324,27 @@ func serveCmd() *cobra.Command {
 				}
 			}
 
+			// Resolve PRManager: prefer GitHub default client, then first
+			// registry project that provides one (e.g. Gitea-only config).
+			var primaryPRMgr forge.PullRequestManager
+			if ghDefaultClient != nil {
+				primaryPRMgr = ghDefaultClient
+			} else if projects := registry.List(); len(projects) > 0 && projects[0].PRManager != nil {
+				primaryPRMgr = projects[0].PRManager
+				logger.Info("using first project as default PR manager",
+					zap.String("name", projects[0].Name))
+			}
+
+			// Startup health assertion: fail loudly if auto-merge is enabled
+			// but the PR manager could not be resolved.
+			if policyCfg.Merge.AutoMergeOnCIPass && primaryPRMgr == nil {
+				return fmt.Errorf("auto_merge_on_ci_pass is enabled but PR manager failed to initialize")
+			}
+
 			// Always create the MCP handler with the resolved tracker.
 			mcpHandler = internalmcp.NewHandler(tracker, costs, st, policy, repoReader)
-			if ghDefaultClient != nil {
-				mcpHandler.SetPRManager(ghDefaultClient)
+			if primaryPRMgr != nil {
+				mcpHandler.SetPRManager(primaryPRMgr)
 			}
 			mcpHandler.SetProjects(registry)
 			mcpHandler.SetWorkCoordinator(internalmcp.NewForgeWorkCoordinator(registry, logger))
@@ -1007,6 +1024,9 @@ func dispatchCmd() *cobra.Command {
 
 			// Start PR watcher if auto-merge is enabled.
 			if policyCfg.Merge.AutoMergeOnCIPass {
+				if primaryPRMgr == nil {
+					return fmt.Errorf("auto_merge_on_ci_pass is enabled but PR manager failed to initialize")
+				}
 				pw := prwatcher.New(primaryPRMgr, primaryTracker, policyCfg.Merge, time.Duration(pollSeconds)*time.Second, logger)
 				g.Go(func() error {
 					return pw.Run(gctx)

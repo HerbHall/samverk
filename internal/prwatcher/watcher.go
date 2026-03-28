@@ -54,7 +54,17 @@ func (w *Watcher) Run(ctx context.Context) error {
 		return nil
 	}
 
-	w.logger.Info("pr-watcher: starting", zap.Duration("interval", w.interval))
+	w.logger.Info("pr-watcher: started",
+		zap.Duration("poll_interval", w.interval),
+		zap.Strings("trusted_authors", w.mergeCfg.TrustedAuthors),
+	)
+
+	// Execute first poll immediately so we don't wait a full interval.
+	if err := w.poll(ctx); err != nil {
+		w.logger.Error("pr-watcher: first poll error", zap.Error(err))
+	} else {
+		w.logger.Info("pr-watcher: first poll complete")
+	}
 
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
