@@ -7,6 +7,176 @@ import (
 	"github.com/herbhall/samverk/pkg/models"
 )
 
+func TestExtractAcceptanceCriteria(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "no section returns empty",
+			body: "Just a description with no criteria section.",
+			want: []string{},
+		},
+		{
+			name: "extracts unchecked items only",
+			body: "## Acceptance Criteria\n- [ ] item one\n- [x] already done\n- [ ] item two\n",
+			want: []string{"item one", "item two"},
+		},
+		{
+			name: "stops at next heading",
+			body: "## Acceptance Criteria\n- [ ] first\n## Other Section\n- [ ] should not appear\n",
+			want: []string{"first"},
+		},
+		{
+			name: "case-insensitive header match",
+			body: "## acceptance criteria\n- [ ] lowercase header\n",
+			want: []string{"lowercase header"},
+		},
+		{
+			name: "empty section returns empty",
+			body: "## Acceptance Criteria\n\nsome other text\n",
+			want: []string{},
+		},
+		{
+			name: "multiple criteria",
+			body: "Some intro.\n\n## Acceptance Criteria\n\n- [ ] Criteria extracted from issue body\n- [ ] Keyword matching checks output\n- [ ] Coverage score computed\n",
+			want: []string{"Criteria extracted from issue body", "Keyword matching checks output", "Coverage score computed"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractAcceptanceCriteria(tt.body)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d criteria %v, want %d %v", len(got), got, len(tt.want), tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("criteria[%d]: got %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestCriterionKeywords(t *testing.T) {
+	tests := []struct {
+		criterion string
+		want      []string
+	}{
+		{
+			criterion: "Acceptance criteria extracted from issue body",
+			want:      []string{"acceptance", "criteria", "extracted", "from", "issue", "body"},
+		},
+		{
+			criterion: "short",
+			want:      []string{"short"},
+		},
+		{
+			criterion: "a an the is",
+			want:      []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.criterion, func(t *testing.T) {
+			got := criterionKeywords(tt.criterion)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("keyword[%d]: got %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestCheckCriteriaCoverage(t *testing.T) {
+	tests := []struct {
+		name          string
+		criteria      []string
+		output        string
+		wantCovered   int
+		wantMissing   []string
+	}{
+		{
+			name:        "all covered",
+			criteria:    []string{"extraction logic added", "keyword matching works"},
+			output:      "I implemented extraction logic and keyword matching functionality.",
+			wantCovered: 2,
+			wantMissing: []string{},
+		},
+		{
+			name:        "none covered",
+			criteria:    []string{"implement widget rendering", "add database migration"},
+			output:      "I reviewed the issue and found it interesting.",
+			wantCovered: 0,
+			wantMissing: []string{"implement widget rendering", "add database migration"},
+		},
+		{
+			name:        "partial coverage",
+			criteria:    []string{"extraction logic", "scoring computed", "tests added"},
+			output:      "The extraction logic is implemented. Coverage scoring is computed correctly.",
+			wantCovered: 2,
+			wantMissing: []string{"tests added"},
+		},
+		{
+			name:        "empty criteria returns zero covered",
+			criteria:    []string{},
+			output:      "some output",
+			wantCovered: 0,
+			wantMissing: []string{},
+		},
+		{
+			name:        "case insensitive matching",
+			criteria:    []string{"Acceptance Criteria Coverage"},
+			output:      "The acceptance criteria coverage score is 80%.",
+			wantCovered: 1,
+			wantMissing: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotCovered, gotMissing := checkCriteriaCoverage(tt.criteria, tt.output)
+			if gotCovered != tt.wantCovered {
+				t.Errorf("covered: got %d, want %d", gotCovered, tt.wantCovered)
+			}
+			if len(gotMissing) != len(tt.wantMissing) {
+				t.Errorf("missing count: got %d %v, want %d %v", len(gotMissing), gotMissing, len(tt.wantMissing), tt.wantMissing)
+				return
+			}
+			for i := range tt.wantMissing {
+				if gotMissing[i] != tt.wantMissing[i] {
+					t.Errorf("missing[%d]: got %q, want %q", i, gotMissing[i], tt.wantMissing[i])
+				}
+			}
+		})
+	}
+}
+
+func TestCoveragePctThreshold(t *testing.T) {
+	// Verify the 50% threshold logic: 1/3 = 33% < 50%, 2/3 = 66% >= 50%.
+	criteria := []string{"feature alpha implemented", "feature beta tested", "feature gamma documented"}
+	lowOutput := "alpha was implemented here"
+	highOutput := "alpha implemented and beta tested thoroughly"
+
+	covLow, _ := checkCriteriaCoverage(criteria, lowOutput)
+	pctLow := float64(covLow) / float64(len(criteria))
+	if pctLow >= 0.5 {
+		t.Errorf("expected low coverage < 50%%, got %.2f", pctLow)
+	}
+
+	covHigh, _ := checkCriteriaCoverage(criteria, highOutput)
+	pctHigh := float64(covHigh) / float64(len(criteria))
+	if pctHigh < 0.5 {
+		t.Errorf("expected high coverage >= 50%%, got %.2f", pctHigh)
+	}
+}
+
 func TestCheckOutputQuality(t *testing.T) {
 	tests := []struct {
 		name         string

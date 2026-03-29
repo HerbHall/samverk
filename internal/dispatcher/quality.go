@@ -11,6 +11,72 @@ import (
 	"github.com/herbhall/samverk/pkg/models"
 )
 
+// extractAcceptanceCriteria parses unchecked task items from the
+// "## Acceptance Criteria" section of an issue body.
+// Only `- [ ]` items are returned (checked items are already done).
+func extractAcceptanceCriteria(issueBody string) []string {
+	criteria := make([]string, 0)
+	inSection := false
+	for _, line := range strings.Split(issueBody, "\n") {
+		trimmed := strings.TrimSpace(line)
+		// Detect section header (case-insensitive).
+		if strings.HasPrefix(strings.ToLower(trimmed), "## acceptance criteria") {
+			inSection = true
+			continue
+		}
+		// Stop at next ## heading.
+		if inSection && strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+		if inSection && strings.HasPrefix(trimmed, "- [ ]") {
+			text := strings.TrimSpace(strings.TrimPrefix(trimmed, "- [ ]"))
+			if text != "" {
+				criteria = append(criteria, text)
+			}
+		}
+	}
+	return criteria
+}
+
+// criterionKeywords extracts meaningful words from a criterion string.
+// Words of length <= 3 are considered stopwords and skipped.
+func criterionKeywords(criterion string) []string {
+	words := strings.Fields(criterion)
+	keywords := make([]string, 0, len(words))
+	for _, w := range words {
+		clean := strings.ToLower(strings.Trim(w, ".,!?:;\"'`()[]{}"))
+		if len(clean) > 3 {
+			keywords = append(keywords, clean)
+		}
+	}
+	return keywords
+}
+
+// checkCriteriaCoverage checks how many criteria are mentioned in the output.
+// A criterion is considered covered when at least one of its keywords appears
+// (case-insensitive substring match) in the output.
+// Returns the number covered and the list of uncovered criteria.
+func checkCriteriaCoverage(criteria []string, output string) (covered int, missing []string) {
+	lowerOutput := strings.ToLower(output)
+	missing = make([]string, 0, len(criteria))
+	for _, c := range criteria {
+		keywords := criterionKeywords(c)
+		found := false
+		for _, kw := range keywords {
+			if strings.Contains(lowerOutput, kw) {
+				found = true
+				break
+			}
+		}
+		if found {
+			covered++
+		} else {
+			missing = append(missing, c)
+		}
+	}
+	return covered, missing
+}
+
 // QualityResult describes the outcome of a post-completion quality check.
 type QualityResult struct {
 	Pass   bool
@@ -71,7 +137,8 @@ func checkOutputQuality(output string, agentType models.AgentType, maxTurnsHit b
 
 // checkCompletionQuality retrieves the session output from the store and
 // runs the quality gate. Returns the QualityResult. On failure, posts a comment
-// for visibility.
+// for visibility. Also performs an advisory acceptance-criteria coverage check
+// (never blocks the quality gate).
 func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.TaskResult) QualityResult {
 	if d.store == nil || result.SessionID == "" {
 		return QualityResult{Pass: true, Reason: "no store or session", Score: 1.0}
@@ -88,6 +155,8 @@ func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.Ta
 	}
 
 	qr := checkOutputQuality(session.PartialOutput, result.AgentType, session.MaxTurnsHit, session.TurnsUsed)
+	tracker := d.trackerFor(result.Owner, result.Repo)
+
 	if !qr.Pass {
 		d.logger.Warn("quality gate failed",
 			zap.Int("issue", result.IssueNumber),
@@ -96,7 +165,6 @@ func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.Ta
 			zap.String("provider", result.ProviderKey),
 		)
 		// Post quality failure as issue comment for visibility.
-		tracker := d.trackerFor(result.Owner, result.Repo)
 		if tracker != nil {
 			comment := fmt.Sprintf("**Quality gate failed** (score: %.1f): %s\n\nProvider: `%s` | Session: `%s`",
 				qr.Score, qr.Reason, result.ProviderKey, result.SessionID)
@@ -105,5 +173,41 @@ func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.Ta
 			}
 		}
 	}
+
+	// Advisory: check acceptance criteria coverage. This never blocks the
+	// quality gate — low coverage is logged and commented for visibility only.
+	if tracker != nil && result.IssueNumber > 0 {
+		issue, issueErr := tracker.GetIssue(ctx, result.IssueNumber)
+		if issueErr == nil && issue != nil {
+			criteria := extractAcceptanceCriteria(issue.Body)
+			if len(criteria) > 0 {
+				covered, missing := checkCriteriaCoverage(criteria, session.PartialOutput)
+				total := len(criteria)
+				coveragePct := float64(covered) / float64(total)
+				d.logger.Info("quality gate: acceptance criteria coverage",
+					zap.Int("issue", result.IssueNumber),
+					zap.Int("covered", covered),
+					zap.Int("total", total),
+					zap.Float64("coverage", coveragePct),
+				)
+				if coveragePct < 0.5 {
+					d.logger.Warn("quality gate: low acceptance criteria coverage",
+						zap.Int("issue", result.IssueNumber),
+						zap.Int("covered", covered),
+						zap.Int("total", total),
+					)
+					coverageComment := fmt.Sprintf(
+						"Acceptance criteria coverage: %d/%d (%.0f%%). Missing: %s",
+						covered, total, coveragePct*100,
+						strings.Join(missing, ", "),
+					)
+					if _, commentErr := tracker.AddComment(ctx, result.IssueNumber, coverageComment); commentErr != nil {
+						d.logger.Warn("quality gate: failed to post coverage comment", zap.Error(commentErr))
+					}
+				}
+			}
+		}
+	}
+
 	return qr
 }
