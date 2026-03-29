@@ -4,7 +4,6 @@ import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
 import { Issues } from './pages/Issues'
 import { MyQueue } from './pages/MyQueue'
-import { Agents } from './pages/Agents'
 import { Metrics } from './pages/Metrics'
 import { Logs } from './pages/Logs'
 import { Synapset } from './pages/Synapset'
@@ -62,7 +61,6 @@ export function App() {
           <Route index element={<Dashboard />} />
           <Route path="issues" element={<Issues />} />
           <Route path="my-queue" element={<MyQueue />} />
-          <Route path="agents" element={<Agents />} />
           <Route path="providers" element={<Providers />} />
           <Route path="metrics" element={<Metrics />} />
           <Route path="logs" element={<Logs />} />

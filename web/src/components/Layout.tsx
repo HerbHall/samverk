@@ -34,11 +34,13 @@ function IconIssues() {
   )
 }
 
-function IconAgents() {
+function IconProviders() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+      <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+      <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+      <line x1="6" y1="6" x2="6.01" y2="6" />
+      <line x1="6" y1="18" x2="6.01" y2="18" />
     </svg>
   )
 }
@@ -67,7 +69,7 @@ function IconLogs() {
 const bottomTabItems = [
   { to: '/', label: 'Dashboard', icon: <IconDashboard />, end: true },
   { to: '/issues', label: 'Issues', icon: <IconIssues />, end: false },
-  { to: '/agents', label: 'Agents', icon: <IconAgents />, end: false },
+  { to: '/providers', label: 'Providers', icon: <IconProviders />, end: false },
   { to: '/metrics', label: 'Metrics', icon: <IconMetrics />, end: false },
   { to: '/logs', label: 'Logs', icon: <IconLogs />, end: false },
 ]
@@ -101,9 +103,6 @@ export function Layout() {
             </NavLink>
             <NavLink to="/my-queue" className={myQueueLinkClass}>
               My Queue
-            </NavLink>
-            <NavLink to="/agents" className={sidebarLinkClass}>
-              Agents
             </NavLink>
             <NavLink to="/providers" className={sidebarLinkClass}>
               Providers
