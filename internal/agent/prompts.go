@@ -132,7 +132,9 @@ Do not produce file edits. Your output is a comment on the issue.`+githubSourceI
 }
 
 func buildQCPrompt(task Task) string {
-	return fmt.Sprintf(`You are a quality control agent reviewing the work on issue #%d: %s.
+	var b strings.Builder
+
+	fmt.Fprintf(&b, `You are a quality control agent reviewing the work on issue #%d: %s.
 
 You must evaluate the output independently — do not read the producing agent's reasoning or comments. Evaluate only the code/content itself against:
 - Correctness: does it do what the issue asked?
@@ -140,8 +142,134 @@ You must evaluate the output independently — do not read the producing agent's
 - Tests: are there adequate tests?
 - Risk: any regressions or side effects?
 
-Respond with: PASS or FAIL, followed by specific findings. No praise, no encouragement — only concrete evaluation.`,
-		task.Issue.Number, task.Issue.Title)
+Respond with PASS or FAIL (or REVIEW if ambiguous), followed by specific findings.
+No praise, no encouragement — only concrete evaluation.`, task.Issue.Number, task.Issue.Title)
+
+	// Include acceptance criteria parsed from issue body.
+	if task.Issue != nil {
+		criteria := ParseAcceptanceCriteria(task.Issue.Body)
+		if len(criteria) > 0 {
+			b.WriteString("\n\n## Acceptance Criteria to Verify\n\n")
+			for _, c := range criteria {
+				fmt.Fprintf(&b, "- [ ] %s\n", c)
+			}
+		}
+	}
+
+	// Include constraints from frontmatter.
+	if task.Frontmatter != nil && len(task.Frontmatter.Constraints) > 0 {
+		b.WriteString("\n\n## Constraints to Verify\n\n")
+		for _, c := range task.Frontmatter.Constraints {
+			fmt.Fprintf(&b, "- [ ] %s\n", c)
+		}
+	}
+
+	// Include file_context scope for scope checking.
+	if task.Frontmatter != nil && len(task.Frontmatter.FileContext) > 0 {
+		b.WriteString("\n\n## Expected File Scope\n\nChanges should be within these files:\n")
+		for _, f := range task.Frontmatter.FileContext {
+			fmt.Fprintf(&b, "- `%s`\n", f)
+		}
+		b.WriteString("\nFlag any changes to files outside this scope.\n")
+	}
+
+	issueNum := 0
+	if task.Issue != nil {
+		issueNum = task.Issue.Number
+	}
+	fmt.Fprintf(&b, `
+
+## Required Output Format
+
+Your response MUST follow this exact structure:
+
+`+"```"+`
+## QC Review: PR (Issue #%d)
+
+### Verdict: [PASS] | [FAIL] | [REVIEW]
+
+### Acceptance Criteria
+- [x] Criterion -- verified: <evidence>
+- [ ] Criterion -- MISSING: <what's missing>
+
+### Constraints
+- [x] Constraint -- respected
+- [ ] Constraint -- VIOLATED: <details>
+
+### Scope
+- Changed files: N (within/outside file_context)
+- Unexpected files: N
+
+### Issues Found
+- <list specific problems, or "None">
+
+### Recommendation
+[VERDICT] -- <brief explanation>
+`+"```"+`
+
+Rules:
+- Use [PASS] only when ALL acceptance criteria are met and no issues found.
+- Use [FAIL] when any acceptance criterion is unmet or a significant issue exists.
+- Use [REVIEW] when you cannot determine correctness (ambiguous requirements, needs human judgment).
+`, issueNum)
+
+	b.WriteString(githubSourceInstructions)
+
+	return b.String()
+}
+
+// ParseAcceptanceCriteria extracts acceptance criteria from an issue body.
+// It looks for markdown checkboxes (- [ ] ...) under an "## Acceptance Criteria" heading.
+// Falls back to finding any checkboxes in the body if no heading is found.
+func ParseAcceptanceCriteria(body string) []string {
+	criteria := make([]string, 0, 8)
+	lines := strings.Split(body, "\n")
+	inSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Detect the acceptance criteria heading (case-insensitive prefix match).
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "## acceptance criteria") {
+			inSection = true
+			continue
+		}
+
+		// If we're in the section and hit another heading, stop.
+		if inSection && strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+
+		// Collect checkboxes from within the section.
+		if inSection && len(trimmed) > 6 &&
+			(strings.HasPrefix(trimmed, "- [ ] ") ||
+				strings.HasPrefix(trimmed, "- [x] ") ||
+				strings.HasPrefix(trimmed, "- [X] ")) {
+			text := trimmed[6:] // len("- [ ] ") == 6
+			if text != "" {
+				criteria = append(criteria, text)
+			}
+		}
+	}
+
+	// Fallback: if no section heading found, scan the entire body for checkboxes.
+	if len(criteria) == 0 {
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if len(trimmed) > 6 &&
+				(strings.HasPrefix(trimmed, "- [ ] ") ||
+					strings.HasPrefix(trimmed, "- [x] ") ||
+					strings.HasPrefix(trimmed, "- [X] ")) {
+				text := trimmed[6:]
+				if text != "" {
+					criteria = append(criteria, text)
+				}
+			}
+		}
+	}
+
+	return criteria
 }
 
 // buildFileContext renders the file context map into a markdown section,

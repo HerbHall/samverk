@@ -254,6 +254,22 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 			d.circuitBreaker.RecordSuccess(result.ProviderKey)
 		}
 
+		// QC agent completed — handle the verdict instead of normal flow.
+		if result.AgentType == models.AgentTypeQC {
+			d.handleQCComplete(ctx, result)
+			broadcastEvent(d.broadcaster, "worker.complete", map[string]any{
+				"issue_number": result.IssueNumber,
+				"outcome":      "qc_complete",
+			})
+			// Signal wakeup and return early — QC results don't follow the
+			// normal needs-qc → merge path.
+			select {
+			case d.wakeup <- struct{}{}:
+			default:
+			}
+			return
+		}
+
 		// Post-completion quality gate: check output quality from session.
 		// If quality fails (score < 0.5), treat as failure and route through
 		// correction engine for retry/escalation instead of parking in needs-qc.
@@ -299,6 +315,11 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 				"outcome":      "pr_opened",
 			})
 		}
+
+		// Spawn automated QC agent to review the work instead of waiting
+		// for manual review. The QC agent runs with a different provider
+		// than the generator (cross-model validation per ADR-030).
+		d.spawnQCTask(ctx, result.Owner, result.Repo, result.IssueNumber, result.ProviderKey)
 	} else {
 		// Record failure event with classification.
 		d.recordFailure(ctx, result.IssueNumber, result.SessionID,

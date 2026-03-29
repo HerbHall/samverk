@@ -145,6 +145,10 @@ func (w *Watcher) poll(ctx context.Context) error {
 			continue
 		}
 
+		// Check for QC agent approval — a [PASS] verdict comment
+		// allows Tier 2 PRs to skip the delay (QC is the verification).
+		qcApproved := w.hasQCApproval(ctx, pr)
+
 		switch tier {
 		case PRTier3:
 			tier3++
@@ -157,9 +161,11 @@ func (w *Watcher) poll(ctx context.Context) error {
 					zap.Int("pr", pr.Number), zap.Int("checks", len(checks)), zap.String("tier", tier.String()))
 				continue
 			}
-			if time.Since(pr.UpdatedAt) < tier2Delay {
+			// QC-approved PRs skip the tier-2 delay — the QC agent
+			// has already verified the work.
+			if !qcApproved && time.Since(pr.UpdatedAt) < tier2Delay {
 				skippedDelay++
-				w.logger.Debug("pr-watcher: tier-2 delay not elapsed",
+				w.logger.Debug("pr-watcher: tier-2 delay not elapsed (no QC approval)",
 					zap.Int("pr", pr.Number), zap.Duration("remaining", tier2Delay-time.Since(pr.UpdatedAt)))
 				continue
 			}
@@ -969,4 +975,56 @@ func buildCIFailureIssueComment(pr *forge.PullRequest, failedChecks []string, ci
 	}
 
 	return b.String()
+}
+
+// QCApprovalMarker is the string that indicates a QC agent approved a PR.
+// The dispatcher posts this as part of the QC PASS comment.
+const QCApprovalMarker = "**QC Review: [PASS]**"
+
+// hasQCApproval checks whether a PR has received a [PASS] verdict from the
+// automated QC agent. It examines PR comments (via the issue tracker, since
+// PRs are issues on most forges) for the QC approval marker.
+func (w *Watcher) hasQCApproval(ctx context.Context, pr *forge.PullRequest) bool {
+	if w.issueTracker == nil {
+		return false
+	}
+
+	comments, err := w.issueTracker.ListComments(ctx, pr.Number)
+	if err != nil {
+		w.log().Debug("pr-watcher: check QC approval", zap.Int("pr", pr.Number), zap.Error(err))
+		return false
+	}
+
+	for _, c := range comments {
+		if strings.Contains(c.Body, QCApprovalMarker) {
+			return true
+		}
+	}
+
+	// Also check linked issue comments (the QC comment may be on the issue, not the PR).
+	issueNums := parseLinkedIssues(pr)
+	for _, issueNum := range issueNums {
+		issueComments, err := w.issueTracker.ListComments(ctx, issueNum)
+		if err != nil {
+			continue
+		}
+		for _, c := range issueComments {
+			if strings.Contains(c.Body, QCApprovalMarker) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// HasQCApprovalComment checks whether a list of comments contains a QC
+// approval marker. Exported for testing.
+func HasQCApprovalComment(comments []*forge.Comment) bool {
+	for _, c := range comments {
+		if strings.Contains(c.Body, QCApprovalMarker) {
+			return true
+		}
+	}
+	return false
 }
