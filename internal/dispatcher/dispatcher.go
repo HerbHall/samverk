@@ -346,8 +346,11 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		go w.run(ctx)
 	}
 
-	// Backfill: convert existing needs-qc EDIT comments to PRs.
+	// Recover orphaned issues from previous dispatcher process before any
+	// polling begins. Must run synchronously so orphans are re-queued before
+	// the first pollQueued call.
 	if d.pool != nil {
+		d.RecoverOrphanedIssues(ctx)
 		go d.BackfillEditComments(ctx)
 	}
 
