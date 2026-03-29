@@ -81,6 +81,43 @@ func TestPhaseGate_RouteAllowsPermittedAgentType(t *testing.T) {
 	}
 }
 
+// TestPhaseGate_ResearchBypassesAllPhases verifies that agent:research routes
+// regardless of project phase (Decision 2: phase gating is per-issue, not per-project).
+func TestPhaseGate_ResearchBypassesAllPhases(t *testing.T) {
+	phases := []string{"research", "planning", "design", "development", "deployed", "maintenance", "inactive"}
+	for _, phase := range phases {
+		t.Run(phase, func(t *testing.T) {
+			tracker := newMockTracker()
+			issue := &forge.Issue{
+				Number: 10,
+				Title:  "research: feasibility study",
+				Body:   frontmatterBody("research"),
+				State:  forge.StateOpen,
+				Labels: []string{models.LabelStatusQueued},
+			}
+			tracker.issues[10] = issue
+
+			d := newTestDispatcher(tracker)
+			resolver := newMockProjectResolver()
+			resolver.addProject("test", "repo", tracker)
+			resolver.addPhase("test", "repo", phase)
+			d.projects = resolver
+
+			err := d.route(context.Background(), "test", "repo", issue, models.AgentTypeResearch, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			d.mu.Lock()
+			_, claimed := d.claimed[issueKey("test", "repo", 10)]
+			d.mu.Unlock()
+			if !claimed {
+				t.Errorf("expected research issue to be claimed in %q phase", phase)
+			}
+		})
+	}
+}
+
 func TestPhaseAllowed(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -134,13 +171,14 @@ func TestPhaseAllowed(t *testing.T) {
 		{"maintenance allows docs", "maintenance", models.AgentTypeDocs, true},
 		{"maintenance allows qc", "maintenance", models.AgentTypeQC, true},
 		{"maintenance blocks orchestrator", "maintenance", models.AgentTypeOrchestrator, false},
-		{"maintenance blocks research", "maintenance", models.AgentTypeResearch, false},
+		// Research bypasses phase gating (Decision 2: per-issue, not per-project).
+		{"maintenance allows research (phase bypass)", "maintenance", models.AgentTypeResearch, true},
 
-		// inactive phase — nothing allowed.
+		// inactive phase — nothing allowed except research (phase bypass).
 		{"inactive blocks code-gen", "inactive", models.AgentTypeCodeGen, false},
 		{"inactive blocks test", "inactive", models.AgentTypeTest, false},
 		{"inactive blocks docs", "inactive", models.AgentTypeDocs, false},
-		{"inactive blocks research", "inactive", models.AgentTypeResearch, false},
+		{"inactive allows research (phase bypass)", "inactive", models.AgentTypeResearch, true},
 		{"inactive blocks qc", "inactive", models.AgentTypeQC, false},
 	}
 

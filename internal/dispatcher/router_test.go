@@ -270,27 +270,50 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "agent type docs",
 		},
 
-		// --- triage tier ---
+		// --- research tier routing (#215) ---
 		{
-			name:      "label priority:low → triage (research agent)",
-			issue:     &forge.Issue{Title: "fix: minor thing", Body: longBody, Labels: []string{models.LabelPriorityLow}},
+			name:      "research:quick label → triage chain",
+			issue:     &forge.Issue{Title: "research: scan codebase", Body: longBody, Labels: []string{"research:quick"}},
 			agentType: models.AgentTypeResearch,
 			wantKey:   "triage",
-			wantReason: models.LabelPriorityLow,
+			wantReason: "research tier quick",
 		},
+		{
+			name:      "research:deep label → complex chain",
+			issue:     &forge.Issue{Title: "research: full architecture analysis", Body: longBody, Labels: []string{"research:deep"}},
+			agentType: models.AgentTypeResearch,
+			wantKey:   "complex",
+			wantReason: "research tier deep",
+		},
+		{
+			name:      "research with no tier label → default (standard)",
+			issue:     &forge.Issue{Title: "research: investigate X", Body: longBody},
+			agentType: models.AgentTypeResearch,
+			wantKey:   "default",
+			wantReason: "research tier standard",
+		},
+		{
+			name:      "research with priority:low → default (tier overrides priority)",
+			issue:     &forge.Issue{Title: "research: minor thing", Body: longBody, Labels: []string{models.LabelPriorityLow}},
+			agentType: models.AgentTypeResearch,
+			wantKey:   "default",
+			wantReason: "research tier standard",
+		},
+		{
+			name:      "research with short body → default (tier overrides body length)",
+			issue:     &forge.Issue{Title: "research: something", Body: "short body"},
+			agentType: models.AgentTypeResearch,
+			wantKey:   "default",
+			wantReason: "research tier standard",
+		},
+
+		// --- triage tier ---
 		{
 			name:      "agent type docs → default",
 			issue:     &forge.Issue{Title: "update readme", Body: longBody},
 			agentType: models.AgentTypeDocs,
 			wantKey:   "default",
 			wantReason: "agent type docs",
-		},
-		{
-			name:      "short body < 200 words → triage (research agent)",
-			issue:     &forge.Issue{Title: "fix: something", Body: "short body"},
-			agentType: models.AgentTypeResearch,
-			wantKey:   "triage",
-			wantReason: "short issue body",
 		},
 
 		// --- qc tier ---
@@ -321,22 +344,6 @@ func TestSelectProviderKey(t *testing.T) {
 			agentType: models.AgentTypeCodeGen,
 			wantKey:   "code-gen",
 			wantReason: "agent type code-gen (requires CLI provider)",
-		},
-		{
-			name:      "research agent with long body → default",
-			issue:     &forge.Issue{Title: "research: investigate X", Body: longBody},
-			agentType: models.AgentTypeResearch,
-			wantKey:   "default",
-			wantReason: "default routing",
-		},
-
-		// --- complexity:ambiguous tests ---
-		{
-			name:      "complexity:ambiguous → default (research agent)",
-			issue:     &forge.Issue{Title: "research: investigate", Body: longBody, Labels: []string{models.LabelComplexityAmbiguous}},
-			agentType: models.AgentTypeResearch,
-			wantKey:   "default",
-			wantReason: "default routing",
 		},
 
 		// --- priority/precedence conflicts ---
@@ -412,13 +419,13 @@ func TestSelectProviderKey(t *testing.T) {
 			wantReason: "agent type code-gen (requires CLI provider)",
 		},
 		{
-			// 199 words IS short (research agent falls through to triage)
-			name: "body with 199 words → triage (research agent)",
+			// 199 words IS short — orchestrator agent falls through to triage
+			name: "body with 199 words → triage (orchestrator agent)",
 			issue: &forge.Issue{
 				Title: "feat: something",
 				Body:  strings.Repeat("word ", 199),
 			},
-			agentType: models.AgentTypeResearch,
+			agentType: models.AgentTypeOrchestrator,
 			wantKey:   "triage",
 			wantReason: "short issue body",
 		},

@@ -65,8 +65,16 @@ var phaseAllowedAgents = map[string]map[models.AgentType]bool{
 // Returns true when phase is empty (no phase configured) or when the phase is
 // unknown (defensive: allow rather than silently drop). Human agents bypass
 // this check — they are handled before the phase gate in route().
+//
+// Research agents bypass phase gating entirely (Decision 2 in planning-system-design.md):
+// phase gating is per-issue, not per-project, and research must route regardless
+// of the current project phase.
 func phaseAllowed(phase string, agentType models.AgentType) bool {
 	if phase == "" {
+		return true
+	}
+	// Research agents are never blocked by project phase (Decision 2).
+	if agentType == models.AgentTypeResearch {
 		return true
 	}
 	allowed, phaseKnown := phaseAllowedAgents[phase]

@@ -156,6 +156,20 @@ func selectProviderKey(issue *forge.Issue, agentType models.AgentType) (key, rea
 		return "default", "agent type docs"
 	}
 
+	// Research agent: tier-based chain selection from issue labels.
+	// research:quick → triage (codebase scan only)
+	// research:standard (default) → default (dependency mapping + feasibility)
+	// research:deep → complex (full analysis, architecture options)
+	if agentType == models.AgentTypeResearch {
+		if labels["research:deep"] {
+			return "complex", "research tier deep"
+		}
+		if labels["research:quick"] {
+			return "triage", "research tier quick"
+		}
+		return "default", "research tier standard"
+	}
+
 	// Complex: critical priority, high complexity, complexity:cloud, or architectural title keywords.
 	if labels[models.LabelPriorityCritical] {
 		return "complex", "label " + models.LabelPriorityCritical
