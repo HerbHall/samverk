@@ -257,11 +257,20 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		// provider will be added in #492 (multi-machine routing).
 		d.checkCompletionQuality(ctx, result)
 
-		if err := tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc); err != nil {
-			d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", models.LabelStatusNeedsQc), zap.String("error", err.Error()))
+		// Auto-apply EDIT comments as PRs for code-gen/test agents.
+		// If the runner posted EDIT blocks as a comment (no workspace/write
+		// access), convert them to a branch + PR now. On success, skip the
+		// needs-qc label and go straight to pr-open.
+		if d.tryApplyEdits(ctx, result, tracker) {
+			d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, "status:pr-open", "dispatcher")
+			d.logger.Info("task completed (EDIT auto-applied as PR)", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
+		} else {
+			if err := tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc); err != nil {
+				d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", models.LabelStatusNeedsQc), zap.String("error", err.Error()))
+			}
+			d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, models.LabelStatusNeedsQc, "agent")
+			d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
 		}
-		d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, models.LabelStatusNeedsQc, "agent")
-		d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
 		broadcastEvent(d.broadcaster, "worker.complete", map[string]any{
 			"issue_number": result.IssueNumber,
 			"outcome":      "pr_opened",
@@ -333,6 +342,11 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 	if d.projectYAMLPath != "" {
 		w := newProjectYAMLWatcher(d.projectYAMLPath, d.trackerFactory, d, d.logger)
 		go w.run(ctx)
+	}
+
+	// Backfill: convert existing needs-qc EDIT comments to PRs.
+	if d.pool != nil {
+		go d.BackfillEditComments(ctx)
 	}
 
 	// Start autonomous triage agent if configured.

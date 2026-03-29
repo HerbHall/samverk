@@ -66,10 +66,8 @@ function buildAgentPrompt(issue: Issue): string {
 
   const url = issueURL(issue)
 
-  // For GitHub: suggest `gh issue view`. For Gitea or unknown: suggest the MCP tool.
-  const readCmd = issue.forge_type === 'github' || (!issue.forge_type && !issue.forge_url)
-    ? `gh issue view ${issue.number} --repo ${issue.owner ?? 'HerbHall'}/${issue.repo ?? 'samverk'}`
-    : `Use the Samverk MCP get_issue tool (issue #${issue.number}, project: ${issue.project_name ?? issue.repo ?? 'samverk'})`
+  // Always suggest MCP tool for reading issues (Gitea is primary forge).
+  const readCmd = `Use the Samverk MCP get_issue tool (issue #${issue.number}, project: ${issue.project_name ?? issue.repo ?? 'samverk'})`
 
   return `Resolve issue #${issue.number} in ${projectRef}.
 
@@ -78,7 +76,7 @@ URL: ${url}
 
 Read the full issue body with: ${readCmd}
 
-Follow the Explore -> Plan -> Code -> Verify -> Commit workflow. Create a feature branch, implement the fix, run \`make ci\` to verify, then create a PR with \`gh pr create\`.${deps}`
+Follow the Explore -> Plan -> Code -> Verify -> Commit workflow. Create a feature branch, implement the fix, run \`make ci\` to verify, then create a PR using the Samverk MCP \`create_pr\` tool.${deps}`
 }
 
 function CopyButton({ text }: { text: string }) {
