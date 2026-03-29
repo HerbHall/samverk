@@ -632,6 +632,7 @@ func dispatchCmd() *cobra.Command {
 								ForgeURL:  pc.GiteaURL,
 								RepoDir:   pc.RepoDir,
 								Tracker:   gtClient,
+								Writer:    gtClient,
 								PRManager: gtClient,
 							}
 						} else {
@@ -660,6 +661,7 @@ func dispatchCmd() *cobra.Command {
 								ForgeURL:  "https://github.com",
 								RepoDir:   pc.RepoDir,
 								Tracker:   ghClient,
+								Writer:    ghClient,
 								PRManager: ghClient,
 							}
 						}
