@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-28T23:30:00Z
+updated: 2026-03-29T07:45:00Z
 updated_by: claude-code
 ---
 
@@ -88,7 +88,67 @@ See `docs/planning-system-design.md` for decisions and sequencing.
 
 - Various pipeline quality and UI issues awaiting human decisions
 
-## Session Summary (2026-03-28 night)
+## Session Summary (2026-03-29 early morning)
+
+Major pipeline infrastructure session -- throughput bottlenecks fixed, deploy safety audited.
+
+### Pipeline Infrastructure Shipped (3 PRs merged)
+
+- **PR #452** -- Planning system design doc (5 architectural decisions, 3 issues unblocked)
+- **PR #457** -- Auto-apply EDIT comments to PRs (#454) + MCP prompt fix
+- **PR #460** -- Priority queue ordering with age bonus + chain promotion (#459)
+- **PR #469** -- Fix: wire RepoWriter for config-file registered projects (unblocked auto-apply)
+
+### Auto-Apply Results
+
+- Deployed with Writer fix -- backfill immediately applied 15 EDIT comments as PRs (#470-#484)
+- Pipeline bottleneck of 27 stuck needs-qc issues reduced to near zero
+- Forward path verified: new agent EDIT output will auto-convert to PRs
+
+### Deploy Safety Audit
+
+Root cause of recurring orphaned issues found: safe-deploy.sh idle check reads stale SQLite metrics (up to 10 min lag), has TOCTOU race, and between-task atomic counter gap. Production evidence: SIGKILL after 30 min timeout, 3 issues orphaned.
+
+Filed:
+
+- **#485** -- Startup orphan recovery (re-queue claimed/in-progress on restart)
+- **#486** -- Quality gate retry instead of needs-qc parking
+- **#488** -- Drain API for safe deploy (eliminates stale metrics + TOCTOU race)
+
+### Dashboard Redesign Scoped
+
+Current dashboard is tool-oriented (Issues, Agents, Providers) instead of process-oriented (5-division pipeline model). Data is unreliable (NaN timestamps, stale counts, wrong "updated" times).
+
+- **#462** -- Fix data accuracy bugs (queued, immediate)
+- **#490** -- Full dashboard redesign epic (parked until planning pipeline #214/#215 is live)
+- Strategy: build planning pipeline first, use it to research + decompose dashboard redesign
+
+### Housekeeping
+
+- 14 stale local branches deleted (all squash-merged)
+- 6 dangling stashes cleared
+- `.mcp.json` added to .gitignore (local Claude Code config)
+- DevKit #451 filed for missing `shared/` symlink in sync.ps1
+
+### Issues Filed This Session
+
+| Issue | Priority | Status | What |
+|-------|----------|--------|------|
+| #451 (DevKit) | high | queued | sync.ps1 missing shared/ symlink |
+| #454 | critical | **done** | Auto-apply EDIT comments to PRs |
+| #458 | high | queued | Hardcoded GitHub URLs in dashboard |
+| #459 | critical | **done** | Priority queue + chain promotion |
+| #462 | critical | queued | Dashboard NaN, counts, IS/PR prefixes |
+| #485 | critical | queued | Startup orphan recovery |
+| #486 | high | queued | Quality gate retry not park |
+| #488 | critical | queued | Drain API for safe deploy |
+| #490 | high | parked | Dashboard redesign epic (blocked on #214) |
+
+### Key Policy: Deploy Safety
+
+**NEVER deploy while tasks are active.** Always use `make deploy` (safe-deploy.sh). `deploy-force` is for pipeline-is-broken emergencies only. After #488 ships, safe-deploy will use atomic drain API. After #485 ships, startup auto-recovers orphans.
+
+## Previous Session (2026-03-28 night)
 
 Planning system design session -- resolved architectural decisions for 5 blocked issues.
 
@@ -148,10 +208,11 @@ Major operational session -- fixed infrastructure, triaged full backlog, establi
 
 ## Recommended Next Session
 
-1. **Monitor Wave 1 pipeline throughput** -- #239, #242, #215 are queued. Check if agents pick them up and produce CI-green PRs.
+1. **Monitor deploy safety PRs** -- #485 (orphan recovery) and #488 (drain API) are critical infrastructure. Review output when complete.
 2. **Unblock #214 after #239 merges** -- relabel to `status:queued` once capability profiles land.
-3. **QC backlog** -- 23 needs-qc issues. Batch review or let pipeline QC agents process.
-4. **#366 remote MCP access** -- research CF MCP portal, test on isolated subdomain.
+3. **Dashboard data trust** -- #462 (NaN, counts, IS/PR prefixes) is queued. Verify fix when merged.
+4. **#490 dashboard redesign** -- parked until planning pipeline (#214, #215) is live. Will be first customer of research + planning workflow.
+5. **#366 remote MCP access** -- research CF MCP portal, test on isolated subdomain.
 
 ## Start Here
 

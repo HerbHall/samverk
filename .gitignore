@@ -72,3 +72,4 @@ internal/server/static/assets/
 !.samverk/status.md
 !.samverk/project.yaml
 !.samverk/providers.yaml.example
+.mcp.json
