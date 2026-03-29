@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -67,6 +68,7 @@ type Dispatcher struct {
 	primaryForgeType  string         // current primary forge type label (for logging)
 	primaryForgeURL   string         // current primary forge URL (for logging)
 	triageAgent       *TriageAgent   // optional autonomous triage agent
+	draining          atomic.Bool    // when true, no new work is claimed
 	mu                sync.RWMutex
 	logger            *zap.Logger
 	stop              context.CancelFunc
@@ -576,6 +578,63 @@ func (d *Dispatcher) Stop() {
 	}
 }
 
+// DrainStatus holds the live drain state returned by DrainState().
+type DrainStatus struct {
+	Draining      bool  `json:"draining"`
+	ActiveWorkers int   `json:"active_workers"`
+	ClaimedIssues []int `json:"claimed_issues"`
+	QueueDepth    int   `json:"queue_depth"`
+}
+
+// Drain atomically enters drain mode, preventing new work from being claimed.
+// Returns the current drain status with live (non-stale) metrics.
+func (d *Dispatcher) Drain() DrainStatus {
+	d.draining.Store(true)
+	d.logger.Info("drain mode activated")
+	return d.DrainState()
+}
+
+// CancelDrain exits drain mode, allowing new work to be claimed again.
+func (d *Dispatcher) CancelDrain() {
+	d.draining.Store(false)
+	d.logger.Info("drain mode deactivated")
+}
+
+// IsDraining returns true if the dispatcher is in drain mode.
+func (d *Dispatcher) IsDraining() bool {
+	return d.draining.Load()
+}
+
+// DrainState returns the current drain status with live pool metrics.
+func (d *Dispatcher) DrainState() DrainStatus {
+	d.mu.RLock()
+	issues := make([]int, 0, len(d.claimed))
+	for k := range d.claimed {
+		// key format: "owner/repo#N"
+		var num int
+		if idx := strings.LastIndex(k, "#"); idx >= 0 {
+			if _, err := fmt.Sscanf(k[idx+1:], "%d", &num); err == nil {
+				issues = append(issues, num)
+			}
+		}
+	}
+	d.mu.RUnlock()
+
+	var activeWorkers, queueDepth int
+	if d.pool != nil {
+		snap := d.pool.Snapshot()
+		activeWorkers = snap.ActiveWorkers
+		queueDepth = snap.QueueDepth
+	}
+
+	return DrainStatus{
+		Draining:      d.draining.Load(),
+		ActiveWorkers: activeWorkers,
+		ClaimedIssues: issues,
+		QueueDepth:    queueDepth,
+	}
+}
+
 // handleEvent dispatches a forge event to the correct handler.
 func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
 	d.metrics.EventProcessed()
@@ -605,6 +664,10 @@ func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
 // handleOpened processes a newly created issue: classify, check deps, route or block.
 // Pull requests are silently skipped — they are not routable work items.
 func (d *Dispatcher) handleOpened(ctx context.Context, ev forge.Event) error {
+	if d.draining.Load() {
+		d.logger.Debug("drain mode active, skipping handleOpened", zap.Int("issue", ev.IssueNumber))
+		return nil
+	}
 	if ev.IsPullRequest {
 		d.logger.Debug("skipping pull request", zap.Int("issue", ev.IssueNumber))
 		return nil
@@ -704,6 +767,10 @@ func (d *Dispatcher) handleClosed(ctx context.Context, ev forge.Event) error {
 // (e.g., after a correction or manual label change) without requiring a
 // dispatcher restart.
 func (d *Dispatcher) handleLabeled(ctx context.Context, ev forge.Event) error {
+	if d.draining.Load() {
+		d.logger.Debug("drain mode active, skipping handleLabeled", zap.Int("issue", ev.IssueNumber))
+		return nil
+	}
 	if ev.Label != models.LabelStatusQueued {
 		return nil
 	}
@@ -805,6 +872,10 @@ func (d *Dispatcher) handleEdited(_ context.Context, _ forge.Event) error {
 // were relabeled back to queued (e.g., after QC rejection) but missed by the
 // event watcher because the dispatcher had already "seen" them.
 func (d *Dispatcher) pollQueued(ctx context.Context) {
+	if d.draining.Load() {
+		d.logger.Debug("drain mode active, skipping pollQueued")
+		return
+	}
 	d.mu.RLock()
 	entries := make([]TrackerEntry, len(d.trackerEntries))
 	copy(entries, d.trackerEntries)

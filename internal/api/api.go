@@ -57,6 +57,7 @@ type API struct {
 	synapsetProxy   *SynapsetProxy               // may be nil; proxies Synapset API requests
 	logStore        *logstore.LogStore            // may be nil; for log query API
 	toolCount          int                           // number of MCP tools registered; set via SetToolCount
+	drainCtrl          *drainController                // may be nil; set via SetDrainController (dispatch process only)
 	chatAPIKey         string                        // Anthropic API key for chat proxy; empty = use env
 	chatRateLimit      *chatRateLimit                // rate limiter for chat endpoint
 	history            []historyEntry                // ring buffer of recent snapshots; guarded by historyMu

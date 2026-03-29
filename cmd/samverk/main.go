@@ -934,6 +934,45 @@ func dispatchCmd() *cobra.Command {
 				}
 			}
 
+			// Start management HTTP server for drain endpoints.
+			// This runs on the dispatch process so drain reads live state,
+			// not stale SQLite snapshots from the serve process.
+			drainMux := api.DrainMux(
+				func() api.DrainResponse {
+					s := disp.Drain()
+					return api.DrainResponse{
+						Draining:      s.Draining,
+						ActiveWorkers: s.ActiveWorkers,
+						ClaimedIssues: s.ClaimedIssues,
+						QueueDepth:    s.QueueDepth,
+					}
+				},
+				func() api.DrainResponse {
+					s := disp.DrainState()
+					return api.DrainResponse{
+						Draining:      s.Draining,
+						ActiveWorkers: s.ActiveWorkers,
+						ClaimedIssues: s.ClaimedIssues,
+						QueueDepth:    s.QueueDepth,
+					}
+				},
+				func() api.DrainResponse {
+					disp.CancelDrain()
+					s := disp.DrainState()
+					return api.DrainResponse{
+						Draining:      s.Draining,
+						ActiveWorkers: s.ActiveWorkers,
+						ClaimedIssues: s.ClaimedIssues,
+						QueueDepth:    s.QueueDepth,
+					}
+				},
+			)
+			mgmtSrv := &http.Server{
+				Addr:              ":9090",
+				Handler:           drainMux,
+				ReadHeaderTimeout: 10 * time.Second,
+			}
+
 			logger.Info("starting dispatcher", zap.Int("projects", len(trackerEntries)))
 
 			g, gctx := errgroup.WithContext(ctx)
@@ -941,6 +980,20 @@ func dispatchCmd() *cobra.Command {
 			g.Go(func() error {
 				hub.Run(gctx)
 				return nil
+			})
+
+			g.Go(func() error {
+				logger.Info("management server starting", zap.String("addr", mgmtSrv.Addr))
+				if err := mgmtSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					return fmt.Errorf("management server: %w", err)
+				}
+				return nil
+			})
+			g.Go(func() error {
+				<-gctx.Done()
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer shutdownCancel()
+				return mgmtSrv.Shutdown(shutdownCtx)
 			})
 
 			g.Go(func() error {
