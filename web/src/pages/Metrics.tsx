@@ -529,6 +529,14 @@ export function Metrics() {
     refetchInterval: 30_000,
   })
 
+  const issueSummary = useQuery({
+    queryKey: ['issue-summary'],
+    queryFn: api.getIssueSummary,
+    refetchInterval: 60_000,
+  })
+
+  // Full issue list for the detailed breakdown component (needs individual issues
+  // for time-based filtering like "closed in 24h"). Top-line counts use issueSummary above.
   const issues = useQuery({
     queryKey: ['issues', 'all-for-metrics'],
     queryFn: async () => {
@@ -559,9 +567,9 @@ export function Metrics() {
     refetchInterval: 30_000,
   })
 
-  // Compute top-line stats
-  const openCount = issues.data?.filter((i) => i.state === 'open').length ?? 0
-  const closedCount = issues.data?.filter((i) => i.state === 'closed').length ?? 0
+  // Compute top-line stats from cached summary (accurate counts).
+  const openCount = issueSummary.data?.aggregate.open ?? 0
+  const closedCount = issueSummary.data?.aggregate.closed ?? 0
   const totalSessions = sessions.data?.length ?? 0
   const completedSessions = sessions.data?.filter((s) => s.status === 'completed').length ?? 0
   const costUsd = costs.data?.estimated_cost_usd ?? 0

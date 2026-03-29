@@ -379,6 +379,12 @@ export function Dashboard() {
     staleTime: 30_000,
   })
 
+  const issueSummary = useQuery({
+    queryKey: ['issue-summary'],
+    queryFn: api.getIssueSummary,
+    refetchInterval: 60_000,
+  })
+
   // Provider health may return 503 -- handle gracefully (show unknown, don't crash)
   const providerHealth = useQuery({
     queryKey: ['providers', 'health'],
@@ -422,7 +428,7 @@ export function Dashboard() {
 
   // Derived values
   const activeWorkerList = activeWorkers.data ?? []
-  const openIssueCount = issues.data?.length ?? 0
+  const openIssueCount = issueSummary.data?.aggregate.open ?? issues.data?.length ?? 0
 
   const healthyProviders =
     !providerHealth.isError && providerHealth.data != null

@@ -602,6 +602,19 @@ export interface PipelineThroughputResponse {
   generated_at: string
 }
 
+export interface IssueCounts {
+  open: number
+  closed: number
+  total: number
+}
+
+export interface IssueSummary {
+  projects: Record<string, IssueCounts>
+  aggregate: IssueCounts
+  label_counts: Record<string, number>
+  synced_at: string
+}
+
 export interface PipelineEvent {
   issue_number: number
   issue_title: string
@@ -616,6 +629,9 @@ export const api = {
     const data = await fetchJSON<{ issues: Issue[]; total: number }>(`/issues${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`)
     return data.issues
   },
+
+  getIssueSummary: () =>
+    fetchJSON<IssueSummary>('/issues/summary'),
 
   searchIssues: async (q: string, state?: string) => {
     const params = new URLSearchParams({ q })

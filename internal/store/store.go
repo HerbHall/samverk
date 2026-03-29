@@ -110,6 +110,14 @@ type Store interface {
 	GetTriageDecisionForIssue(ctx context.Context, issueNumber int) (*TriageDecision, error)
 	UpdateTriageReview(ctx context.Context, id int64, reviewedBy, outcome string) error
 
+	// Issue cache (synced from forge, read by API and MCP for accurate counts)
+	SyncIssues(ctx context.Context, project string, issues []CachedIssue) error
+	DeleteStaleIssues(ctx context.Context, project string, currentNumbers []int) error
+	GetIssueCounts(ctx context.Context, project string) (open, closed int, err error)
+	GetAllIssueCounts(ctx context.Context) (map[string]IssueCounts, error)
+	GetIssueLabelCounts(ctx context.Context, project string) (map[string]int, error)
+	GetCacheSyncTime(ctx context.Context, project string) (time.Time, error)
+
 	Close() error
 }
 
@@ -326,6 +334,22 @@ CREATE TABLE IF NOT EXISTS triage_decisions (
 CREATE INDEX IF NOT EXISTS idx_triage_issue ON triage_decisions(issue_number);
 CREATE INDEX IF NOT EXISTS idx_triage_verdict ON triage_decisions(verdict);
 CREATE INDEX IF NOT EXISTS idx_triage_created ON triage_decisions(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS issue_cache (
+	number       INTEGER NOT NULL,
+	project      TEXT NOT NULL,
+	title        TEXT NOT NULL,
+	state        TEXT NOT NULL,
+	labels       TEXT NOT NULL DEFAULT '[]',
+	assignees    TEXT NOT NULL DEFAULT '[]',
+	created_at   TEXT NOT NULL,
+	updated_at   TEXT NOT NULL,
+	closed_at    TEXT,
+	synced_at    TEXT NOT NULL,
+	PRIMARY KEY (project, number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_issue_cache_state ON issue_cache(project, state);
 `
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
 		return err

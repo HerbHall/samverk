@@ -238,7 +238,23 @@ func (m *mockStore) GetTriageDecisionForIssue(_ context.Context, _ int) (*store.
 	return nil, store.ErrNotFound
 }
 func (m *mockStore) UpdateTriageReview(_ context.Context, _ int64, _, _ string) error { return nil }
-func (m *mockStore) Close() error                                                     { return nil }
+
+// Issue cache methods.
+func (m *mockStore) SyncIssues(_ context.Context, _ string, _ []store.CachedIssue) error { return nil }
+func (m *mockStore) DeleteStaleIssues(_ context.Context, _ string, _ []int) error        { return nil }
+func (m *mockStore) GetIssueCounts(_ context.Context, _ string) (open, closed int, err error) {
+	return 0, 0, nil
+}
+func (m *mockStore) GetAllIssueCounts(_ context.Context) (map[string]store.IssueCounts, error) {
+	return nil, nil
+}
+func (m *mockStore) GetIssueLabelCounts(_ context.Context, _ string) (map[string]int, error) {
+	return nil, nil
+}
+func (m *mockStore) GetCacheSyncTime(_ context.Context, _ string) (time.Time, error) {
+	return time.Time{}, nil
+}
+func (m *mockStore) Close() error { return nil }
 
 // Compile-time check: mockStore implements store.Store.
 var _ store.Store = (*mockStore)(nil)

@@ -198,9 +198,31 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		issueList = append(issueList, toIssueResponse(iss))
 	}
 
+	// Use cached total when available; fall back to page count.
+	total := len(issues)
+	if a.store != nil {
+		allCounts, countErr := a.store.GetAllIssueCounts(r.Context())
+		if countErr == nil {
+			var agg int
+			for _, c := range allCounts {
+				switch opts.State {
+				case forge.StateOpen:
+					agg += c.Open
+				case forge.StateClosed:
+					agg += c.Closed
+				default:
+					agg += c.Total
+				}
+			}
+			if agg > 0 {
+				total = agg
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, issueListResponse{
 		Issues:  issueList,
-		Total:   len(issues),
+		Total:   total,
 		Limit:   limit,
 		Offset:  offset,
 		Page:    page,
