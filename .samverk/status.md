@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-26T17:00:00Z
+updated: 2026-03-28T23:30:00Z
 updated_by: claude-code
 ---
 
@@ -8,17 +8,15 @@ updated_by: claude-code
 
 ## Phase
 
-Agent Autonomy -- getting Samverk to run itself. Infrastructure complete.
-Pipeline PR creation gap fixed. 29 issues re-queued for autonomous processing.
+Agent Autonomy -- pipeline running autonomously. 4 runners online, dispatcher unpaused.
 
 ## What Is Running
 
 - Samverk server: CT 202 (192.168.1.162:8080) -- healthy
-- Dispatcher: RUNNING (1-5 workers, 6 providers, 3 projects, per-project workspace isolation)
+- Dispatcher: RUNNING (1-5 workers, 8 providers, 3 projects)
 - Projects: samverk, devkit, synapset (all Gitea, all with dedicated repo clones)
-- Synapset memory: AUTHENTICATED (was 401, fixed #266)
-- Go 1.24.1: INSTALLED on CT 202 (agent worktree validation now runs go build/test)
-- GITHUB_TOKEN: DISABLED (commented out, all forge ops via Gitea)
+- Synapset memory: AUTHENTICATED
+- Go 1.24.1 + Node v22.22.1 + pnpm 10.33.0: INSTALLED on CT 202
 - Dashboard: unified with Synapset native + DevKit iframe
 - Gitea CI: CT 200 (80GB disk, daily cleanup cron at 3am)
 - Cloudflare Tunnel: e86ba6e3 (samverk + synapset + mcp subdomains)
@@ -31,353 +29,133 @@ Pipeline PR creation gap fixed. 29 issues re-queued for autonomous processing.
 | VM 300 | RTX 3090 Ti 24GB | qwen2.5-coder:32b | triage, local |
 | CM-ASUS | RTX 2080 Ti 11GB | qwen2.5-coder:7b | triage |
 
+### Gitea Actions Runners (all online)
+
+| Runner | Machine | Auto-start |
+|--------|---------|-----------|
+| samverk-runner (ID 7) | CT 200 | systemd enabled |
+| hdh-d10u-runner (ID 6) | HDH-D10U | systemd enabled |
+| unraid-runner (ID 5) | HDH-UNRAID | /boot/config/go script |
+| hdh-nzxt-win (ID 4) | HDH-NZXT | Scheduled Task (logon) |
+
 ## Blocking Issue
 
 None.
 
-## Open Issues Summary
+## Open Issues Summary (50 open / 50 closed)
 
 | Status | Count | Notes |
 |--------|-------|-------|
-| queued | ~29 | Re-queued from needs-qc after pipeline fix; dispatcher will process |
-| needs-human | 4 | Genuinely blocked: #70, #74, #128, #218 |
-| blocked (deps) | 11 | Dependency chains |
+| needs-qc | 23 | Agent completed work, awaiting QC review |
+| needs-human | 12 | 7 genuinely blocked, 2 planning (blocked on deps), 3 misc |
+| queued | 11 | Pipeline processing (includes 3 planning Wave 1 issues) |
+| blocked | 7 | Dependency chains |
+| claimed | 5 | Agent actively working |
 
-### Recommended Next Session
+### Open PRs (4 remaining)
 
-1. Monitor pipeline throughput -- 29 re-queued issues should now create PRs (not comments)
-2. Verify PR creation is working (check for new open PRs on Gitea)
-3. Address #218 (CF Access OAuth proxy) when ready for focused session
-4. Clean up stale local branches (20+ unmerged branches from prior sessions)
+PR #435 (diagnostics endpoint) and #440 (canary opus) are CI-green, awaiting tier-2 auto-merge.
 
-### Planned Next Waves
+### Agent Performance Baselines (2026-03-28)
 
-| Wave | Issues | What |
-|------|--------|------|
-| A | #157, #158 | CF Access for synapset.herbhall.net + security docs |
-| B | #57 Option B | Structured JSON output for Ollama code-gen |
-| C | #70 sub-issues (#64, #67, #69) | MCP parity tools |
-| D | #72 Phase 1+2 | WebSocket hub + expanded API |
+| Provider | Chain | Time | Output |
+|----------|-------|------|--------|
+| Ollama qwen3-coder:30b | local | 47s | Comment EDIT |
+| Ollama qwen3-coder:30b | triage | 52s | Comment EDIT |
+| Claude Sonnet 4.6 | code-gen | 57s | Comment EDIT |
+| Claude Opus 4.6 | complex | 78s | Full git PR |
 
-## Session Summary (2026-03-26)
+Note: Only claude-opus (complex chain) creates actual git PRs. All other providers produce comment-based EDIT output.
 
-Pipeline gap diagnosis and fix. Root cause: Pool missing repoWriter/prManager wiring.
+### Needs-Human Issues (15)
 
-### PRs Merged
+**Genuinely blocked on human:**
 
-- **#332** -- Dispatcher re-scan after label changes (#324) -- pollQueued method, claimed guard
-- **#333** -- Auto-populate RCA category from failure class (#320) -- 13 class mappings, component extraction
-- **#334** -- communication-protocol.md schema v1.1.0 (#317) -- file_context, constraints, handoff_ready
-- **#335** -- Wire repoWriter/prManager into Pool (#331) -- CRITICAL pipeline fix
+- #366 -- Split-horizon DNS + CF OAuth for remote MCP access
+- #446 -- Docker Desktop feature audit
 
-### Root Cause: Pipeline PR Creation Gap
+**Planning system (design session completed 2026-03-28):**
 
-All 33 needs-qc issues had agent code posted as **comments** instead of branches/PRs. Root cause: `Pool` struct in `pool.go` had no `repoWriter`/`prManager` fields. Runners created in `processTask()` always had `nil` prManager, causing `postProcess()` to silently fall through to `postComment()`. Integration test masked this by setting dependencies directly on the runner.
+- #239 -- Agent capability profiles schema -- **QUEUED** (Wave 1)
+- #242 -- Readiness review pre-filter -- **QUEUED** (Wave 1, rewritten as dispatcher function)
+- #215 -- Research routing -- **QUEUED** (Wave 1, scope reduced to routing only)
+- #214 -- Planning agent -- BLOCKED on #239 (Wave 2)
+- #245 -- Continuous improvement -- DEFERRED (Wave 3, needs operational data)
 
-Fix: 3 files, ~100 lines. Added fields + setters to Pool, wired forge client in main.go, passed to Runner in processTask.
+See `docs/planning-system-design.md` for decisions and sequencing.
 
-### Pipeline Health
+**Remaining (7 misc):**
 
-- 503 failures in 168h (pre-fix). 71% from two root causes fixed last session (CLAUDE.md corruption + CLI buffering)
-- Failure counts reset, 29 issues re-queued from needs-qc to queued
-- Deployed v0.1.24-43 to CT 202 with pipeline fix active
-- Label constants migration (#247) confirmed complete -- no further work needed
+- Various pipeline quality and UI issues awaiting human decisions
 
-### Issues Closed
+## Session Summary (2026-03-28 night)
 
-- #324, #320, #317 -- implemented and merged
-- #247 -- label constants already complete
-- #331 -- filed and merged (pipeline fix)
+Planning system design session -- resolved architectural decisions for 5 blocked issues.
 
-## Session Summary (2026-03-25, session 3)
+### Planning System Decisions
 
-Pipeline reliability overhaul. Two root cause bugs fixed, 5 PRs merged, 3 agent branches reviewed.
+- Created `docs/planning-system-design.md` with 5 architectural decisions
+- #242 readiness review: rewritten as dispatcher pre-filter (no LLM on fast path)
+- #215 research routing: scope reduced to routing only, per-issue phase gating (not per-project)
+- #239 capability profiles: unblocked for pipeline (already had complete handoff spec)
+- #214 planning agent: blocked on #239, sequencing comment added
+- #245 continuous improvement: deferred to Wave 3, needs operational data
+- 3 issues moved from needs-human to queued (Wave 1 parallel execution)
 
-### PRs Merged
+### DevKit Fix
 
-- **#294** -- Pipeline stage constants (#257, cherry-picked from agent branch)
-- **#295** -- Linux worker support (#225, cherry-picked from agent branch)
-- **#296** -- Label constants generator infra (#247, cherry-picked from agent branch)
-- **#297** -- CLAUDE.md corruption fix (restoreInjectedFiles before commit)
-- **#298** -- Stream-json activity detection (eliminates false startup timeouts)
+- Found `claude/shared/record-usage.md` missing from all machines -- sync.ps1 never symlinks `shared/` directory
+- Root cause: commit 8404130 moved the file but never updated `.sync-manifest.json` or sync.ps1
+- Manual fix applied on HDH-NZXT: `ln -s ~/.devkit-stable/claude/shared ~/.claude/shared`
+- DevKit issue #451 filed for proper fix (sync.ps1 + manifest + fleet propagation)
+- 5 skills affected: autolearn, code-review, conformance-audit, devkit-sync, quality-control
 
-### Root Cause Fixes
+### Previous Session (2026-03-28 evening)
 
-**1. CLAUDE.md corruption (PR #297)**: Runner wrote task prompt into CLAUDE.md in worktrees. CommitAndPush staged it. Validator caught it as "unknown" and retried in a loop. Root cause of 55% of all failures (167/302 in 48h). Fix: `restoreInjectedFiles()` runs `git checkout -- CLAUDE.md` before staging.
+Major operational session -- fixed infrastructure, triaged full backlog, established baselines.
 
-**2. CLI startup timeout (PR #298)**: `--print` mode buffers ALL stdout until session ends. Multi-turn agentic sessions produce 0 bytes for minutes. Our 300s startup timeout killed active sessions. Root cause of 56% of CLI failures (26 hangs in 48h). Fix: `--output-format stream-json --verbose` streams JSON events in real-time. Init event arrives in ~2s. Startup timeout reduced to 30s.
+### Infrastructure Fixed
 
-### Investigation Findings
+- GitHub MCP (Docker Gateway): OAuth token re-authorized
+- Gitea Actions runner (CT 200): re-registered (token expired)
+- HDH-NZXT runner: restarted (process stopped)
+- UNRAID runner: added auto-start to /boot/config/go
+- Node.js + pnpm installed on CT 202 (unblocks frontend agent work)
+- Ollama models verified on all 4 GPU hosts
+- Dispatcher unpaused
 
-- Concurrency was NOT the cause (17/26 hangs had 0 other active processes)
-- OAuth token expiry was NOT the cause (token set to never expire)
-- Ollama models also "hung" (same stdout buffering behavior)
-- Confirmed via strace: one `write(1,...)` syscall at session end
-- Upstream issues found: #24317 (OAuth race), #37402 (token wipe), #38667 (v2.1.83 regression -- do NOT upgrade from v2.1.81)
+### Features Shipped
 
-### Issues Filed
+- PR #435: `get_diagnostics` MCP tool + REST endpoint (CI green)
+- PR #440: E2E canary from claude-opus complex chain (CI green)
 
-- #299 -- Stream-json verification test (closed, verified)
-- DevKit #563 -- CLI stream-json pattern for rules files
-- DevKit #564 -- CLAUDE.md corruption pattern for rules files
+### Triage Actions
 
-## Session Summary (2026-03-25, session 2)
+- 4 canary issues created, baselined, closed (#436-439)
+- 8 failing PRs closed and source issues re-queued (stale main)
+- 11 needs-human issues reclassified to queued (pipeline can handle)
+- 4 incorrectly closed issues reopened (pipeline scope clarification)
+- 2 dashboard issues filed (#447 sparklines, #448 stale metrics)
+- 1 Docker Desktop research issue filed (#446)
 
-Pipeline health overhaul. 8 PRs merged, 17 issues unblocked, 3 critical bugs fixed.
+### Key Learnings Stored
 
-### PRs Merged
-
-- **#277** -- EDIT block format validation for code-gen agents
-- **#278** -- govulncheck dep bump (MCP SDK v1.4.1, x/crypto v0.45.0) + time-dependent test fix
-- **#280** -- Dispatcher skips closed issues, needs-qc, and prevents escalation label race
-- **#281** -- Failure classifier: 12 new patterns (connection reset, EOF, 429, context canceled, etc.)
-- **#285** -- Tool version standardization: golangci-lint v2.10.1 everywhere, pnpm v10, tools.json, .nvmrc, .go-version
-- **#290** -- Code-gen routing to CLI-only chain (free-first preserved, Ollama stays default for non-code tasks)
-- **#291** -- Synapset test env isolation (TestConfigFromEnv passes on CT 202)
-- **#292** -- Synapset FlexTags: handle comma-separated string tags from server
-
-### Pipeline Fixes
-
-- Dispatcher state validation: stops retrying closed and escalated issues (was 506 failures/week)
-- Failure count reset + re-labeling: 17 issues moved from needs-human to queued
-- Routing config deployed to CT 202: code-gen chain [claude-sonnet, claude-haiku]
-- providers.yaml sync gap identified (filed #289)
-
-### Issues Filed
-
-- #274-276 -- Dashboard follow-ups from #72 closure (approve/reject, MCP chat, action confirm)
-- #279 -- Auto-merge pipeline + conditional autonomy tiers
-- #282 -- Adaptive timeout based on complexity
-- #283 -- CLAUDE.md-only output prompt hardening
-- #284 -- Auto-merge agent branches after QC
-- #286-288 -- Version management Phase 3/4 (Renovate, quarterly review, fleet versions)
-- #289 -- Deploy script config sync gap
-
-### Remaining Issues
-
-- Claude CLI intermittent startup hangs (~30% of sessions, 0 output, 5m timeout kills them)
-- "Output too short" quality gate failures on some Claude sessions
-- #218 (CF Access OAuth) deferred to focused session
-
-## Session Summary (2026-03-24/25)
-
-Major infrastructure session: multi-project dispatch, pipeline unblocking, quality triage.
-
-### Deployed Changes
-
-- **Per-project repo directories** (PR #268): Each project gets its own git clone for agent worktrees. DevKit and Synapset issues no longer fail from wrong repo.
-- **Synapset auth token** (PR #271): Client sends Bearer token. Agents get memory enrichment.
-- **Go 1.24.1 on CT 202**: Agent worktree validation now runs go build and go test.
-- **Multi-project dispatcher**: Switched from legacy --owner/--repo (devkit only) to --projects-config (all 3 projects).
-- **GITHUB_TOKEN disabled**: All forge ops through Gitea.
-
-### Issues Filed
-
-- #266 (closed) -- Synapset auth token (implemented)
-- #267 (closed) -- Go install on CT 202 (implemented)
-- #269 -- Ollama code-gen EDIT block quality problem
-- #270 (CRITICAL) -- Route code-gen to Claude CLI chains (needs user cost decision)
-- DevKit #50 -- Autolearn: time-dependent test pattern
-
-### Pipeline Findings
-
-- 21 tasks completed after re-queue, but all via Ollama = comment-only output
-- Root cause: Ollama chat API cannot produce EDIT blocks or modify files
-- All 19 code-gen issues blocked on #270 routing fix
-- 3 already-fixed issues (#262-264) closed
-- Docs issues also comment-only (Ollama claims changes but doesn't make them)
-
-### Needs-Human Queue (your review)
-
-| Issue | Project | What's Needed |
-|-------|---------|---------------|
-| #270 | samverk | **CRITICAL**: Approve routing cost (Claude vs Ollama for code-gen) |
-| #218 | samverk | CF Access OAuth session persistence bug |
-| #128 | samverk | Tauri 2 DevKit scaffolding design |
-| #74 | samverk | Homelab security overhaul (physical access) |
-| #72 | samverk | Dashboard decomposition (large umbrella) |
-| #70 | samverk | MCP/dashboard parity (large umbrella) |
-| #30 | devkit | CI audit risk acceptance |
-| #20 | devkit | VS Code workspace convention |
-| #16, #15 | devkit | CF Access e2e tests (physical machines) |
-| #149 | synapset | CI audit risk acceptance |
-
-## Gaps to Full Autonomy
-
-### Resolved This Session
-
-1. **Ollama output quality** -- FIXED: Restricted to triage-only + output validation guard (PR #613)
-2. **Claude CLI hangs** -- FIXED: 30s timeout + startup detection + auto-failover (PR #611)
-3. **No planning step** -- FIXED: Explore phase reads CLAUDE.md + sibling files (PR #614)
-4. **DevKit data on local machine** -- RESOLVED: Synapset covers knowledge, server self-sufficient (#609 closed)
-5. **Copilot review feedback** -- FIXED: PR watcher reads Copilot comments before merge (PR #610)
-
-### Medium (remaining)
-
-1. Synapset parse error (Synapset#62 filed)
-2. `CF_ACCESS_TEAM_DOMAIN` env var on CT 202 to activate CF auto-login (#88 shipped, waiting on Cloudflare Access setup)
+- Pipeline issues are multi-project -- don't close for scope
+- Interactive sessions are pipeline operators, not workers
+- Docker Desktop model runner on HDH-NZXT (port conflict with Ollama)
+- Gitea runner registration expires silently
+- Only claude-opus creates git PRs (sonnet/haiku produce comment EDITs)
 
 ## Recommended Next Session
 
-1. Set `SAMVERK_DEVKIT_PATH` on CT 202 to activate DevKit native page
-2. Configure Cloudflare Access policy for samverk.herbhall.net, then set `CF_ACCESS_TEAM_DOMAIN=herbhall.cloudflareaccess.com` on CT 202
-3. Address agent:human issues (#57 Ollama code-gen validation, #70 MCP parity, #72 full dashboard)
-4. Observe Quality page advisory panel after failure events accumulate (5+ events needed for KPIs)
-
-## Session Summary (2026-03-21, session 2)
-
-CF Access diagnosis and housekeeping session.
-
-### Work Done
-
-- Diagnosed CF Access not enforcing: root cause was `CF_ACCESS_TEAM_DOMAIN` not set (not missing IdP)
-- Set `CF_ACCESS_TEAM_DOMAIN=herbhall.cloudflareaccess.com` on CT 202 → JWT auto-login (#88) now active
-- Removed invalid `mcp.herbhall.net` tunnel entry + DNS record (agent-created workaround from prior session)
-- Corrected CF Access architecture understanding: `samverk.herbhall.net/mcp` and `synapset.herbhall.net/mcp` are the only MCP endpoints
-- Filed issues #155-#158 (CF Access diagnosis, JWT activation, synapset protection, security docs)
-- Closed #155, #156 as resolved; #157 and #158 queued for automation
-- Filed DevKit #487 (homelab security architecture docs)
-- Closed #114 (self-healing KPI research -- deliverables already met by Wave 11)
-- Housekeeping: closed stale PRs #40/#41, removed 7 old worktrees, cleared 9 old stashes, deleted all stale local branches
-- Verified dashboard loads without token prompt at samverk.herbhall.net (CF JWT auto-login confirmed)
-- Remembered: setup RDP on HDH-MSP8 (work laptop) for external network testing
-
-### Security Architecture (clarified)
-
-- Internal (LAN): bearer token only, minimal
-- External (samverk.herbhall.net): CF Access Google OAuth (browser) + service token (programmatic)
-- MCP endpoints: same domain/CF app, service token bypass
-- Tailscale: separate, not part of CF stack
-- mcp.herbhall.net: INVALID -- removed
-
-## Session Summary (2026-03-21, session 1)
-
-Wave 12 complete. 4 issues resolved (2 code-gen + 2 docs). Deployed successfully.
-
-### Work Done
-
-- #120 -- Advisory engine: background goroutine (15-min refresh), 5 pattern detectors, GET /api/v1/quality/recommendations, advisory panel on Quality page
-- #88 -- CF Access JWT auto-login: `CFAccessMiddleware` with RS256 JWKS validation, 24h cache, `CF_ACCESS_TEAM_DOMAIN` env var gating
-- #121 -- Dashboard IA spec: `docs/dashboard-ia.md` -- goals, 13-page inventory, 4 information groups, evaluation criteria
-- #127 -- Dashboard evergreen process: `docs/dashboard-evergreen.md` + `.github/PULL_REQUEST_TEMPLATE.md` with evergreen checklist
-
-### Architecture
-
-Quality page self-healing loop now fully wired: failure_events → RCA fields → KPI computation → advisory engine pattern detection → recommendations panel.
-
-### Lint gotcha
-
-Parallel worktree agents use golangci-lint cache; missed 2 prealloc violations in `detectors.go` that passed pre-push but failed CI. Fixed immediately (2 min). Root cause: lint cache in worktree doesn't reset between runs.
-
-## Session Summary (2026-03-20, session 5)
-
-Wave 11 complete. 5 issues resolved (design + code-gen). Deployed v0.1.22-28.
-
-### Work Done
-
-- #115 -- RCA documentation standard (docs/rca-standard.md): 7 structured fields, enum values
-- #116 -- KPI framework (docs/kpi-framework.md): 10 KPIs with SQL queries and targets
-- #119 -- Gitea issue templates: bug-report.md with RCA fields, task.md schema template
-- #117 -- failure_events schema: 10 RCA columns, incremental ALTER TABLE migration, GET /api/v1/kpis
-- #118 -- Quality page: 4 KPI stat cards, root cause PieChart donut, advisory placeholder
-
-### Architecture
-
-Self-healing feedback loop now complete: agents file failures → RCA fields captured →
-KPIs computed from failure_events → Quality page surfaces trends → advisory engine (#120) next.
-
-## Session Summary (2026-03-20, session 4)
-
-Wave 10 complete. 5 parallel agents, 5 PRs merged, 3 new pages added to dashboard. Deployed v0.1.22-22.
-
-### Dashboard Pages Added
-
-- #122 -- MCP page: server health cards (Samverk + Synapset), tool count via in-process ping
-- #123 -- Projects page: forge health cards + per-project issue counts (open, needs-human, in-progress)
-- #124 -- Provider health fixed: store-backed snapshots bridge dispatch→serve process gap; 503 resolved
-- #125 -- Data page: SQLite + Synapset data source cards with size/record counts
-- #126 -- Dashboard redesign: health banner, needs-attention badges, stat cards replacing old 4-item layout
-
-### Architecture Decision
-
-Provider health API was broken because serve and dispatch are separate OS processes. Fixed using SQLite store as bridge (same pattern as metrics snapshots). Dispatch writes 30s snapshots; serve reads them.
-
-### Merge Complexity
-
-Two PRs (#122, #123) required manual rebase after sequential Gitea squash merges diverged them. Auto-resolved "add both sides" conflicts in api.go and api.ts. api.ts had malformed interfaces after auto-resolve (missing closing braces) -- fixed manually.
-
-## Session Summary (2026-03-20, session 3)
-
-Wave 9 complete. 3 issues resolved, 1 PR merged, deployed v0.1.22-15.
-
-### Work Done
-
-- #138 -- Multi-repo dispatch: already working, closed (dispatcher logs confirmed devkit + synapset polling)
-- #139 -- Synapset parse error: fixed by passing `format: "json"` to search_memory/search_all calls
-- #140 -- DevKit native React: new `/api/v1/devkit/summary` endpoint + two-column rules/skills/agents view
-
-### Infrastructure
-
-Discovered and documented dual-forge sync pattern: Gitea squash merges diverge from GitHub main. Procedure: fast-forward local main from Gitea, push to GitHub, force-push to Gitea (with admin bypass).
-
-### Deployed
-
-CT 202 running `v0.1.22-15-g2b9fe3b`. To activate DevKit page: set `SAMVERK_DEVKIT_PATH=/path/to/devkit` in samverk-serve environment.
-
-## Session Summary (2026-03-20, session 2)
-
-Wave 8 complete. 4 agents, 4 PRs merged to Gitea. GitHub synced via cherry-pick.
-
-### Features Added
-
-- #110 -- Issue search: `GET /api/v1/issues/search`, debounced frontend search bar in Issues page
-- #111 -- Bulk operations: `POST /api/v1/issues/bulk`, checkbox multi-select, floating toolbar, toasts
-- #112 -- Nightly infra probe at 3am goroutine wired into serve command (nil-safe synapset client)
-- #113 -- qwen3-coder:30b promoted to code-gen routing; CLAUDE.md-only validator test added
-
-## Session Summary (2026-03-20, session 1)
-
-Wave 7 complete. 5 parallel agents, 5 PRs merged to both forges.
-
-### Dashboard Features Added
-
-- #105 -- WorkerDetailPanel: slide-over with session log + token usage on worker card click
-- #106 -- Mobile bottom tab bar (< 768px): Dashboard, Issues, Agents, Metrics, Logs
-- #107 -- Queue depth sparkline on Dashboard (30-min history, Recharts AreaChart, 30s refresh)
-- #108 -- Live log stream: backend broadcasts `log.entry` WS events; Logs page Live toggle + 500-entry cap
-- #109 -- Chat drawer complete: multi-turn state, typing indicator, Escape/click-outside dismiss
-
-### Infrastructure Note
-
-Gitea main was 139 commits behind GitHub main (dual-forge drift). Force-synced GitHub → Gitea before
-Wave 7 merges. Branch protection temporarily disabled during sync, restored after.
-
-## Session Summary (2026-03-17, session 3)
-
-Housekeeping and bug fix session.
-
-### PRs Merged
-
-- #644 -- Decouple MCP handler init from GitHub env vars (Gitea #38)
-- #645 -- Phase-aware routing + set_project_phase MCP tool (Gitea #35, #36)
-- #647 -- Revise ADR-031 to single-forge-per-project model (Gitea #39)
-- #648 -- Fix get_digest "away" duration (echoed `since` param instead of real elapsed time)
-
-### Synapset v0.3.1 Released
-
-Synapset semantic-release pipeline fully working. Key fixes:
-
-- Remove `@semantic-release/git` + changelog plugins (incompatible with branch protection)
-- Add `repositoryUrl` for correct release note links
-- Second `url.insteadOf` to bypass Cloudflare auth header stripping on tag push
-- Gitea disk crisis resolved: CT 200 resized 40GB → 80GB, daily actcache pruning installed
-
-### Prior Session (2026-03-17, session 2)
-
-Sprint: 4 worktree agents, 4 PRs, 7 issues resolved. Key fixes: Ollama triage restriction, CLI timeout, explore-before-code, Copilot review watcher.
+1. **Monitor Wave 1 pipeline throughput** -- #239, #242, #215 are queued. Check if agents pick them up and produce CI-green PRs.
+2. **Unblock #214 after #239 merges** -- relabel to `status:queued` once capability profiles land.
+3. **QC backlog** -- 23 needs-qc issues. Batch review or let pipeline QC agents process.
+4. **#366 remote MCP access** -- research CF MCP portal, test on isolated subdomain.
 
 ## Start Here
 
 1. Read this file
-2. Check open issues if relevant
-3. Proceed -- do not ask the user to explain project state
+2. Check `docs/planning-system-design.md` for planning system context
+3. Check open issues if relevant
+4. Proceed -- do not ask the user to explain project state
