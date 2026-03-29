@@ -824,6 +824,10 @@ func (d *Dispatcher) pollQueued(ctx context.Context) {
 				zap.Error(err))
 			continue
 		}
+		// Sort by priority weight + age bonus so critical and stale
+		// issues dispatch first instead of arbitrary API return order.
+		sortByPriority(issues, time.Now())
+
 		for j := range issues {
 			issue := issues[j]
 			key := issueKey(entry.Owner, entry.Repo, issue.Number)
@@ -845,10 +849,11 @@ func (d *Dispatcher) pollQueued(ctx context.Context) {
 			if labels["status:needs-qc"] {
 				_ = entry.Tracker.RemoveLabel(ctx, issue.Number, "status:needs-qc")
 			}
-			d.logger.Info("pollQueued: dispatching missed queued issue",
+			d.logger.Info("pollQueued: dispatching issue",
 				zap.String("owner", entry.Owner),
 				zap.String("repo", entry.Repo),
-				zap.Int("issue", issue.Number))
+				zap.Int("issue", issue.Number),
+				zap.Int("score", issueScore(issue, time.Now())))
 			agentType, fm, classifyErr := d.classify(ctx, entry.Owner, entry.Repo, issue)
 			if classifyErr != nil {
 				d.recordFailure(ctx, issue.Number, "", "", "", classifyErr.Error(), 0)

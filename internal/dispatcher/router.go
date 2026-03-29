@@ -395,6 +395,22 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 
 	providerKey, reason := selectProviderKey(issue, agentType)
 
+	// Chain promotion: if the issue is old and routed to a free (Ollama) chain,
+	// promote to a plan-based CLI chain when idle workers are available.
+	if d.pool != nil && isOllamaChain(providerKey) {
+		snap := d.pool.Snapshot()
+		if promoted, ok := shouldPromoteChain(providerKey, issue, snap.IdleWorkers); ok {
+			d.logger.Info("chain promotion: stale issue promoted to higher-capacity chain",
+				zap.Int("issue", issue.Number),
+				zap.String("from", providerKey),
+				zap.String("to", promoted),
+				zap.Int("idle_workers", snap.IdleWorkers),
+			)
+			providerKey = promoted
+			reason = fmt.Sprintf("promoted from %s (issue age > 3d, idle workers available)", reason)
+		}
+	}
+
 	// Estimate per-issue timeout: use calibrated (historical) when available,
 	// fall back to heuristic signals or frontmatter override.
 	var timeout time.Duration
