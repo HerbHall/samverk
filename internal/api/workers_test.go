@@ -5,9 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/herbhall/samverk/internal/api"
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
 )
@@ -158,6 +162,140 @@ func TestListWorkersEmpty(t *testing.T) {
 	}
 	if len(workers) != 0 {
 		t.Errorf("want 0 workers, got %d", len(workers))
+	}
+}
+
+// TestListWorkersIncludesComputedStatus verifies that GET /api/v1/workers
+// returns a computed_status field for each worker.
+func TestListWorkersIncludesComputedStatus(t *testing.T) {
+	ts := newTestAPI(t, nil, nil, nil)
+
+	// Register a worker so it has a fresh heartbeat.
+	body := `{"agent_id":"w1","hostname":"h1","capabilities":[],"max_concurrent":1}`
+	regResp := doPost(t, ts.URL+"/api/v1/workers/register", body)
+	_ = regResp.Body.Close()
+
+	resp := doGet(t, ts.URL+"/api/v1/workers")
+	defer func() { _ = resp.Body.Close() }()
+
+	var workers []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&workers); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(workers) != 1 {
+		t.Fatalf("want 1 worker, got %d", len(workers))
+	}
+	status, ok := workers[0]["computed_status"].(string)
+	if !ok {
+		t.Fatalf("computed_status field missing or not a string: %v", workers[0]["computed_status"])
+	}
+	if status != "healthy" {
+		t.Errorf("freshly registered worker: computed_status = %q, want %q", status, "healthy")
+	}
+}
+
+// TestListWorkersComputedStatusTransitions verifies all three status tiers
+// by using tiny thresholds and sleeping between checks.
+func TestListWorkersComputedStatusTransitions(t *testing.T) {
+	a := api.New(nil, nil, nil, zap.NewNop())
+	// stale after 40ms, offline after 80ms — small enough for a fast test.
+	a.SetWorkerStaleThreshold(40*time.Millisecond, 80*time.Millisecond)
+
+	mux := http.NewServeMux()
+	a.RegisterRoutes(mux)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	body := `{"agent_id":"w1","hostname":"h1","capabilities":[],"max_concurrent":1}`
+	regResp := doPost(t, srv.URL+"/api/v1/workers/register", body)
+	_ = regResp.Body.Close()
+
+	// Immediately after registration: healthy.
+	assertComputedStatus(t, srv.URL, "w1", "healthy")
+
+	// After stale threshold but before offline threshold: stale.
+	time.Sleep(50 * time.Millisecond)
+	assertComputedStatus(t, srv.URL, "w1", "stale")
+
+	// After offline threshold: offline.
+	time.Sleep(50 * time.Millisecond)
+	assertComputedStatus(t, srv.URL, "w1", "offline")
+}
+
+// assertComputedStatus fetches the worker list and checks that agentID has the expected computed_status.
+func assertComputedStatus(t *testing.T, baseURL, agentID, want string) {
+	t.Helper()
+
+	resp := doGet(t, baseURL+"/api/v1/workers")
+	defer func() { _ = resp.Body.Close() }()
+
+	var workers []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&workers); err != nil {
+		t.Fatalf("decode workers: %v", err)
+	}
+
+	for _, w := range workers {
+		if w["agent_id"] == agentID {
+			got, _ := w["computed_status"].(string)
+			if got != want {
+				t.Errorf("agent %s: computed_status = %q, want %q", agentID, got, want)
+			}
+			return
+		}
+	}
+	t.Errorf("agent %s not found in worker list", agentID)
+}
+
+// TestComputeWorkerStatusLogic tests the pure status-computation function
+// for all three transitions using the exported test helper.
+func TestComputeWorkerStatusLogic(t *testing.T) {
+	stale := 5 * time.Minute
+	offline := 15 * time.Minute
+
+	tests := []struct {
+		name          string
+		lastHeartbeat time.Time
+		want          string
+	}{
+		{
+			name:          "zero heartbeat is offline",
+			lastHeartbeat: time.Time{},
+			want:          "offline",
+		},
+		{
+			name:          "fresh heartbeat is healthy",
+			lastHeartbeat: time.Now().Add(-1 * time.Minute),
+			want:          "healthy",
+		},
+		{
+			name:          "between stale and offline thresholds is stale",
+			lastHeartbeat: time.Now().Add(-10 * time.Minute),
+			want:          "stale",
+		},
+		{
+			name:          "past offline threshold is offline",
+			lastHeartbeat: time.Now().Add(-20 * time.Minute),
+			want:          "offline",
+		},
+		{
+			name:          "just past stale boundary is stale",
+			lastHeartbeat: time.Now().Add(-5*time.Minute - time.Millisecond),
+			want:          "stale",
+		},
+		{
+			name:          "just past offline boundary is offline",
+			lastHeartbeat: time.Now().Add(-15*time.Minute - time.Millisecond),
+			want:          "offline",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := api.ComputeWorkerStatusForTest(tt.lastHeartbeat, stale, offline)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

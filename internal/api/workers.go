@@ -7,9 +7,14 @@ import (
 	"time"
 )
 
-// workerStaleThreshold is the maximum time between heartbeats before a worker
-// is considered offline.
-const workerStaleThreshold = 5 * time.Minute
+// Default thresholds for computed worker status.
+const (
+	defaultStaleThreshold   = 5 * time.Minute
+	defaultOfflineThreshold = 15 * time.Minute
+)
+
+// workerStaleThreshold is retained for the legacy list() behavior.
+const workerStaleThreshold = defaultStaleThreshold
 
 // WorkerStatus represents the operational state of a PC agent worker.
 type WorkerStatus string
@@ -18,6 +23,15 @@ const (
 	WorkerStatusIdle    WorkerStatus = "idle"
 	WorkerStatusBusy    WorkerStatus = "busy"
 	WorkerStatusOffline WorkerStatus = "offline"
+)
+
+// ComputedWorkerStatus is the three-tier heartbeat-freshness classification.
+type ComputedWorkerStatus string
+
+const (
+	ComputedWorkerStatusHealthy ComputedWorkerStatus = "healthy"
+	ComputedWorkerStatusStale   ComputedWorkerStatus = "stale"
+	ComputedWorkerStatusOffline ComputedWorkerStatus = "offline"
 )
 
 // WorkerRecord holds registration and heartbeat state for a single PC agent.
@@ -36,15 +50,42 @@ type WorkerRecord struct {
 	LastHeartbeat   time.Time    `json:"last_heartbeat"`
 }
 
+// workerListDTO extends WorkerRecord with a computed_status field.
+type workerListDTO struct {
+	WorkerRecord
+	ComputedStatus ComputedWorkerStatus `json:"computed_status"`
+}
+
+// computeWorkerStatus returns the heartbeat-freshness status for a worker.
+// A zero LastHeartbeat is treated as offline.
+func computeWorkerStatus(lastHeartbeat time.Time, staleThreshold, offlineThreshold time.Duration) ComputedWorkerStatus {
+	if lastHeartbeat.IsZero() {
+		return ComputedWorkerStatusOffline
+	}
+	age := time.Since(lastHeartbeat)
+	switch {
+	case age < staleThreshold:
+		return ComputedWorkerStatusHealthy
+	case age < offlineThreshold:
+		return ComputedWorkerStatusStale
+	default:
+		return ComputedWorkerStatusOffline
+	}
+}
+
 // workerRegistry stores registered PC agent workers in memory.
 type workerRegistry struct {
-	mu      sync.RWMutex
-	workers map[string]*WorkerRecord
+	mu               sync.RWMutex
+	workers          map[string]*WorkerRecord
+	staleThreshold   time.Duration
+	offlineThreshold time.Duration
 }
 
 func newWorkerRegistry() *workerRegistry {
 	return &workerRegistry{
-		workers: make(map[string]*WorkerRecord),
+		workers:          make(map[string]*WorkerRecord),
+		staleThreshold:   defaultStaleThreshold,
+		offlineThreshold: defaultOfflineThreshold,
 	}
 }
 
@@ -112,6 +153,24 @@ func (r *workerRegistry) list() []WorkerRecord {
 	return result
 }
 
+// listWithStatus returns worker DTOs enriched with computed_status.
+func (r *workerRegistry) listWithStatus() []workerListDTO {
+	r.mu.RLock()
+	stale := r.staleThreshold
+	offline := r.offlineThreshold
+	r.mu.RUnlock()
+
+	records := r.list()
+	result := make([]workerListDTO, 0, len(records))
+	for i := range records {
+		result = append(result, workerListDTO{
+			WorkerRecord:   records[i],
+			ComputedStatus: computeWorkerStatus(records[i].LastHeartbeat, stale, offline),
+		})
+	}
+	return result
+}
+
 // --- Request types ---
 
 type registerRequest struct {
@@ -137,6 +196,17 @@ type heartbeatRequest struct {
 // (e.g. the MCP digest). Stale workers are marked offline in the returned slice.
 func (a *API) ListWorkers() []WorkerRecord {
 	return a.workers.list()
+}
+
+// SetWorkerStaleThreshold configures the heartbeat-age thresholds used for computed_status.
+// stale is the age after which a worker transitions healthy → stale.
+// offline is the age after which a worker transitions stale → offline.
+// Defaults are 5m and 15m respectively.
+func (a *API) SetWorkerStaleThreshold(stale, offline time.Duration) {
+	a.workers.mu.Lock()
+	defer a.workers.mu.Unlock()
+	a.workers.staleThreshold = stale
+	a.workers.offlineThreshold = offline
 }
 
 // handleRegisterWorker handles POST /api/v1/workers/register.
@@ -176,8 +246,10 @@ func (a *API) handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListWorkers handles GET /api/v1/workers.
+// Each worker includes a computed_status field (healthy/stale/offline) derived
+// from the age of the last heartbeat.
 func (a *API) handleListWorkers(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, a.workers.list())
+	writeJSON(w, http.StatusOK, a.workers.listWithStatus())
 }
 
 // activeWorkerResponse represents a currently running agent session.
