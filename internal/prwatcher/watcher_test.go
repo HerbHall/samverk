@@ -1059,3 +1059,129 @@ func TestRemediateStaleCIFailure_NoLinkedIssue(t *testing.T) {
 		t.Error("should not remove labels when no linked issue")
 	}
 }
+
+func TestIsStaleNonMergeable(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name          string
+		updatedAt     time.Time
+		thresholdMins int
+		want          bool
+	}{
+		{
+			name:          "recent non-mergeable - not stale",
+			updatedAt:     now.Add(-30 * time.Minute),
+			thresholdMins: 120,
+			want:          false,
+		},
+		{
+			name:          "old non-mergeable - stale",
+			updatedAt:     now.Add(-3 * time.Hour),
+			thresholdMins: 120,
+			want:          true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &Watcher{
+				mergeCfg: autonomy.MergeConfig{CIFailureThresholdMinutes: tt.thresholdMins},
+			}
+			got := w.isStaleNonMergeable(&forge.PullRequest{UpdatedAt: tt.updatedAt})
+			if got != tt.want {
+				t.Errorf("isStaleNonMergeable() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRemediateNonMergeableConflict_BasicFlow(t *testing.T) {
+	it := &mockIssueTracker{}
+	w := &Watcher{
+		issueTracker: it,
+		mergeCfg:     autonomy.MergeConfig{},
+	}
+
+	pr := &forge.PullRequest{
+		Number: 42,
+		Title:  "feat: add feature",
+		Body:   "Closes #10",
+	}
+
+	err := w.remediateNonMergeableConflict(context.Background(), pr)
+	if err != nil {
+		t.Fatalf("remediateNonMergeableConflict: %v", err)
+	}
+
+	// Verify PR was closed.
+	if len(it.updateCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIssue call, got %d", len(it.updateCalls))
+	}
+	if it.updateCalls[0].number != 42 {
+		t.Errorf("UpdateIssue PR number = %d, want 42", it.updateCalls[0].number)
+	}
+	if it.updateCalls[0].req.State == nil || *it.updateCalls[0].req.State != forge.StateClosed {
+		t.Errorf("UpdateIssue state = %v, want StateClosed", it.updateCalls[0].req.State)
+	}
+
+	// Verify status:needs-qc was removed from issue.
+	if _, ok := it.removeLabelCalls[10]; !ok {
+		t.Fatalf("expected RemoveLabel call for issue 10")
+	}
+	if it.removeLabelCalls[10][0] != models.LabelStatusNeedsQc {
+		t.Errorf("RemoveLabel = %q, want %q", it.removeLabelCalls[10][0], models.LabelStatusNeedsQc)
+	}
+
+	// Verify status:queued was added to issue.
+	if _, ok := it.addLabelCalls[10]; !ok {
+		t.Fatalf("expected AddLabel call for issue 10")
+	}
+	found := false
+	for _, label := range it.addLabelCalls[10] {
+		if label == models.LabelStatusQueued {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected status:queued label to be added, got %v", it.addLabelCalls[10])
+	}
+
+	// Verify a comment was added to the issue.
+	if comments, ok := it.prComments[10]; !ok || len(comments) == 0 {
+		t.Error("expected a comment to be added to the issue")
+	}
+}
+
+func TestRemediateNonMergeableConflict_NoLinkedIssue(t *testing.T) {
+	it := &mockIssueTracker{}
+	w := &Watcher{issueTracker: it}
+
+	pr := &forge.PullRequest{
+		Number: 99,
+		Title:  "chore: update deps",
+		Body:   "No linked issue",
+	}
+
+	err := w.remediateNonMergeableConflict(context.Background(), pr)
+	if err != nil {
+		t.Fatalf("remediateNonMergeableConflict: %v", err)
+	}
+
+	// PR should still be closed, but no issue updates.
+	if len(it.updateCalls) != 1 {
+		t.Errorf("expected 1 UpdateIssue call (PR close), got %d", len(it.updateCalls))
+	}
+	if it.updateCalls[0].number != 99 {
+		t.Errorf("UpdateIssue number = %d, want 99", it.updateCalls[0].number)
+	}
+
+	// No issue labels should be added/removed.
+	if len(it.addLabelCalls) > 0 {
+		t.Error("should not add labels when no linked issue")
+	}
+	if len(it.removeLabelCalls) > 0 {
+		t.Error("should not remove labels when no linked issue")
+	}
+}

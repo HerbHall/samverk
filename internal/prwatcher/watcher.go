@@ -100,7 +100,7 @@ func (w *Watcher) poll(ctx context.Context) error {
 		tier2Delay = 60 * time.Minute // default 1 hour
 	}
 
-	var eligible, skippedAuthor, skippedCI, skippedDelay, skippedBlocking, merged, tier3 int
+	var eligible, skippedAuthor, skippedCI, skippedDelay, skippedBlocking, merged, tier3, conflictClosed int
 
 	for _, pr := range prs {
 		if !w.isEligible(pr) {
@@ -196,6 +196,26 @@ func (w *Watcher) poll(ctx context.Context) error {
 		}
 	}
 
+	// Handle non-mergeable stale PRs: close and re-queue source issues.
+	for _, pr := range prs {
+		// Skip draft, mergeable, or untrusted PRs.
+		if pr.Draft || pr.Mergeable || !w.isTrustedAuthor(pr.Author) {
+			continue
+		}
+
+		// Check if PR is stale (older than the CI failure threshold).
+		if !w.isStaleNonMergeable(pr) {
+			continue
+		}
+
+		// Close the PR and re-queue its source issue.
+		if remediateErr := w.remediateNonMergeableConflict(ctx, pr); remediateErr != nil {
+			w.logger.Error("pr-watcher: remediate non-mergeable conflict", zap.Int("pr", pr.Number), zap.Error(remediateErr))
+			continue
+		}
+		conflictClosed++
+	}
+
 	w.logger.Info("pr-watcher: poll complete",
 		zap.Int("open_prs", len(prs)),
 		zap.Int("eligible", eligible),
@@ -205,6 +225,7 @@ func (w *Watcher) poll(ctx context.Context) error {
 		zap.Int("blocked_review", skippedBlocking),
 		zap.Int("untrusted_author", skippedAuthor),
 		zap.Int("tier3_human", tier3),
+		zap.Int("conflict_closed", conflictClosed),
 	)
 
 	return nil
@@ -656,6 +677,18 @@ func (w *Watcher) mostRecentCheckTime(checks []forge.Check) time.Time {
 	return latest
 }
 
+// isStaleNonMergeable checks if a non-mergeable PR is older than the configured
+// CI failure threshold. Returns true if the PR has not been updated for longer
+// than the threshold, indicating it's stale due to merge conflicts.
+func (w *Watcher) isStaleNonMergeable(pr *forge.PullRequest) bool {
+	thresholdMinutes := w.mergeCfg.CIFailureThresholdMinutes
+	if thresholdMinutes <= 0 {
+		thresholdMinutes = 120 // default 2 hours
+	}
+
+	return time.Since(pr.UpdatedAt) > time.Duration(thresholdMinutes)*time.Minute
+}
+
 // isStaleCI checks if a PR's CI checks have been in failed state for longer than
 // the configured threshold. It measures staleness from the most recent check
 // status timestamp, not from PR activity (which can be reset by comments, labels, etc).
@@ -808,6 +841,93 @@ func (w *Watcher) remediateStaleCIFailure(ctx context.Context, pr *forge.PullReq
 	}
 
 	return nil
+}
+
+// remediateNonMergeableConflict closes a stale non-mergeable PR (merge conflict)
+// and re-queues its source issue for a fresh attempt on current main.
+//
+// It:
+// 1. Closes the PR with a comment about the merge conflict
+// 2. Finds the source issue from "Closes #NNN" in the PR body
+// 3. Removes status:needs-qc and adds status:queued
+// 4. Adds a comment to the issue notifying about the conflict
+func (w *Watcher) remediateNonMergeableConflict(ctx context.Context, pr *forge.PullRequest) error {
+	if w.issueTracker == nil {
+		return fmt.Errorf("issue tracker is nil")
+	}
+
+	// Close the PR with a comment about merge conflict.
+	closedState := forge.StateClosed
+	_, err := w.issueTracker.UpdateIssue(ctx, pr.Number, &forge.UpdateIssueRequest{State: &closedState})
+	if err != nil {
+		return fmt.Errorf("close PR #%d: %w", pr.Number, err)
+	}
+
+	// Build a comment about the merge conflict.
+	comment := buildConflictComment(pr)
+	if _, err := w.issueTracker.AddComment(ctx, pr.Number, comment); err != nil {
+		w.log().Warn("pr-watcher: failed to add comment to closed PR",
+			zap.Int("pr", pr.Number), zap.Error(err))
+	}
+
+	// Find the source issue.
+	sourceIssueNum := 0
+	issueNums := parseLinkedIssues(pr)
+	if len(issueNums) > 0 {
+		sourceIssueNum = issueNums[0]
+	}
+	if sourceIssueNum == 0 {
+		w.log().Warn("pr-watcher: no linked issue found for PR", zap.Int("pr", pr.Number))
+		w.log().Info("pr-watcher: closed non-mergeable PR",
+			zap.Int("pr", pr.Number))
+		return nil
+	}
+
+	// Remove status:needs-qc from the issue.
+	if err := w.issueTracker.RemoveLabel(ctx, sourceIssueNum, models.LabelStatusNeedsQc); err != nil {
+		w.log().Warn("pr-watcher: remove status:needs-qc",
+			zap.Int("issue", sourceIssueNum), zap.Error(err))
+	}
+
+	// Add status:queued to the issue.
+	if err := w.issueTracker.AddLabel(ctx, sourceIssueNum, models.LabelStatusQueued); err != nil {
+		w.log().Warn("pr-watcher: add status:queued",
+			zap.Int("issue", sourceIssueNum), zap.Error(err))
+	}
+
+	// Add a comment to the issue.
+	issueComment := buildConflictIssueComment(pr)
+	if _, err := w.issueTracker.AddComment(ctx, sourceIssueNum, issueComment); err != nil {
+		w.log().Warn("pr-watcher: add comment to issue",
+			zap.Int("issue", sourceIssueNum), zap.Error(err))
+	}
+
+	w.log().Info("pr-watcher: closed non-mergeable PR and re-queued issue",
+		zap.Int("pr", pr.Number),
+		zap.Int("issue", sourceIssueNum))
+
+	return nil
+}
+
+// buildConflictComment creates a comment for a closed non-mergeable PR.
+func buildConflictComment(pr *forge.PullRequest) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "CLOSED [prwatcher] [%s]\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "PR #%d has a merge conflict with main. Merge conflict with main. Source issue re-queued.\n", pr.Number)
+
+	return b.String()
+}
+
+// buildConflictIssueComment creates a comment for the source issue of a non-mergeable PR.
+func buildConflictIssueComment(pr *forge.PullRequest) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "CONFLICT [prwatcher] [%s]\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "PR #%d closed due to merge conflict with main.\n", pr.Number)
+	fmt.Fprintf(&b, "Re-queuing for a fresh attempt on current main.\n")
+
+	return b.String()
 }
 
 // buildCIFailureComment creates a comment for a closed stale CI-failed PR.
