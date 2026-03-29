@@ -255,28 +255,50 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 		}
 
 		// Post-completion quality gate: check output quality from session.
-		// Don't escalate yet -- just log. Escalation to a higher-tier
-		// provider will be added in #492 (multi-machine routing).
-		d.checkCompletionQuality(ctx, result)
+		// If quality fails (score < 0.5), treat as failure and route through
+		// correction engine for retry/escalation instead of parking in needs-qc.
+		qr := d.checkCompletionQuality(ctx, result)
+		if !qr.Pass && qr.Score < 0.5 {
+			// Quality gate failure: treat as task failure and retry.
+			d.logger.Info("quality gate failure, routing through correction engine",
+				zap.Int("issue", result.IssueNumber),
+				zap.String("reason", qr.Reason),
+				zap.Float64("score", qr.Score),
+			)
+			// Record the failure with quality gate failure reason.
+			d.recordFailure(ctx, result.IssueNumber, result.SessionID,
+				string(result.AgentType), result.ProviderKey, "quality gate failed: "+qr.Reason, 0)
 
-		// Auto-apply EDIT comments as PRs for code-gen/test agents.
-		// If the runner posted EDIT blocks as a comment (no workspace/write
-		// access), convert them to a branch + PR now. On success, skip the
-		// needs-qc label and go straight to pr-open.
-		if d.tryApplyEdits(ctx, result, tracker) {
-			d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, "status:pr-open", "dispatcher")
-			d.logger.Info("task completed (EDIT auto-applied as PR)", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
+			// Use correction engine to decide response (retry or escalate).
+			fc := models.FailureClassUnknown // Quality failures are not classified as specific failure types
+			attempt := d.getPersistedFailureCount(ctx, result.IssueNumber)
+			decision := decideCorrection(fc, result.IssueNumber, attempt, 0)
+			d.applyCorrection(ctx, result, decision)
+			broadcastEvent(d.broadcaster, "worker.failed", map[string]any{
+				"issue_number": result.IssueNumber,
+				"error":        qr.Reason,
+			})
 		} else {
-			if err := tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc); err != nil {
-				d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", models.LabelStatusNeedsQc), zap.String("error", err.Error()))
+			// Quality gate passed: proceed with normal success handling.
+			// Auto-apply EDIT comments as PRs for code-gen/test agents.
+			// If the runner posted EDIT blocks as a comment (no workspace/write
+			// access), convert them to a branch + PR now. On success, skip the
+			// needs-qc label and go straight to pr-open.
+			if d.tryApplyEdits(ctx, result, tracker) {
+				d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, "status:pr-open", "dispatcher")
+				d.logger.Info("task completed (EDIT auto-applied as PR)", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
+			} else {
+				if err := tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc); err != nil {
+					d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", models.LabelStatusNeedsQc), zap.String("error", err.Error()))
+				}
+				d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, models.LabelStatusNeedsQc, "agent")
+				d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
 			}
-			d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, models.LabelStatusNeedsQc, "agent")
-			d.logger.Info("task completed", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
+			broadcastEvent(d.broadcaster, "worker.complete", map[string]any{
+				"issue_number": result.IssueNumber,
+				"outcome":      "pr_opened",
+			})
 		}
-		broadcastEvent(d.broadcaster, "worker.complete", map[string]any{
-			"issue_number": result.IssueNumber,
-			"outcome":      "pr_opened",
-		})
 	} else {
 		// Record failure event with classification.
 		d.recordFailure(ctx, result.IssueNumber, result.SessionID,

@@ -70,11 +70,11 @@ func checkOutputQuality(output string, agentType models.AgentType, maxTurnsHit b
 }
 
 // checkCompletionQuality retrieves the session output from the store and
-// runs the quality gate. On failure, posts a comment and adds a quality-fail
-// label for visibility. On pass, logs success.
-func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.TaskResult) {
+// runs the quality gate. Returns the QualityResult. On failure, posts a comment
+// for visibility.
+func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.TaskResult) QualityResult {
 	if d.store == nil || result.SessionID == "" {
-		return
+		return QualityResult{Pass: true, Reason: "no store or session", Score: 1.0}
 	}
 
 	session, err := d.store.GetSession(ctx, result.SessionID)
@@ -84,7 +84,7 @@ func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.Ta
 			zap.String("session", result.SessionID),
 			zap.Error(err),
 		)
-		return
+		return QualityResult{Pass: true, Reason: "could not retrieve session", Score: 1.0}
 	}
 
 	qr := checkOutputQuality(session.PartialOutput, result.AgentType, session.MaxTurnsHit, session.TurnsUsed)
@@ -105,4 +105,5 @@ func (d *Dispatcher) checkCompletionQuality(ctx context.Context, result agent.Ta
 			}
 		}
 	}
+	return qr
 }
