@@ -1,0 +1,60 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "platform": "gitea",
+  "onboarding": false,
+  "requireConfig": "optional",
+  "schedule": ["every weekend"],
+  "prHourlyLimit": 5,
+  "prConcurrentLimit": 10,
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Security patches -- immediate, high priority",
+      "matchCategories": ["security"],
+      "schedule": ["at any time"],
+      "prPriority": 10,
+      "labels": ["dependencies", "security"],
+      "automerge": false
+    },
+    {
+      "description": "Go module updates -- weekly",
+      "matchManagers": ["gomod"],
+      "schedule": ["every weekend"],
+      "groupName": "Go dependencies",
+      "labels": ["dependencies", "go"]
+    },
+    {
+      "description": "npm/pnpm updates for web/ -- weekly",
+      "matchManagers": ["npm"],
+      "schedule": ["every weekend"],
+      "groupName": "npm dependencies",
+      "labels": ["dependencies", "javascript"]
+    },
+    {
+      "description": "GitHub Actions updates -- weekly",
+      "matchManagers": ["github-actions"],
+      "schedule": ["every weekend"],
+      "groupName": "GitHub Actions",
+      "labels": ["dependencies", "ci"]
+    },
+    {
+      "description": "Pin major version updates -- require manual review",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "major-update"]
+    }
+  ],
+  "gomod": {
+    "enabled": true
+  },
+  "npm": {
+    "enabled": true
+  },
+  "ignorePaths": [
+    "**/vendor/**",
+    "**/node_modules/**"
+  ]
+}
