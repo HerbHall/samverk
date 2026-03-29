@@ -96,7 +96,7 @@ func TestValidateBeforePost(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := ValidateBeforePost(context.Background(), tt.agentType, tt.workDir, tt.response, nil)
+			result := ValidateBeforePost(context.Background(), tt.agentType, tt.workDir, tt.response, nil, nil, nil)
 			if tt.wantNil {
 				if result != nil {
 					t.Fatalf("expected nil result, got %+v", result)
@@ -191,7 +191,7 @@ func TestValidateWorktree_ValidCode(t *testing.T) {
 		"package main\nimport \"testing\"\nfunc TestMain(m *testing.M) { m.Run() }\n",
 	)
 
-	result := validateWorktree(context.Background(), dir, zap.NewNop())
+	result := validateWorktree(context.Background(), dir, nil, zap.NewNop())
 	if !result.Pass {
 		t.Errorf("expected pass, got errors: %+v", result.Errors)
 	}
@@ -206,7 +206,7 @@ func TestValidateWorktree_BuildFailure(t *testing.T) {
 		"",
 	)
 
-	result := validateWorktree(context.Background(), dir, zap.NewNop())
+	result := validateWorktree(context.Background(), dir, nil, zap.NewNop())
 	if result.Pass {
 		t.Fatal("expected failure, got pass")
 	}
@@ -230,7 +230,7 @@ func TestValidateWorktree_TestFailure(t *testing.T) {
 		"package main\nimport \"testing\"\nfunc TestFail(t *testing.T) { t.Fatal(\"intentional failure\") }\n",
 	)
 
-	result := validateWorktree(context.Background(), dir, zap.NewNop())
+	result := validateWorktree(context.Background(), dir, nil, zap.NewNop())
 	if result.Pass {
 		t.Fatal("expected failure, got pass")
 	}
@@ -364,7 +364,7 @@ func TestIsBadOutput(t *testing.T) {
 
 func TestValidateWorkspaceOutput_NilForNoWorkDir(t *testing.T) {
 	t.Parallel()
-	result := ValidateWorkspaceOutput("", nil)
+	result := ValidateWorkspaceOutput("", nil, nil, nil)
 	if result != nil {
 		t.Errorf("expected nil for empty workDir, got %+v", result)
 	}
@@ -387,7 +387,7 @@ func TestValidateWorkspaceOutput_CLAUDEMDOnlyIsNonRetryable(t *testing.T) {
 	mustGit(t, dir, "add", "CLAUDE.md")
 	mustGit(t, dir, "commit", "-m", "bad: overwrite CLAUDE.md only")
 
-	result := ValidateWorkspaceOutput(dir, zap.NewNop())
+	result := ValidateWorkspaceOutput(dir, nil, nil, zap.NewNop())
 
 	if result == nil {
 		t.Fatal("expected non-nil result for CLAUDE.md-only output, got nil")
@@ -519,3 +519,175 @@ func writeGoFiles(t *testing.T, dir, goMod, mainContent, testContent string) {
 		}
 	}
 }
+
+func TestExpectsFrontendChanges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		fileContext []string
+		labels      []string
+		want        bool
+	}{
+		{
+			name:        "no file context, no labels",
+			fileContext: []string{},
+			labels:      []string{},
+			want:        false,
+		},
+		{
+			name:        "web/src/ in file context",
+			fileContext: []string{"internal/foo.go", "web/src/components/Button.tsx"},
+			labels:      []string{"bug"},
+			want:        true,
+		},
+		{
+			name:        "ui label",
+			fileContext: []string{"internal/foo.go"},
+			labels:      []string{"ui"},
+			want:        true,
+		},
+		{
+			name:        "frontend label",
+			fileContext: []string{},
+			labels:      []string{"frontend"},
+			want:        true,
+		},
+		{
+			name:        "UI label (case insensitive)",
+			fileContext: []string{},
+			labels:      []string{"UI-bug"},
+			want:        true,
+		},
+		{
+			name:        "no web/src/ in file context",
+			fileContext: []string{"internal/foo.go", "cmd/bar.go"},
+			labels:      []string{"bug"},
+			want:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := expectsFrontendChanges(tt.fileContext, tt.labels)
+			if got != tt.want {
+				t.Errorf("expectsFrontendChanges(%v, %v) = %v, want %v", tt.fileContext, tt.labels, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateWorkspaceOutput_SPAOnly(t *testing.T) {
+	t.Parallel()
+
+	dir := setupTestRepo(t)
+
+	// Create SPA output file without web/src/ source
+	spaDir := filepath.Join(dir, "internal", "server", "static")
+	if err := os.MkdirAll(spaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spaFile := filepath.Join(spaDir, "index.html")
+	if err := os.WriteFile(spaFile, []byte("<html></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage and commit the SPA file
+	mustGit(t, dir, "add", ".")
+	mustGit(t, dir, "commit", "-m", "rebuild spa")
+
+	// Validate with frontend expectations
+	fileContext := []string{"web/src/App.tsx"}
+	labels := []string{}
+	result := ValidateWorkspaceOutput(dir, fileContext, labels, zap.NewNop())
+
+	if result == nil {
+		t.Error("expected non-nil result for SPA-only changes")
+		return
+	}
+	if result.Pass {
+		t.Error("expected validation to fail for SPA-only changes")
+	}
+	if result.Retryable {
+		t.Error("expected non-retryable failure for SPA-only changes")
+	}
+	if len(result.Errors) == 0 {
+		t.Fatal("expected errors in result")
+	}
+	if !strings.Contains(result.Errors[0].Message, "rebuilt compiled SPA output") {
+		t.Errorf("expected SPA-only error message, got: %s", result.Errors[0].Message)
+	}
+}
+
+func TestValidateWorkspaceOutput_MissingFrontendFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := setupTestRepo(t)
+
+	// Create only backend file (not web/src/)
+	internalDir := filepath.Join(dir, "internal", "foo")
+	if err := os.MkdirAll(internalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backendFile := filepath.Join(internalDir, "foo.go")
+	if err := os.WriteFile(backendFile, []byte("package foo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage and commit
+	mustGit(t, dir, "add", ".")
+	mustGit(t, dir, "commit", "-m", "backend changes")
+
+	// Validate with frontend file requirement
+	fileContext := []string{"web/src/App.tsx"}
+	labels := []string{}
+	result := ValidateWorkspaceOutput(dir, fileContext, labels, zap.NewNop())
+
+	if result == nil {
+		t.Error("expected non-nil result for missing frontend files")
+		return
+	}
+	if result.Pass {
+		t.Error("expected validation to fail for missing frontend files")
+	}
+	if result.Retryable {
+		t.Error("expected non-retryable failure for missing frontend files")
+	}
+	if len(result.Errors) == 0 {
+		t.Fatal("expected errors in result")
+	}
+	if !strings.Contains(result.Errors[0].Message, "web/src/ in file_context") {
+		t.Errorf("expected missing frontend files error, got: %s", result.Errors[0].Message)
+	}
+}
+
+func TestValidateWorkspaceOutput_ValidFrontendChanges(t *testing.T) {
+	t.Parallel()
+
+	dir := setupTestRepo(t)
+
+	// Create actual web/src/ source files
+	webSrcDir := filepath.Join(dir, "web", "src", "components")
+	if err := os.MkdirAll(webSrcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	componentFile := filepath.Join(webSrcDir, "Button.tsx")
+	if err := os.WriteFile(componentFile, []byte("export function Button() {}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage and commit
+	mustGit(t, dir, "add", ".")
+	mustGit(t, dir, "commit", "-m", "add button component")
+
+	// Validate with frontend file requirement
+	fileContext := []string{"web/src/components/Button.tsx"}
+	labels := []string{}
+	result := ValidateWorkspaceOutput(dir, fileContext, labels, zap.NewNop())
+
+	if result != nil {
+		t.Errorf("expected nil result for valid frontend changes, got: %v", result)
+	}
+}
+

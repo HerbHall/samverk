@@ -35,8 +35,9 @@ const maxValidationOutput = 2000
 // For code-gen/test agents with a worktree (CLI flow): runs build/test on the worktree.
 // For code-gen/test agents without a worktree (API flow): skips (no local context to validate).
 // For analytical agents: checks format only.
+// fileContext and labels are used to detect frontend validation requirements.
 // Returns nil when no validation is needed.
-func ValidateBeforePost(ctx context.Context, agentType models.AgentType, workDir, response string, logger *zap.Logger) *ValidationResult {
+func ValidateBeforePost(ctx context.Context, agentType models.AgentType, workDir, response string, fileContext, labels []string, logger *zap.Logger) *ValidationResult {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -49,11 +50,11 @@ func ValidateBeforePost(ctx context.Context, agentType models.AgentType, workDir
 			// Check for bad output (config-only changes) before running build/test.
 			// This is a non-retryable failure -- retrying won't help if the model
 			// fundamentally misunderstood the task (e.g., Ollama overwriting CLAUDE.md).
-			if badResult := ValidateWorkspaceOutput(workDir, logger); badResult != nil {
+			if badResult := ValidateWorkspaceOutput(workDir, fileContext, labels, logger); badResult != nil {
 				badResult.Duration = time.Since(start)
 				return badResult
 			}
-			result := validateWorktree(ctx, workDir, logger)
+			result := validateWorktree(ctx, workDir, fileContext, logger)
 			result.Duration = time.Since(start)
 			return result
 		}
@@ -73,9 +74,37 @@ func ValidateBeforePost(ctx context.Context, agentType models.AgentType, workDir
 	}
 }
 
-// validateWorktree runs `go build ./...`, `go test ./...`, and golangci-lint in the worktree.
-// If the `go` tool is not installed on the host, validation is skipped gracefully.
-func validateWorktree(ctx context.Context, workDir string, logger *zap.Logger) *ValidationResult {
+// expectsFrontendChanges returns true if the issue has frontend file_context or UI labels.
+func expectsFrontendChanges(fileContext, labels []string) bool {
+	// Check file_context for web/src/
+	for _, f := range fileContext {
+		if strings.HasPrefix(f, "web/src/") {
+			return true
+		}
+	}
+	// Check labels for UI-related keywords
+	for _, label := range labels {
+		lower := strings.ToLower(label)
+		if strings.Contains(lower, "ui") || strings.Contains(lower, "frontend") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasFrontendFileContext returns true if web/src/ appears in file_context.
+func hasFrontendFileContext(fileContext []string) bool {
+	for _, f := range fileContext {
+		if strings.HasPrefix(f, "web/src/") {
+			return true
+		}
+	}
+	return false
+}
+
+// validateWorktree runs Go build/test/lint and frontend validation in the worktree.
+// If tools are not installed on the host, validation is skipped gracefully.
+func validateWorktree(ctx context.Context, workDir string, fileContext []string, logger *zap.Logger) *ValidationResult {
 	result := &ValidationResult{Pass: true, Retryable: true}
 
 	// Check if 'go' is available. On deployment hosts (CT 202/203) Go may not
@@ -84,7 +113,8 @@ func validateWorktree(ctx context.Context, workDir string, logger *zap.Logger) *
 		logger.Info("validation: skipping worktree checks (go not available)",
 			zap.String("workDir", workDir),
 		)
-		return result // Pass by default when tool is missing.
+		// Still run frontend validation even if Go is not available.
+		return validateFrontendWorktree(ctx, workDir, fileContext, logger)
 	}
 
 	// Build check. -buildvcs=false prevents "error obtaining VCS status" when
@@ -139,6 +169,87 @@ func validateWorktree(ctx context.Context, workDir string, logger *zap.Logger) *
 			Message: fmt.Sprintf("golangci-lint failed: %v", lintErr),
 			Output:  truncate(lintOut, maxValidationOutput),
 		})
+	}
+
+	// Run frontend validation after Go checks succeed.
+	if result.Pass {
+		feResult := validateFrontendWorktree(ctx, workDir, fileContext, logger)
+		if feResult != nil && !feResult.Pass {
+			result.Pass = feResult.Pass
+			result.Retryable = feResult.Retryable
+			result.Errors = append(result.Errors, feResult.Errors...)
+		}
+	}
+
+	return result
+}
+
+// validateFrontendWorktree checks TypeScript compilation and pnpm lockfile.
+// Gracefully skips checks if tools are not available.
+func validateFrontendWorktree(ctx context.Context, workDir string, fileContext []string, logger *zap.Logger) *ValidationResult {
+	result := &ValidationResult{Pass: true, Retryable: true}
+
+	// Check if web/src/ files were modified
+	files, err := ChangedFiles(workDir)
+	if err != nil {
+		// Can't determine changed files, skip frontend validation
+		logger.Debug("frontend validation: could not list changed files", zap.Error(err))
+		return result
+	}
+
+	hasWebSrcChanges := false
+	hasPackageJSONChanges := false
+	for _, f := range files {
+		if strings.HasPrefix(f, "web/src/") {
+			hasWebSrcChanges = true
+		}
+		if f == "web/package.json" {
+			hasPackageJSONChanges = true
+		}
+	}
+
+	// TypeScript compilation check - only if web/src/ files were modified
+	if hasWebSrcChanges {
+		if _, err := exec.LookPath("npx"); err != nil {
+			logger.Info("validation: skipping TypeScript check (npx not available)")
+		} else {
+			tscOut, tscErr := runInDirWithTimeout(ctx, workDir, 120*time.Second,
+				"bash", "-c", "cd web && npx tsc --noEmit")
+			if tscErr != nil {
+				logger.Warn("validation: TypeScript compilation failed",
+					zap.String("workDir", workDir),
+					zap.String("output", truncate(tscOut, maxValidationOutput)),
+				)
+				result.Pass = false
+				result.Errors = append(result.Errors, ValidationError{
+					Phase:   "typescript",
+					Message: fmt.Sprintf("TypeScript compilation failed: %v", tscErr),
+					Output:  truncate(tscOut, maxValidationOutput),
+				})
+			}
+		}
+	}
+
+	// pnpm lockfile check - only if package.json was modified
+	if hasPackageJSONChanges {
+		if _, err := exec.LookPath("pnpm"); err != nil {
+			logger.Info("validation: skipping pnpm check (pnpm not available)")
+		} else {
+			pnpmOut, pnpmErr := runInDirWithTimeout(ctx, workDir, 120*time.Second,
+				"bash", "-c", "cd web && pnpm install --frozen-lockfile")
+			if pnpmErr != nil {
+				logger.Warn("validation: pnpm lockfile check failed",
+					zap.String("workDir", workDir),
+					zap.String("output", truncate(pnpmOut, maxValidationOutput)),
+				)
+				result.Pass = false
+				result.Errors = append(result.Errors, ValidationError{
+					Phase:   "pnpm",
+					Message: fmt.Sprintf("pnpm install --frozen-lockfile failed: %v", pnpmErr),
+					Output:  truncate(pnpmOut, maxValidationOutput),
+				})
+			}
+		}
 	}
 
 	return result
@@ -223,10 +334,11 @@ func isConfigOnlyFile(path string) bool {
 }
 
 // ValidateWorkspaceOutput checks whether a code-gen agent's workspace changes
-// are meaningful. If the agent only modified config files (CLAUDE.md, .claude/,
-// etc.), it returns a non-retryable validation failure. This catches Ollama
-// models that overwrite CLAUDE.md instead of implementing features.
-func ValidateWorkspaceOutput(workDir string, logger *zap.Logger) *ValidationResult {
+// are meaningful. It performs multiple checks:
+// 1. Config-only files: rejects if agent only modified CLAUDE.md, .claude/, etc.
+// 2. SPA-only output: rejects if issue expects frontend changes but only SPA files changed
+// 3. Frontend file requirement: rejects if file_context requires web/src/ but none changed
+func ValidateWorkspaceOutput(workDir string, fileContext, labels []string, logger *zap.Logger) *ValidationResult {
 	if workDir == "" {
 		return nil
 	}
@@ -244,6 +356,7 @@ func ValidateWorkspaceOutput(workDir string, logger *zap.Logger) *ValidationResu
 		return nil // No changes is handled by the caller.
 	}
 
+	// Check 1: Config-only files
 	if IsBadOutput(files) {
 		msg := fmt.Sprintf(
 			"output rejected: agent only modified project config files (%s) instead of implementing the feature",
@@ -264,6 +377,70 @@ func ValidateWorkspaceOutput(workDir string, logger *zap.Logger) *ValidationResu
 					Message: msg,
 				},
 			},
+		}
+	}
+
+	// Check 2: SPA-only changes (no tool dependency)
+	if expectsFrontendChanges(fileContext, labels) {
+		hasFrontendSource := false
+		hasSPAOutput := false
+
+		for _, f := range files {
+			if strings.HasPrefix(f, "web/src/") {
+				hasFrontendSource = true
+			}
+			if strings.HasPrefix(f, "internal/server/static/") {
+				hasSPAOutput = true
+			}
+		}
+
+		if hasSPAOutput && !hasFrontendSource {
+			if logger != nil {
+				logger.Warn("SPA-only change detected",
+					zap.Strings("changed_files", files),
+					zap.String("failure_class", "spa-only-output"),
+				)
+			}
+			return &ValidationResult{
+				Pass:      false,
+				Retryable: false,
+				Errors: []ValidationError{
+					{
+						Phase:   "output-quality",
+						Message: "output rejected: agent rebuilt compiled SPA output (internal/server/static/) without writing source code (web/src/). The issue expects frontend changes but only compiled output was modified.",
+					},
+				},
+			}
+		}
+	}
+
+	// Check 3: Frontend file requirement (no tool dependency)
+	if hasFrontendFileContext(fileContext) {
+		hasFrontendSource := false
+		for _, f := range files {
+			if strings.HasPrefix(f, "web/src/") {
+				hasFrontendSource = true
+				break
+			}
+		}
+
+		if !hasFrontendSource {
+			if logger != nil {
+				logger.Warn("missing frontend files",
+					zap.Strings("changed_files", files),
+					zap.String("failure_class", "missing-frontend-files"),
+				)
+			}
+			return &ValidationResult{
+				Pass:      false,
+				Retryable: false,
+				Errors: []ValidationError{
+					{
+						Phase:   "output-quality",
+						Message: "output rejected: issue specifies web/src/ in file_context but no web/src/ files were modified. Agent may have completed the task only partially or incorrectly.",
+					},
+				},
+			}
 		}
 	}
 

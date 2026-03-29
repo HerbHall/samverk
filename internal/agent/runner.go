@@ -368,7 +368,16 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 	}
 
 	// Step 6c: Validate output before posting (code-gen/test agents).
-	valResult := ValidateBeforePost(ctx, task.AgentType, workDir, resp.Message.Content, r.logger)
+	// Build file context list for frontend validation checks.
+	var valFileContext []string
+	if task.Frontmatter != nil && len(task.Frontmatter.FileContext) > 0 {
+		valFileContext = task.Frontmatter.FileContext
+	} else if len(fileContext) > 0 {
+		for path := range fileContext {
+			valFileContext = append(valFileContext, path)
+		}
+	}
+	valResult := ValidateBeforePost(ctx, task.AgentType, workDir, resp.Message.Content, valFileContext, task.Issue.Labels, r.logger)
 	if valResult != nil && !valResult.Pass {
 		if !valResult.Retryable {
 			r.failTask(ctx, task, fmt.Sprintf("validation failed (not retryable): %s", valResult.Errors[0].Message))
@@ -486,7 +495,18 @@ func (r *Runner) retryWithValidationErrors(
 	}
 
 	// Re-validate the retry output.
-	retryVal := ValidateBeforePost(ctx, task.AgentType, workDir, retryResp.Message.Content, r.logger)
+	// Build file context list for frontend validation checks (same as original validation).
+	var retryFileContext []string
+	if task.Frontmatter != nil && len(task.Frontmatter.FileContext) > 0 {
+		retryFileContext = task.Frontmatter.FileContext
+	} else {
+		// Extract from issue body if no frontmatter
+		issueFileContext := r.extractFileContext(task.Issue.Body, workDir)
+		for path := range issueFileContext {
+			retryFileContext = append(retryFileContext, path)
+		}
+	}
+	retryVal := ValidateBeforePost(ctx, task.AgentType, workDir, retryResp.Message.Content, retryFileContext, task.Issue.Labels, r.logger)
 	if retryVal != nil && !retryVal.Pass {
 		return nil, fmt.Errorf("validation failed after retry: %s", retryVal.Errors[0].Message)
 	}
