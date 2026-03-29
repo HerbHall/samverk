@@ -150,17 +150,33 @@ Read the repo first. Ask only if something is genuinely ambiguous after reading.
 
 ## Infrastructure
 
-- **Proxmox host:** `root@192.168.1.203` (SSH key auth configured)
+> **Source of truth:** Full infrastructure topology is in
+> [opskit/inventory/topology.md](https://gitea.herbhall.net/samverk/opskit/src/branch/main/inventory/topology.md).
+> This section is a quick reference -- opskit is authoritative.
+
 - **Samverk container:** CT 202 `root@192.168.1.162:8080` (SSH key auth)
-- **Staging container:** CT 203 `root@192.168.1.199:8080` (STOPPED -- decommissioned 2026-03-17, spin up if needed)
-- **Gitea instance:** CT 200 `192.168.1.160:3000` (`gitea.herbhall.net`) -- 40GB disk
-- **Ollama VM 300:** `192.168.1.207:11434` (RTX 3090 Ti, qwen2.5-coder:14b)
-- **Ollama HDH-NZXT:** `192.168.1.202:11434` (RTX 5090, qwen3-coder:30b)
-- **Ollama CM-ASUS:** `100.88.37.47:11434` via Tailscale (RTX 2080 Ti, qwen2.5-coder:7b)
+- **Gitea instance:** CT 200 `192.168.1.160:3000` (`gitea.herbhall.net`)
+- **Proxmox host:** `root@192.168.1.203`
+- **Ollama VM 300:** `192.168.1.207:11434` (RTX 3090 Ti)
+- **Ollama HDH-NZXT:** `192.168.1.202:11434` (RTX 5090)
+- **Ollama CM-ASUS:** `100.88.37.47:11434` via Tailscale (RTX 2080 Ti)
+- **UNRAID:** `root@hdh-unraid.local` (NAS + CI runner)
 - **Health check:** `curl http://192.168.1.162:8080/healthz`
 - **Deploy:** `make redeploy` -- cross-compiles, deploys, restarts, verifies health
 - **Model check:** `bash scripts/deploy-models.sh --check` (run from CT 202)
 - Claude Code has SSH access to all hosts
+
+## Toolkit Context
+
+Samverk is one of four projects in the Toolkit. See
+[Toolkit CLAUDE.md](../CLAUDE.md) for the full division of labor.
+
+| Project | Role | Samverk's Relationship |
+|---------|------|----------------------|
+| **Samverk** | Pipeline engine | Self -- orchestrates all four projects |
+| **DevKit** | Developer experience | Reads rules/skills for agent prompts |
+| **Synapset** | Semantic memory | Queries for pattern enrichment |
+| **Opskit** | Infrastructure | Calls scripts for self-healing; source of truth for topology |
 
 ## References
 
