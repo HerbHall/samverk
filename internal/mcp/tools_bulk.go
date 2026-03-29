@@ -337,7 +337,59 @@ func (h *Handler) handleGetProjectSummary(
 }
 
 // buildProjectSummary aggregates issue and PR data into a summary.
+// Uses the local SQLite issue cache for accurate counts when available,
+// falling back to single-page forge queries otherwise.
 func (h *Handler) buildProjectSummary(ctx context.Context, tracker forge.IssueTracker) (summary projectSummary, err error) {
+	// Try cached counts first (accurate, instant, no API calls).
+	if h.store != nil {
+		allCounts, countErr := h.store.GetAllIssueCounts(ctx)
+		if countErr == nil && len(allCounts) > 0 {
+			for _, c := range allCounts {
+				summary.OpenIssueCount += c.Open
+				summary.ClosedIssueCount += c.Closed
+			}
+
+			// Label buckets from cache.
+			allLabels := make(map[string]int)
+			for project := range allCounts {
+				labels, labelErr := h.store.GetIssueLabelCounts(ctx, project)
+				if labelErr == nil {
+					for label, count := range labels {
+						allLabels[label] += count
+					}
+				}
+			}
+			buckets := make([]labelBucket, 0, len(allLabels))
+			for label, count := range allLabels {
+				buckets = append(buckets, labelBucket{Label: label, Count: count})
+			}
+			summary.LabelBuckets = buckets
+
+			// Sync time as last activity.
+			for project := range allCounts {
+				syncTime, syncErr := h.store.GetCacheSyncTime(ctx, project)
+				if syncErr == nil {
+					ts := syncTime.Format("2006-01-02T15:04:05Z")
+					if ts > summary.LastActivity {
+						summary.LastActivity = ts
+					}
+				}
+			}
+
+			// Add PR count if a PR manager is available.
+			prm := h.activePRManager()
+			if prm != nil {
+				prs, prErr := prm.ListPullRequests(ctx, &forge.ListPROptions{State: forge.StateOpen, PerPage: 100})
+				if prErr == nil {
+					summary.OpenPRCount = len(prs)
+				}
+			}
+
+			return summary, nil
+		}
+	}
+
+	// Fallback: single-page forge queries (inaccurate for repos with >50 issues).
 	openIssues, err := tracker.ListIssues(ctx, &forge.ListOptions{State: forge.StateOpen, PerPage: 100})
 	if err != nil {
 		return summary, fmt.Errorf("listing open issues: %w", err)
@@ -351,7 +403,6 @@ func (h *Handler) buildProjectSummary(ctx context.Context, tracker forge.IssueTr
 	summary.OpenIssueCount = len(openIssues)
 	summary.ClosedIssueCount = len(closedIssues)
 
-	// Count labels across open issues.
 	labelCounts := make(map[string]int)
 	for _, iss := range openIssues {
 		for _, label := range iss.Labels {
@@ -365,7 +416,6 @@ func (h *Handler) buildProjectSummary(ctx context.Context, tracker forge.IssueTr
 	}
 	summary.LabelBuckets = buckets
 
-	// Find last activity across all issues.
 	var latest string
 	allIssues := make([]*forge.Issue, 0, len(openIssues)+len(closedIssues))
 	allIssues = append(allIssues, openIssues...)
@@ -378,7 +428,6 @@ func (h *Handler) buildProjectSummary(ctx context.Context, tracker forge.IssueTr
 	}
 	summary.LastActivity = latest
 
-	// Add PR count if a PR manager is available.
 	prm := h.activePRManager()
 	if prm != nil {
 		prs, prErr := prm.ListPullRequests(ctx, &forge.ListPROptions{State: forge.StateOpen, PerPage: 100})

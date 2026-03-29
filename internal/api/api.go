@@ -148,6 +148,7 @@ func (a *API) SetSubsystemRegistry(r *status.Registry) {
 // Routes use Go 1.22+ method+path patterns.
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/issues", a.handleListIssues)
+	mux.HandleFunc("GET /api/v1/issues/summary", a.handleIssueSummary)
 	mux.HandleFunc("GET /api/v1/issues/search", a.handleSearchIssues)
 	mux.HandleFunc("POST /api/v1/issues/bulk", a.handleBulkIssues)
 	mux.HandleFunc("GET /api/v1/issues/{number}", a.handleGetIssue)

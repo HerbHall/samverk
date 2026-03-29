@@ -376,6 +376,9 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		go d.BackfillEditComments(ctx)
 	}
 
+	// Start issue cache sync (populates SQLite with accurate issue counts).
+	go d.runIssueCacheSync(ctx)
+
 	// Start autonomous triage agent if configured.
 	if d.triageAgent != nil {
 		go func() {
