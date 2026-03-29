@@ -27,16 +27,25 @@ Lifecycle state labels indicate where an issue sits in the dispatcher workflow.
 
 ## Human Action Subtypes
 
-When an issue is labeled `status:needs-human`, it MUST also have one of the following labels to indicate what kind of human action is required and what context is needed:
+When an issue is labeled `status:needs-human`, it MUST also have one of the following `human:*` labels to indicate what kind of human action is required and what context is needed. These labels are additive — they do not replace `status:needs-human`.
 
 | Label | Color | Description | Actionable from |
 |-------|-------|-------------|---|
-| human:decision | #0075CA | Judgment call or approval, no tools required | Any device |
-| human:review | #0075CA | Read and approve/reject, content is self-contained | Any device |
-| human:credentials | #0075CA | Needs API keys, tokens, or secrets only user holds | Any device (if keys accessible) |
-| human:workstation | #0075CA | Requires physical access, SSH, browser auth, or running agent session | Workstation only |
+| human:decision | #e3a025 | Judgment call or approval, no tools required | Any device |
+| human:review | #c2a000 | Read and approve/reject, content is self-contained | Any device |
+| human:credentials | #d48806 | Needs API keys, tokens, or secrets only the user holds | Any device (if keys accessible) |
+| human:workstation | #b35900 | Requires physical access, SSH, browser auth, or running agent session | Workstation only |
 
-**Note:** Every `status:needs-human` issue MUST have exactly one `human:*` subtype label. If the dispatcher cannot determine the correct subtype, it defaults to `human:workstation` (most conservative — never falsely promises mobile actionability).
+### Usage Guidelines
+
+- **human:decision** — Use when a human must make a judgment call or approve a plan but no tools, credentials, or physical access are needed. The issue body contains all the context. Example: "Should we use approach A or B?"
+- **human:review** — Use when a human must read and accept/reject self-contained content (PR, proposal, document). Example: "Review this architecture doc and approve or suggest changes."
+- **human:credentials** — Use when the agent needs an API key, token, secret, or other credential that only the user holds. Example: "Needs Stripe API key to test payment integration."
+- **human:workstation** — Use when the task requires physical machine access, an interactive browser session, SSH into a host, or a running Claude Code agent session. Example: "Requires running the setup script locally with sudo."
+
+**Default:** When the dispatcher cannot determine the correct subtype, it uses `human:workstation` (most conservative — never falsely promises mobile actionability).
+
+**Rule:** Every `status:needs-human` issue MUST have exactly one `human:*` subtype label applied alongside it.
 
 ## Type Labels
 

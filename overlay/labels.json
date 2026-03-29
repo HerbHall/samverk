@@ -156,22 +156,22 @@
   },
   {
     "name": "human:decision",
-    "color": "0075CA",
-    "description": "Judgment call or approval, no tools required"
+    "color": "e3a025",
+    "description": "Judgment call or approval, no tools required -- actionable from any device"
   },
   {
     "name": "human:review",
-    "color": "0075CA",
-    "description": "Read and approve/reject, content is self-contained"
+    "color": "c2a000",
+    "description": "Read and approve/reject, content is self-contained -- actionable from any device"
   },
   {
     "name": "human:credentials",
-    "color": "0075CA",
-    "description": "Needs API keys, tokens, or secrets only user holds"
+    "color": "d48806",
+    "description": "Needs API keys, tokens, or secrets only the user holds"
   },
   {
     "name": "human:workstation",
-    "color": "0075CA",
+    "color": "b35900",
     "description": "Requires physical access, SSH, browser auth, or running agent session"
   }
 ]
