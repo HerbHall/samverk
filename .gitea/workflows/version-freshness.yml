@@ -1,0 +1,223 @@
+name: Version Freshness
+
+on:
+  schedule:
+    # Nightly at 02:00 UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  freshness-check:
+    name: Check Tool Version Freshness
+    runs-on: ubuntu-latest
+    # Advisory only -- never blocks CI
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check versions and security advisories
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os, sys, urllib.request, urllib.error
+
+          def fetch(url, headers=None):
+              req = urllib.request.Request(url, headers=headers or {})
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as r:
+                      return json.load(r)
+              except Exception as e:
+                  print(f"Warning: fetch failed for {url}: {e}", file=sys.stderr)
+                  return None
+
+          def gh_latest(repo):
+              token = os.environ.get("GITHUB_TOKEN", "")
+              hdrs = {"Authorization": f"Bearer {token}"} if token else {}
+              data = fetch(f"https://api.github.com/repos/{repo}/releases/latest", hdrs)
+              return data.get("tag_name", "") if data else ""
+
+          def osv_vulns(ecosystem, pkg, version):
+              payload = json.dumps({
+                  "version": version,
+                  "package": {"name": pkg, "ecosystem": ecosystem},
+              }).encode()
+              req = urllib.request.Request(
+                  "https://api.osv.dev/v1/query",
+                  data=payload,
+                  method="POST",
+                  headers={"Content-Type": "application/json"},
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as r:
+                      return json.load(r).get("vulns", [])
+              except Exception as e:
+                  print(f"Warning: OSV query failed for {pkg}@{version}: {e}", file=sys.stderr)
+                  return []
+
+          # Load pinned versions
+          with open("tools.json") as f:
+              tools = json.load(f)["tools"]
+
+          go_pinned     = tools.get("go", "")
+          lint_pinned   = tools.get("golangci-lint", "")
+          vuln_pinned   = tools.get("govulncheck", "")
+          node_pinned   = str(tools.get("node", ""))
+          pnpm_pinned   = str(tools.get("pnpm", ""))
+
+          stale = []
+          vulns = []
+
+          # --- Go ---
+          go_data = fetch("https://go.dev/dl/?mode=json")
+          if go_data:
+              go_latest = go_data[0]["version"].lstrip("go")
+              if go_pinned != go_latest:
+                  stale.append(f"- **go**: pinned `{go_pinned}`, latest `{go_latest}`")
+          go_advisories = osv_vulns("Go", "stdlib", go_pinned)
+          if go_advisories:
+              ids = ", ".join(v.get("id", "?") for v in go_advisories[:5])
+              vulns.append(f"- **go {go_pinned}**: {len(go_advisories)} advisory(ies) — {ids}")
+
+          # --- golangci-lint ---
+          lint_latest = gh_latest("golangci/golangci-lint")
+          if lint_latest and lint_pinned != lint_latest:
+              stale.append(f"- **golangci-lint**: pinned `{lint_pinned}`, latest `{lint_latest}`")
+
+          # --- govulncheck ---
+          vuln_latest = gh_latest("golang/vuln")
+          if vuln_latest and vuln_pinned != vuln_latest:
+              stale.append(f"- **govulncheck**: pinned `{vuln_pinned}`, latest `{vuln_latest}`")
+
+          # --- Node.js LTS ---
+          node_index = fetch("https://nodejs.org/dist/index.json")
+          if node_index:
+              lts_majors = sorted(
+                  {int(r["version"].lstrip("v").split(".")[0])
+                   for r in node_index if r.get("lts")},
+                  reverse=True,
+              )
+              if lts_majors:
+                  latest_lts_major = str(lts_majors[0])
+                  if node_pinned != latest_lts_major:
+                      stale.append(
+                          f"- **node**: pinned major `{node_pinned}`, newest LTS major `{latest_lts_major}`"
+                      )
+
+          # --- pnpm ---
+          pnpm_data = fetch("https://registry.npmjs.org/pnpm")
+          if pnpm_data:
+              pnpm_latest_full = pnpm_data.get("dist-tags", {}).get("latest", "")
+              pnpm_latest_major = pnpm_latest_full.split(".")[0] if pnpm_latest_full else ""
+              if pnpm_latest_major and pnpm_pinned != pnpm_latest_major:
+                  stale.append(
+                      f"- **pnpm**: pinned major `{pnpm_pinned}`, latest major `{pnpm_latest_major}`"
+                  )
+
+          # Write outputs
+          output_file = os.environ.get("GITHUB_OUTPUT", "")
+          if output_file:
+              with open(output_file, "a") as f:
+                  stale_text = "\n".join(stale)
+                  vulns_text = "\n".join(vulns)
+                  f.write(f"stale<<ENDOFVAL\n{stale_text}\nENDOFVAL\n")
+                  f.write(f"vulns<<ENDOFVAL\n{vulns_text}\nENDOFVAL\n")
+                  f.write(f"vulns_found={'true' if vulns else 'false'}\n")
+
+          if stale:
+              print("## Stale versions detected (advisory only)")
+              for line in stale:
+                  print(line)
+          if vulns:
+              print("## Security advisories detected")
+              for line in vulns:
+                  print(line)
+          if not stale and not vulns:
+              print("All pinned versions are current and no advisories found.")
+          PYEOF
+
+      - name: Create Gitea issue for security advisories
+        if: steps.check.outputs.vulns_found == 'true'
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_URL: ${{ vars.GITEA_URL }}
+          GITEA_OWNER: ${{ github.repository_owner }}
+          GITEA_REPO: ${{ github.event.repository.name }}
+          VULNS: ${{ steps.check.outputs.vulns }}
+          STALE: ${{ steps.check.outputs.stale }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os, urllib.request, urllib.error, datetime
+
+          gitea_url = os.environ.get("GITEA_URL", "").rstrip("/")
+          token     = os.environ.get("GITEA_TOKEN", "")
+          owner     = os.environ.get("GITEA_OWNER", "")
+          repo      = os.environ.get("GITEA_REPO", "")
+          vulns     = os.environ.get("VULNS", "").strip()
+          stale     = os.environ.get("STALE", "").strip()
+          date      = datetime.date.today().isoformat()
+
+          if not all([gitea_url, token, owner, repo]):
+              print("Warning: GITEA_URL or GITEA_TOKEN not configured — skipping issue creation.")
+              print("Set GITEA_URL (vars) and GITEA_TOKEN (secrets) in the repository settings.")
+              raise SystemExit(0)
+
+          stale_section = stale if stale else "_No stale versions detected._"
+          body = f"""## Security Advisories Detected in Pinned Tool Versions
+
+**Date:** {date}
+**Workflow:** Version Freshness nightly check
+
+### Advisories
+
+{vulns}
+
+### Stale Versions (advisory)
+
+{stale_section}
+
+### Action Required
+
+1. Review each advisory in the [OSV database](https://osv.dev) or [GitHub Advisories](https://github.com/advisories).
+2. Update `tools.json` with patched versions where available.
+3. Run `make ci` to verify the update.
+
+Refer to the [quarterly review template](/.gitea/ISSUE_TEMPLATE/quarterly-tool-review.md) for the full checklist.
+
+---
+_This issue was created automatically by the nightly version freshness check._
+"""
+
+          payload = json.dumps({
+              "title": f"[security] Tool version advisories detected — {date}",
+              "body": body,
+          }).encode()
+
+          url = f"{gitea_url}/api/v1/repos/{owner}/{repo}/issues"
+          req = urllib.request.Request(url, data=payload, method="POST")
+          req.add_header("Authorization", f"token {token}")
+          req.add_header("Content-Type", "application/json")
+
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  issue = json.load(resp)
+                  print(f"Created issue #{issue.get('number')}: {issue.get('html_url', url)}")
+          except urllib.error.HTTPError as e:
+              body_text = e.read().decode(errors="replace")
+              print(f"Warning: failed to create Gitea issue (HTTP {e.code}): {body_text}")
+              print("This is non-blocking — advisory data was logged above.")
+          PYEOF
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Version Freshness Check Complete"
+          echo ""
+          echo "Stale versions:"
+          echo "${{ steps.check.outputs.stale || '  (none)' }}"
+          echo ""
+          echo "Security advisories:"
+          echo "${{ steps.check.outputs.vulns || '  (none)' }}"
+          echo ""
+          echo "This job is advisory only and does not block CI."
