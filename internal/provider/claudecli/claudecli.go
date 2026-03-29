@@ -30,6 +30,15 @@ const (
 	// oversized GitHub issue comments and avoid leaking unrelated terminal output.
 	maxErrOutputBytes = 2048
 
+	// maxOutputBufferBytes caps the raw output buffer that accumulates stream
+	// lines for error diagnostics. The actual result is extracted from the
+	// {"type":"result"} event and stored separately, so the raw buffer only
+	// needs to hold enough context for debugging failures. Previously this
+	// was unbounded, causing the dispatch process to grow to 9.9 GB RSS when
+	// running multiple long agent sessions (each accumulating full stream
+	// output including all tool calls and results).
+	maxOutputBufferBytes = 64 * 1024 // 64 KB per session
+
 	// startupTimeout is how long Chat waits for the first JSON event after
 	// spawning the process. With --output-format stream-json --verbose, the
 	// CLI emits a {"type":"system","subtype":"init"} event within 1-3 seconds
@@ -335,12 +344,15 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 	}
 
 	// Drain stderr in background to prevent pipe deadlock.
+	// Capped to maxOutputBufferBytes to prevent unbounded growth.
 	var stderrBuf strings.Builder
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(&stderrBuf, stderr)
+		_, _ = io.Copy(&stderrBuf, io.LimitReader(stderr, maxOutputBufferBytes))
+		// Drain remaining stderr to prevent pipe deadlock.
+		_, _ = io.Copy(io.Discard, stderr)
 	}()
 
 	scanner := bufio.NewScanner(stdout)
@@ -447,9 +459,12 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 			// Parse the JSON event to extract type and result.
 			var event streamEvent
 			if err := json.Unmarshal([]byte(line), &event); err != nil {
-				// Not valid JSON -- accumulate as raw output (fallback).
-				output.WriteString(line)
-				output.WriteByte('\n')
+				// Not valid JSON -- accumulate as raw output (fallback),
+				// capped to prevent unbounded growth.
+				if output.Len() < maxOutputBufferBytes {
+					output.WriteString(line)
+					output.WriteByte('\n')
+				}
 				scanNext()
 				continue
 			}
@@ -468,9 +483,14 @@ func (c *Client) streamOutput(ctx context.Context, cancel context.CancelFunc, ou
 				}
 			}
 
-			// Also accumulate raw lines so output has full context on error.
-			output.WriteString(line)
-			output.WriteByte('\n')
+			// Accumulate raw lines for error diagnostics, but cap to prevent
+			// unbounded memory growth. The actual result is extracted above
+			// into resultText; this buffer is only used when the session
+			// fails and we need context for the error message.
+			if output.Len() < maxOutputBufferBytes {
+				output.WriteString(line)
+				output.WriteByte('\n')
+			}
 
 			scanNext()
 		}

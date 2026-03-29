@@ -833,10 +833,17 @@ func (r *Runner) updateSessionStatus(ctx context.Context, sessionID string, stat
 }
 
 // storePartialOutput saves agent output to the session for quality gate evaluation.
+// Output is capped to prevent unbounded SQLite growth and in-memory bloat when
+// sessions are loaded.
+const maxPartialOutputBytes = 256 * 1024 // 256 KB per session
+
 func (r *Runner) storePartialOutput(ctx context.Context, sessionID, output string) error {
 	session, err := r.store.GetSession(ctx, sessionID)
 	if err != nil {
 		return err
+	}
+	if len(output) > maxPartialOutputBytes {
+		output = output[len(output)-maxPartialOutputBytes:]
 	}
 	session.PartialOutput = output
 	session.UpdatedAt = time.Now()
