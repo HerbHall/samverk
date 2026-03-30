@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.25](https://github.com/HerbHall/samverk/compare/v0.1.24...v0.1.25) (2026-03-30)
+
+
+### Features
+
+* MCP OAuth authorization server endpoints (issue [#201](https://github.com/HerbHall/samverk/issues/201)) ([#724](https://github.com/HerbHall/samverk/issues/724)) ([099b960](https://github.com/HerbHall/samverk/commit/099b960c7b592f1b5bfdf0d21169ee9cb729272e))
+
 ## [0.1.24](https://github.com/HerbHall/samverk/compare/v0.1.23...v0.1.24) (2026-03-22)
 
 
