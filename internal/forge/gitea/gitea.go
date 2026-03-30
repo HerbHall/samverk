@@ -141,6 +141,9 @@ func (c *Client) ListIssues(ctx context.Context, opts *forge.ListOptions) (issue
 	if opts.Assignee != "" {
 		gOpts.AssignedBy = opts.Assignee
 	}
+	if opts.Since != nil {
+		gOpts.Since = *opts.Since
+	}
 
 	gi, _, err := c.gt.ListRepoIssues(c.owner, c.repo, gOpts)
 	if err != nil {

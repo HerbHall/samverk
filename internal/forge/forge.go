@@ -124,6 +124,7 @@ type ListOptions struct {
 	Assignee string
 	Page     int
 	PerPage  int
+	Since    *time.Time // only return issues updated after this time
 }
 
 // SearchOptions controls full-text search across issues.

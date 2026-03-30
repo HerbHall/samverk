@@ -127,6 +127,9 @@ func (c *Client) ListIssues(ctx context.Context, opts *forge.ListOptions) ([]*fo
 	if opts.Assignee != "" {
 		ghOpts.Assignee = opts.Assignee
 	}
+	if opts.Since != nil {
+		ghOpts.Since = *opts.Since
+	}
 
 	issues, _, err := c.gh.Issues.ListByRepo(ctx, c.owner, c.repo, ghOpts)
 	if err != nil {

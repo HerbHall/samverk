@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -11,119 +12,176 @@ import (
 )
 
 const (
-	openSyncInterval   = 60 * time.Second
-	closedSyncInterval = 5 * time.Minute
+	// incrementalSyncInterval is the interval for incremental issue sync
+	// (only fetches issues updated since the last sync).
+	incrementalSyncInterval = 60 * time.Second
+
+	// fullReconcileInterval is the interval for full reconciliation
+	// (fetches all issues to catch any missed updates and prune stale entries).
+	fullReconcileInterval = 15 * time.Minute
 )
 
 // runIssueCacheSync syncs issues from all registered trackers to the local
-// SQLite cache. Open issues sync every 60s, closed issues every 5 minutes.
-// An initial full sync (open + closed) runs immediately on startup.
+// SQLite cache. Uses incremental sync (?since=lastSyncAt) every 60s for
+// efficiency, with a full reconciliation every 15 minutes to catch any
+// missed updates. An initial full sync runs immediately on startup.
 func (d *Dispatcher) runIssueCacheSync(ctx context.Context) {
 	if d.store == nil {
 		d.logger.Warn("issue cache sync disabled: no store configured")
 		return
 	}
 
-	// Initial full sync on startup.
-	d.syncAllIssues(ctx, true)
+	// Track last sync time per tracker for incremental queries.
+	var lastSyncMu sync.Mutex
+	lastSyncTimes := make(map[string]time.Time) // key: tracker repo name
 
-	openTicker := time.NewTicker(openSyncInterval)
-	closedTicker := time.NewTicker(closedSyncInterval)
-	defer openTicker.Stop()
-	defer closedTicker.Stop()
+	// Initial full sync on startup (open + closed).
+	d.syncAllIssuesFull(ctx, lastSyncTimes, &lastSyncMu)
+
+	incrementalTicker := time.NewTicker(incrementalSyncInterval)
+	reconcileTicker := time.NewTicker(fullReconcileInterval)
+	defer incrementalTicker.Stop()
+	defer reconcileTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-openTicker.C:
-			d.syncAllIssues(ctx, false)
-		case <-closedTicker.C:
-			d.syncAllIssues(ctx, true)
+		case <-incrementalTicker.C:
+			d.syncAllIssuesIncremental(ctx, lastSyncTimes, &lastSyncMu)
+		case <-reconcileTicker.C:
+			d.syncAllIssuesFull(ctx, lastSyncTimes, &lastSyncMu)
 		}
 	}
 }
 
-// syncAllIssues syncs issues from every registered tracker.
-// If includeClosed is true, closed issues are also fetched and synced.
-func (d *Dispatcher) syncAllIssues(ctx context.Context, includeClosed bool) {
+// syncAllIssuesFull does a complete sync of all open (and closed) issues
+// from every registered tracker. Updates lastSyncTimes on success.
+func (d *Dispatcher) syncAllIssuesFull(ctx context.Context, lastSyncTimes map[string]time.Time, mu *sync.Mutex) {
 	d.mu.RLock()
 	entries := make([]TrackerEntry, len(d.trackerEntries))
 	copy(entries, d.trackerEntries)
 	d.mu.RUnlock()
 
+	now := time.Now().UTC()
+
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return
 		}
-		d.syncTrackerIssues(ctx, entry, includeClosed)
+		project := entry.Repo
+
+		// Fetch all open issues.
+		openIssues, err := d.fetchAllIssues(ctx, entry.Tracker, forge.StateOpen, nil)
+		if err != nil {
+			d.logger.Warn("issue cache: full sync failed (open)",
+				zap.String("project", project), zap.Error(err))
+			continue
+		}
+
+		cached := forgeIssuesToCached(openIssues)
+		if syncErr := d.store.SyncIssues(ctx, project, cached); syncErr != nil {
+			d.logger.Warn("issue cache: full sync store failed",
+				zap.String("project", project), zap.Error(syncErr))
+			continue
+		}
+
+		// Prune stale entries.
+		openNumbers := make([]int, len(openIssues))
+		for i, iss := range openIssues {
+			openNumbers[i] = iss.Number
+		}
+		if pruneErr := d.store.DeleteStaleIssues(ctx, project, openNumbers); pruneErr != nil {
+			d.logger.Warn("issue cache: prune failed",
+				zap.String("project", project), zap.Error(pruneErr))
+		}
+
+		// Fetch closed issues too (full reconciliation).
+		closedIssues, closedErr := d.fetchAllIssues(ctx, entry.Tracker, forge.StateClosed, nil)
+		if closedErr != nil {
+			d.logger.Warn("issue cache: full sync failed (closed)",
+				zap.String("project", project), zap.Error(closedErr))
+		} else {
+			closedCached := forgeIssuesToCached(closedIssues)
+			if syncErr := d.store.SyncIssues(ctx, project, closedCached); syncErr != nil {
+				d.logger.Warn("issue cache: full sync store failed (closed)",
+					zap.String("project", project), zap.Error(syncErr))
+			}
+		}
+
+		mu.Lock()
+		lastSyncTimes[project] = now
+		mu.Unlock()
+
+		d.logger.Debug("issue cache: full reconciliation",
+			zap.String("project", project),
+			zap.Int("open", len(openIssues)),
+			zap.Int("closed", len(closedIssues)),
+		)
 	}
 }
 
-// syncTrackerIssues fetches and caches issues for a single tracker.
-func (d *Dispatcher) syncTrackerIssues(ctx context.Context, entry TrackerEntry, includeClosed bool) {
-	project := entry.Repo // project name is the repo name
+// syncAllIssuesIncremental fetches only issues updated since the last sync.
+// Falls back to full sync if no lastSyncTime is available.
+func (d *Dispatcher) syncAllIssuesIncremental(ctx context.Context, lastSyncTimes map[string]time.Time, mu *sync.Mutex) {
+	d.mu.RLock()
+	entries := make([]TrackerEntry, len(d.trackerEntries))
+	copy(entries, d.trackerEntries)
+	d.mu.RUnlock()
 
-	// Sync open issues (always).
-	openIssues, err := d.fetchAllIssues(ctx, entry.Tracker, forge.StateOpen)
-	if err != nil {
-		d.logger.Warn("issue cache: failed to fetch open issues",
-			zap.String("project", project),
-			zap.Error(err),
-		)
-		return
-	}
+	now := time.Now().UTC()
 
-	cached := forgeIssuesToCached(openIssues)
-	if err := d.store.SyncIssues(ctx, project, cached); err != nil {
-		d.logger.Warn("issue cache: failed to sync open issues",
-			zap.String("project", project),
-			zap.Error(err),
-		)
-		return
-	}
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return
+		}
+		project := entry.Repo
 
-	// Prune stale open entries (issues that were closed or deleted since last sync).
-	openNumbers := make([]int, len(openIssues))
-	for i, iss := range openIssues {
-		openNumbers[i] = iss.Number
-	}
-	if err := d.store.DeleteStaleIssues(ctx, project, openNumbers); err != nil {
-		d.logger.Warn("issue cache: failed to prune stale issues",
-			zap.String("project", project),
-			zap.Error(err),
-		)
-	}
+		mu.Lock()
+		lastSync, hasLastSync := lastSyncTimes[project]
+		mu.Unlock()
 
-	// Sync closed issues (only when requested).
-	if includeClosed {
-		closedIssues, fetchErr := d.fetchAllIssues(ctx, entry.Tracker, forge.StateClosed)
-		if fetchErr != nil {
-			d.logger.Warn("issue cache: failed to fetch closed issues",
-				zap.String("project", project),
-				zap.Error(fetchErr),
-			)
+		if !hasLastSync {
+			// No previous sync -- do a full sync instead.
+			d.syncAllIssuesFull(ctx, lastSyncTimes, mu)
 			return
 		}
 
-		closedCached := forgeIssuesToCached(closedIssues)
-		if syncErr := d.store.SyncIssues(ctx, project, closedCached); syncErr != nil {
-			d.logger.Warn("issue cache: failed to sync closed issues",
-				zap.String("project", project),
-				zap.Error(syncErr),
-			)
+		// Fetch only issues updated since lastSync.
+		// Use a small buffer to handle clock skew between samverk and forge.
+		since := lastSync.Add(-5 * time.Second)
+		updated, err := d.fetchAllIssues(ctx, entry.Tracker, "", &since)
+		if err != nil {
+			d.logger.Warn("issue cache: incremental sync failed",
+				zap.String("project", project), zap.Error(err))
+			continue
 		}
-	}
 
-	d.logger.Debug("issue cache synced",
-		zap.String("project", project),
-		zap.Int("open", len(openIssues)),
-		zap.Bool("closed_synced", includeClosed),
-	)
+		if len(updated) > 0 {
+			cached := forgeIssuesToCached(updated)
+			if syncErr := d.store.SyncIssues(ctx, project, cached); syncErr != nil {
+				d.logger.Warn("issue cache: incremental sync store failed",
+					zap.String("project", project), zap.Error(syncErr))
+				continue
+			}
+		}
+
+		mu.Lock()
+		lastSyncTimes[project] = now
+		mu.Unlock()
+
+		d.logger.Debug("issue cache: incremental sync",
+			zap.String("project", project),
+			zap.Int("updated", len(updated)),
+			zap.Duration("since_last", now.Sub(lastSync)),
+		)
+	}
 }
 
 // fetchAllIssues paginates through all issues of the given state.
-func (d *Dispatcher) fetchAllIssues(ctx context.Context, tracker forge.IssueTracker, state forge.State) ([]*forge.Issue, error) {
+// If since is non-nil, only issues updated after that time are returned.
+// If state is empty, issues of all states are returned (for incremental sync).
+func (d *Dispatcher) fetchAllIssues(ctx context.Context, tracker forge.IssueTracker, state forge.State, since *time.Time) ([]*forge.Issue, error) {
 	var all []*forge.Issue
 	page := 1
 	for {
@@ -131,6 +189,7 @@ func (d *Dispatcher) fetchAllIssues(ctx context.Context, tracker forge.IssueTrac
 			State:   state,
 			Page:    page,
 			PerPage: 50,
+			Since:   since,
 		})
 		if err != nil {
 			return nil, err
