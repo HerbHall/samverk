@@ -17,6 +17,9 @@ type Config struct {
 	HeartbeatCheckInterval     time.Duration `yaml:"heartbeat_check_interval"`
 	DecompositionThreshold     time.Duration `yaml:"decomposition_threshold"`
 	DecompositionModel         string        `yaml:"decomposition_model"`
+	IssueSyncInterval          time.Duration `yaml:"issue_sync_interval"`
+	IssueReconcileInterval     time.Duration `yaml:"issue_reconcile_interval"`
+	PRWatcherInterval          time.Duration `yaml:"pr_watcher_interval"`
 }
 
 // configFile is the on-disk YAML representation with friendly duration fields.
@@ -28,6 +31,9 @@ type configFile struct {
 	HeartbeatCheckSeconds          int     `yaml:"heartbeat_check_seconds"`
 	DecompositionThresholdMinutes  int     `yaml:"decomposition_threshold_minutes"`
 	DecompositionModel             string  `yaml:"decomposition_model"`
+	IssueSyncSeconds               int     `yaml:"issue_sync_seconds"`
+	IssueReconcileMinutes          int     `yaml:"issue_reconcile_minutes"`
+	PRWatcherSeconds               int     `yaml:"pr_watcher_seconds"`
 }
 
 // DefaultConfig returns production-ready defaults for a self-hosted deployment.
@@ -38,6 +44,9 @@ func DefaultConfig() *Config {
 		MaxConsecutiveFailures:     3,
 		DependencyRecheckInterval:  2 * time.Minute,
 		HeartbeatCheckInterval:     60 * time.Second,
+		IssueSyncInterval:          60 * time.Second,
+		IssueReconcileInterval:     15 * time.Minute,
+		PRWatcherInterval:          60 * time.Second,
 	}
 }
 
@@ -76,6 +85,15 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cf.DecompositionModel != "" {
 		cfg.DecompositionModel = cf.DecompositionModel
+	}
+	if cf.IssueSyncSeconds > 0 {
+		cfg.IssueSyncInterval = time.Duration(cf.IssueSyncSeconds) * time.Second
+	}
+	if cf.IssueReconcileMinutes > 0 {
+		cfg.IssueReconcileInterval = time.Duration(cf.IssueReconcileMinutes) * time.Minute
+	}
+	if cf.PRWatcherSeconds > 0 {
+		cfg.PRWatcherInterval = time.Duration(cf.PRWatcherSeconds) * time.Second
 	}
 
 	return cfg, nil

@@ -12,13 +12,13 @@ import (
 )
 
 const (
-	// incrementalSyncInterval is the interval for incremental issue sync
-	// (only fetches issues updated since the last sync).
-	incrementalSyncInterval = 60 * time.Second
+	// defaultIncrementalSyncInterval is the default interval for incremental issue sync.
+	// Override via Config.IssueSyncInterval.
+	defaultIncrementalSyncInterval = 60 * time.Second
 
-	// fullReconcileInterval is the interval for full reconciliation
-	// (fetches all issues to catch any missed updates and prune stale entries).
-	fullReconcileInterval = 15 * time.Minute
+	// defaultFullReconcileInterval is the default interval for full reconciliation.
+	// Override via Config.IssueReconcileInterval.
+	defaultFullReconcileInterval = 15 * time.Minute
 )
 
 // runIssueCacheSync syncs issues from all registered trackers to the local
@@ -38,8 +38,17 @@ func (d *Dispatcher) runIssueCacheSync(ctx context.Context) {
 	// Initial full sync on startup (open + closed).
 	d.syncAllIssuesFull(ctx, lastSyncTimes, &lastSyncMu)
 
-	incrementalTicker := time.NewTicker(incrementalSyncInterval)
-	reconcileTicker := time.NewTicker(fullReconcileInterval)
+	syncInterval := d.config.IssueSyncInterval
+	if syncInterval == 0 {
+		syncInterval = defaultIncrementalSyncInterval
+	}
+	reconcileInterval := d.config.IssueReconcileInterval
+	if reconcileInterval == 0 {
+		reconcileInterval = defaultFullReconcileInterval
+	}
+
+	incrementalTicker := time.NewTicker(syncInterval)
+	reconcileTicker := time.NewTicker(reconcileInterval)
 	defer incrementalTicker.Stop()
 	defer reconcileTicker.Stop()
 
