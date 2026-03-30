@@ -580,16 +580,52 @@ func convertIssue(gi *gogitea.Issue) *forge.Issue {
 	return issue
 }
 
+// maxCommentBody is the maximum body length retained from API responses.
+// Most callers only scan for short markers (QC approval, CI failure, checkpoint
+// prefix). Capping prevents multi-GB allocations when issues have large
+// checkpoint or progress comments (issue #516).
+const maxCommentBody = 4096
+
 // convertComment transforms a Gitea SDK comment into a forge.Comment.
-// String fields are cloned via []byte round-trip to break references to the
-// JSON decoder's backing array, which otherwise prevents GC of the entire
-// response buffer (see issue #516).
+// The body is truncated to maxCommentBody and cloned to break references
+// to the JSON decoder's backing array (see issue #516).
 func convertComment(gc *gogitea.Comment) *forge.Comment {
 	author := ""
 	if gc.Poster != nil {
 		author = cloneString(gc.Poster.UserName)
 	}
 
+	body := gc.Body
+	if len(body) > maxCommentBody {
+		body = body[:maxCommentBody]
+	}
+
+	return &forge.Comment{
+		ID:        gc.ID,
+		Body:      cloneString(body),
+		Author:    author,
+		CreatedAt: gc.Created,
+	}
+}
+
+// GetComment fetches a single comment by ID with full (untruncated) body.
+// Use this instead of ListComments when the full body content is needed
+// (e.g. parsing EDIT blocks).
+func (c *Client) GetComment(_ context.Context, commentID int64) (*forge.Comment, error) {
+	gc, _, err := c.gt.GetIssueComment(c.owner, c.repo, commentID)
+	if err != nil {
+		return nil, fmt.Errorf("gitea: get comment %d: %w", commentID, err)
+	}
+	return convertCommentFull(gc), nil
+}
+
+// convertCommentFull transforms a Gitea SDK comment with the FULL body
+// (no truncation). Only use for single-comment fetches, not bulk listing.
+func convertCommentFull(gc *gogitea.Comment) *forge.Comment {
+	author := ""
+	if gc.Poster != nil {
+		author = cloneString(gc.Poster.UserName)
+	}
 	return &forge.Comment{
 		ID:        gc.ID,
 		Body:      cloneString(gc.Body),

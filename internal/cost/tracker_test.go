@@ -53,6 +53,9 @@ func (m *mockStore) GetTriageDecisionForIssue(_ context.Context, _ int) (*store.
 	return nil, store.ErrNotFound
 }
 func (m *mockStore) UpdateTriageReview(_ context.Context, _ int64, _, _ string) error { return nil }
+func (m *mockStore) GetLatestCheckpoint(_ context.Context, _ int) (string, error) {
+	return "", nil
+}
 
 func TestCheckBudgetUnlimited(t *testing.T) {
 	tr := NewTracker(&mockStore{}, 0, 24)

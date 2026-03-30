@@ -38,6 +38,10 @@ type Store interface {
 	GetSession(ctx context.Context, id string) (*models.Session, error)
 	UpdateSession(ctx context.Context, s *models.Session) error
 	ListSessions(ctx context.Context, status models.SessionStatus) ([]*models.Session, error)
+	// GetLatestCheckpoint returns the partial_output from the most recent
+	// failed session for the given issue that has a non-empty checkpoint.
+	// Returns empty string (not ErrNotFound) when no checkpoint exists.
+	GetLatestCheckpoint(ctx context.Context, issueNumber int) (string, error)
 
 	// Cost tracking
 	RecordCost(ctx context.Context, r *models.CostRecord) error
