@@ -283,9 +283,13 @@ func (c *Client) buildEnv() []string {
 		switch {
 		case strings.HasPrefix(e, "ANTHROPIC_API_KEY="):
 			continue
-		case c.baseURL != "" && strings.HasPrefix(e, "ANTHROPIC_BASE_URL="):
+		case strings.HasPrefix(e, "ANTHROPIC_BASE_URL="):
 			continue
-		case c.baseURL != "" && strings.HasPrefix(e, "ANTHROPIC_AUTH_TOKEN="):
+		case strings.HasPrefix(e, "ANTHROPIC_AUTH_TOKEN="):
+			continue
+		case strings.HasPrefix(e, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="):
+			continue
+		case strings.HasPrefix(e, "CLAUDE_CODE_SKIP_TOKEN_COUNTING="):
 			continue
 		default:
 			env = append(env, e)

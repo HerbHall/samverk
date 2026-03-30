@@ -407,6 +407,12 @@ func TestOllamaEnvInjection(t *testing.T) {
 // TestNoOllamaEnvWithoutBaseURL verifies that without a baseURL,
 // no Ollama-specific env vars are injected.
 func TestNoOllamaEnvWithoutBaseURL(t *testing.T) {
+	// Set vars that buildEnv must strip even without baseURL.
+	t.Setenv("ANTHROPIC_BASE_URL", "http://leftover-ollama:11434")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "stale-token")
+	t.Setenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+	t.Setenv("CLAUDE_CODE_SKIP_TOKEN_COUNTING", "1")
+
 	c := &Client{
 		claudeBin: "echo",
 		model:     "claude-sonnet-4-6",
