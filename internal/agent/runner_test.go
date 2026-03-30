@@ -354,6 +354,7 @@ func TestRunnerHeartbeatNil(t *testing.T) {
 }
 
 func TestRunnerResumeFromCheckpoint(t *testing.T) {
+	t.Skip("checkpoint detection disabled (issue #516) -- re-enable when checkpoints move to SQLite")
 	// When a prior CHECKPOINT comment exists, the runner should inject a
 	// resume prompt into the messages sent to the provider.
 	var capturedMessages []provider.Message

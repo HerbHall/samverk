@@ -137,11 +137,12 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		return fmt.Errorf("check budget: %w", err)
 	}
 
-	// Step 3: Detect prior checkpoint for resume.
-	// Extracted to a separate function so the comments slice lives in a
-	// shorter stack frame and can be GC'd before the long-running provider
-	// call (see issue #516).
-	resumePrompt := r.detectCheckpoint(ctx, task)
+	// Step 3: Checkpoint detection disabled (issue #516).
+	// ListComments/ListCommentsSince allocates multi-GB of cloned comment
+	// bodies that GC cannot reclaim fast enough under concurrent load.
+	// TODO(#516): re-enable when checkpoints are stored in SQLite instead
+	// of scanned from issue comments.
+	var resumePrompt string
 
 	// Step 3b: Create isolated workspace for code-gen/test agents.
 	var workDir string
@@ -549,11 +550,9 @@ func (r *Runner) postProcess(ctx context.Context, task Task, response, workDir s
 	case models.AgentTypeCodeGen, models.AgentTypeTest:
 		if r.repoWriter != nil && r.prManager != nil {
 			parsed := ParseEditBlocks(response)
-			// Dedup edits against any prior checkpoint to avoid rewriting
-			// files that were already committed in a previous attempt.
-			if checkpoint := r.latestCheckpoint(ctx, task.Issue.Number); checkpoint != "" {
-				parsed.Edits = DeduplicateEdits(parsed.Edits, checkpoint)
-			}
+			// Checkpoint-based dedup disabled (issue #516): ListComments
+			// allocates multi-GB that GC cannot reclaim under load.
+			// TODO(#516): re-enable when checkpoints are in SQLite.
 			if len(parsed.Edits) > 0 {
 				return r.openPR(ctx, task, parsed)
 			}
@@ -792,66 +791,6 @@ func (r *Runner) extractFileContext(body, workDir string) map[string]string {
 		result[p] = ""
 	}
 	return result
-}
-
-// recentCommenter is an optional interface for trackers that support
-// time-filtered comment queries, avoiding full comment history fetches.
-type recentCommenter interface {
-	ListCommentsSince(ctx context.Context, number int, since time.Time) ([]*forge.Comment, error)
-}
-
-// detectCheckpoint fetches issue comments and returns a resume prompt if a
-// prior checkpoint exists. The comments slice is scoped to this function so
-// it can be GC'd before the long-running provider call in Run() (issue #516).
-// When the tracker supports ListCommentsSince, only the last 24h of comments
-// are fetched instead of the full history.
-func (r *Runner) detectCheckpoint(ctx context.Context, task Task) string {
-	var (
-		comments []*forge.Comment
-		err      error
-	)
-	if rc, ok := r.tracker.(recentCommenter); ok {
-		comments, err = rc.ListCommentsSince(ctx, task.Issue.Number, time.Now().Add(-24*time.Hour))
-	} else {
-		comments, err = r.tracker.ListComments(ctx, task.Issue.Number)
-	}
-	if err != nil {
-		r.logger.Warn("failed to list comments for checkpoint detection",
-			zap.Int("issue", task.Issue.Number),
-			zap.Error(err),
-		)
-		return ""
-	}
-	if checkpoint := FindLatestCheckpoint(comments); checkpoint != "" {
-		r.logger.Info("resuming from checkpoint",
-			zap.Int("issue", task.Issue.Number),
-			zap.String("session", task.SessionID),
-		)
-		return BuildResumePrompt(checkpoint)
-	}
-	return ""
-}
-
-// latestCheckpoint fetches issue comments and returns the most recent
-// checkpoint content, or empty string if none exists.
-func (r *Runner) latestCheckpoint(ctx context.Context, issueNumber int) string {
-	var (
-		comments []*forge.Comment
-		err      error
-	)
-	if rc, ok := r.tracker.(recentCommenter); ok {
-		comments, err = rc.ListCommentsSince(ctx, issueNumber, time.Now().Add(-24*time.Hour))
-	} else {
-		comments, err = r.tracker.ListComments(ctx, issueNumber)
-	}
-	if err != nil {
-		r.logger.Warn("failed to list comments for checkpoint dedup",
-			zap.Int("issue", issueNumber),
-			zap.Error(err),
-		)
-		return ""
-	}
-	return FindLatestCheckpoint(comments)
 }
 
 // updateSessionStatus fetches and updates a session's status in the store.
