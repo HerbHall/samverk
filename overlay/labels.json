@@ -153,5 +153,45 @@
     "name": "phase:killed",
     "color": "000000",
     "description": "Abandoned with documented rationale"
+  },
+  {
+    "name": "human:decision",
+    "color": "e3a025",
+    "description": "Judgment call or approval, no tools required -- actionable from any device"
+  },
+  {
+    "name": "human:review",
+    "color": "c2a000",
+    "description": "Read and approve/reject, content is self-contained -- actionable from any device"
+  },
+  {
+    "name": "human:credentials",
+    "color": "d48806",
+    "description": "Needs API keys, tokens, or secrets only the user holds"
+  },
+  {
+    "name": "human:workstation",
+    "color": "b35900",
+    "description": "Requires physical access, SSH, browser auth, or running agent session"
+  },
+  {
+    "name": "qc:pass",
+    "color": "0e8a16",
+    "description": "QC verdict: passed"
+  },
+  {
+    "name": "qc:fail",
+    "color": "d93f0b",
+    "description": "QC verdict: failed"
+  },
+  {
+    "name": "qc:review",
+    "color": "fbca04",
+    "description": "QC verdict: needs review"
+  },
+  {
+    "name": "warning:quality",
+    "color": "e4e669",
+    "description": "Quality warning posted"
   }
 ]
