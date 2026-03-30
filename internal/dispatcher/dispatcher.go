@@ -939,18 +939,38 @@ func (d *Dispatcher) pollQueued(ctx context.Context) {
 
 	for i := range entries {
 		entry := entries[i]
-		issues, err := entry.Tracker.ListIssues(ctx, &forge.ListOptions{
-			State:   forge.StateOpen,
-			Labels:  []string{"status:queued"},
-			PerPage: 100,
-		})
-		if err != nil {
-			d.logger.Warn("pollQueued: list issues",
-				zap.String("owner", entry.Owner),
-				zap.String("repo", entry.Repo),
-				zap.Error(err))
-			continue
+
+		// Fast path: query the issue cache (SQLite) instead of forge API.
+		var issues []*forge.Issue
+		if d.store != nil {
+			cached, cacheErr := d.store.ListCachedIssues(ctx, entry.Repo, "open", []string{models.LabelStatusQueued})
+			if cacheErr == nil {
+				issues = make([]*forge.Issue, len(cached))
+				for ci := range cached {
+					issues[ci] = cachedToForgeIssue(&cached[ci])
+				}
+			} else {
+				d.logger.Debug("pollQueued: cache miss, falling back to API",
+					zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(cacheErr))
+			}
 		}
+		// Fallback: query the forge API directly.
+		if issues == nil {
+			var err error
+			issues, err = entry.Tracker.ListIssues(ctx, &forge.ListOptions{
+				State:   forge.StateOpen,
+				Labels:  []string{"status:queued"},
+				PerPage: 100,
+			})
+			if err != nil {
+				d.logger.Warn("pollQueued: list issues",
+					zap.String("owner", entry.Owner),
+					zap.String("repo", entry.Repo),
+					zap.Error(err))
+				continue
+			}
+		}
+
 		// Sort by priority weight + age bonus so critical and stale
 		// issues dispatch first instead of arbitrary API return order.
 		sortByPriority(issues, time.Now())

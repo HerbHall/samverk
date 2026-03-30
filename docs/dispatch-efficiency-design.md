@@ -548,6 +548,43 @@ vocabulary is finite and known at compile time.
 - The `issue_state` computed cache table (Wave 3) can be populated
   from the same events.
 
+## Wave 3 Results (2026-03-30)
+
+### What Shipped (PR 1: Cache-based polling)
+
+**Dispatcher heartbeat: eliminated remaining forge API calls**
+
+- `pollQueued`: replaced `ListIssues(status:queued)` per tracker with
+  `ListCachedIssues` SQLite query. Falls back to API when store is nil.
+- `recheckCrossProjectDeps`: replaced `ListIssues(status:blocked)` per
+  tracker with `ListCachedIssues` SQLite query.
+- `checkDependencies`: replaced `GetIssue` per local dependency with
+  `GetCachedIssue` SQLite lookup.
+- `checkCrossProjectDep`: replaced `GetIssue` on cross-project tracker
+  with `GetCachedIssue` SQLite lookup.
+- `buildDependencyGraph`: replaced `ListIssues(state:open)` with
+  `ListCachedIssues(project, "open", nil)` for cycle detection.
+- `unblockDependents`: replaced `ListIssues(status:blocked)` with
+  `ListCachedIssues` SQLite query.
+
+Added `isDoneCached` and `cachedToForgeIssue` helpers for cache-to-forge
+type conversion. All paths gracefully degrade to forge API when store
+is nil.
+
+### API Call Reduction
+
+| Component | Before Wave 3 | After Wave 3 | Savings |
+| --------- | ------------- | ------------ | ------- |
+| pollQueued (60s tick) | 1 ListIssues per tracker | 0 (cache) | ~3/min |
+| recheckCrossProjectDeps (60s tick) | 1 ListIssues per tracker | 0 (cache) | ~3/min |
+| checkDependencies (per blocked issue) | 1 GetIssue per dep | 0 (cache) | variable |
+| checkCrossProjectDep (per blocked issue) | 1 GetIssue per cross-dep | 0 (cache) | variable |
+| buildDependencyGraph (per new issue) | 1 ListIssues | 0 (cache) | variable |
+| unblockDependents (per close) | 1 ListIssues per tracker | 0 (cache) | variable |
+
+**Steady-state API calls from heartbeat ticker: 0** (down from ~6/min).
+Only Watch polling and full reconciliation (15 min) make forge API calls.
+
 ## References
 
 - [ADR-027: Failure Recovery](decisions/ADR-027-failure-recovery.md)

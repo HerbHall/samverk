@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
 )
 
@@ -596,5 +597,168 @@ func TestDetectCycle_MixedDeps_IgnoresCrossProject(t *testing.T) {
 	}
 	if cycle != nil {
 		t.Errorf("expected no cycle, got %v", cycle)
+	}
+}
+
+// --- Cache-path tests (Wave 3) ---
+
+// newTestDispatcherWithStore creates a dispatcher with an in-memory SQLite store
+// for testing cache-based code paths.
+func newTestDispatcherWithStore(t *testing.T, tracker *mockTracker) (*Dispatcher, store.Store) {
+	t.Helper()
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	d := newTestDispatcher(tracker)
+	d.store = st
+	return d, st
+}
+
+func TestCheckDependencies_CachePath_LocalDep(t *testing.T) {
+	tracker := newMockTracker()
+	d, st := newTestDispatcherWithStore(t, tracker)
+	ctx := context.Background()
+
+	// Seed the cache with a done dependency.
+	closedAt := time.Now()
+	err := st.SyncIssues(ctx, "test/repo", []store.CachedIssue{
+		{Number: 10, State: "closed", Labels: []string{models.LabelStatusDone}, CreatedAt: closedAt, UpdatedAt: closedAt, ClosedAt: &closedAt},
+		{Number: 11, State: "open", Labels: []string{models.LabelStatusInProgress}, CreatedAt: closedAt, UpdatedAt: closedAt},
+	})
+	if err != nil {
+		t.Fatalf("sync issues: %v", err)
+	}
+
+	// Do NOT add issues to the mock tracker -- forces cache path.
+	fm := &models.IssueFrontmatter{
+		DependsOn: models.DependencyList{
+			{Number: 10},
+			{Number: 11},
+		},
+	}
+
+	blocked, blockers, checkErr := d.checkDependencies(ctx, "test", "repo", fm)
+	if checkErr != nil {
+		t.Fatalf("unexpected error: %v", checkErr)
+	}
+	if !blocked {
+		t.Error("expected blocked=true")
+	}
+	if len(blockers) != 1 || blockers[0] != "11" {
+		t.Errorf("blockers = %v, want [11]", blockers)
+	}
+}
+
+func TestCheckDependencies_CachePath_CrossProjectDep(t *testing.T) {
+	tracker := newMockTracker()
+	d, st := newTestDispatcherWithStore(t, tracker)
+	ctx := context.Background()
+
+	// Seed cache for cross-project repo.
+	closedAt := time.Now()
+	err := st.SyncIssues(ctx, "HerbHall/devkit", []store.CachedIssue{
+		{Number: 15, State: "closed", Labels: []string{models.LabelStatusDone}, CreatedAt: closedAt, UpdatedAt: closedAt, ClosedAt: &closedAt},
+	})
+	if err != nil {
+		t.Fatalf("sync issues: %v", err)
+	}
+
+	// Need project resolver even though cache will resolve the dep.
+	resolver := newMockProjectResolver()
+	resolver.addProject("HerbHall", "devkit", newMockTracker())
+	d.projects = resolver
+
+	fm := &models.IssueFrontmatter{
+		DependsOn: models.DependencyList{
+			{Owner: "HerbHall", Repo: "devkit", Number: 15},
+		},
+	}
+
+	blocked, _, checkErr := d.checkDependencies(ctx, "test", "repo", fm)
+	if checkErr != nil {
+		t.Fatalf("unexpected error: %v", checkErr)
+	}
+	if blocked {
+		t.Error("expected blocked=false (cross-project dep is done in cache)")
+	}
+}
+
+func TestBuildDependencyGraph_CachePath(t *testing.T) {
+	tracker := newMockTracker()
+	d, st := newTestDispatcherWithStore(t, tracker)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Seed cache with issues that have dependency frontmatter.
+	err := st.SyncIssues(ctx, "test/repo", []store.CachedIssue{
+		{Number: 1, State: "open", Body: issueBody("code-gen", []int{2, 3}), CreatedAt: now, UpdatedAt: now},
+		{Number: 2, State: "open", Body: issueBody("code-gen", nil), CreatedAt: now, UpdatedAt: now},
+		{Number: 3, State: "open", Body: issueBody("code-gen", nil), CreatedAt: now, UpdatedAt: now},
+	})
+	if err != nil {
+		t.Fatalf("sync issues: %v", err)
+	}
+
+	// Do NOT add issues to mock tracker -- forces cache path.
+	graph, graphErr := d.buildDependencyGraph(ctx, "test", "repo")
+	if graphErr != nil {
+		t.Fatalf("unexpected error: %v", graphErr)
+	}
+
+	deps, ok := graph[1]
+	if !ok {
+		t.Fatal("expected issue #1 in graph")
+	}
+	if len(deps) != 2 {
+		t.Errorf("deps length = %d, want 2", len(deps))
+	}
+}
+
+func TestRecheckCrossProjectDeps_CachePath(t *testing.T) {
+	tracker := newMockTracker()
+	d, st := newTestDispatcherWithStore(t, tracker)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Seed cache: blocked issue with cross-project dep + the dep is done.
+	err := st.SyncIssues(ctx, "repo", []store.CachedIssue{
+		{Number: 1, Title: "Blocked", Body: issueBodyMixed("code-gen", nil, []string{"HerbHall/devkit#15"}), State: "open", Labels: []string{models.LabelStatusBlocked}, CreatedAt: now, UpdatedAt: now},
+	})
+	if err != nil {
+		t.Fatalf("sync local issues: %v", err)
+	}
+	err = st.SyncIssues(ctx, "HerbHall/devkit", []store.CachedIssue{
+		{Number: 15, State: "closed", Labels: []string{models.LabelStatusDone}, CreatedAt: now, UpdatedAt: now, ClosedAt: &now},
+	})
+	if err != nil {
+		t.Fatalf("sync cross-project issues: %v", err)
+	}
+
+	// The tracker still needs the issue for label mutations (RemoveLabel/AddLabels).
+	tracker.issues[1] = &forge.Issue{
+		Number: 1,
+		State:  forge.StateOpen,
+		Labels: []string{models.LabelStatusBlocked},
+		Body:   issueBodyMixed("code-gen", nil, []string{"HerbHall/devkit#15"}),
+	}
+
+	resolver := newMockProjectResolver()
+	resolver.addProject("HerbHall", "devkit", newMockTracker())
+	d.projects = resolver
+
+	recheckErr := d.recheckCrossProjectDeps(ctx)
+	if recheckErr != nil {
+		t.Fatalf("unexpected error: %v", recheckErr)
+	}
+
+	issue := tracker.issues[1]
+	if hasLabel(issue.Labels, models.LabelStatusBlocked) {
+		t.Error("expected status:blocked to be removed")
+	}
+	if !hasLabel(issue.Labels, models.LabelStatusQueued) {
+		t.Error("expected status:queued after cross-project unblock via cache")
 	}
 }

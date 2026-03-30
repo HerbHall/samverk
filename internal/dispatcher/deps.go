@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
 )
 
@@ -31,6 +32,7 @@ func (d *Dispatcher) checkDependencies(ctx context.Context, owner, repo string, 
 		return false, nil, nil
 	}
 
+	project := owner + "/" + repo
 	blockers = make([]string, 0, len(fm.DependsOn))
 
 	for _, dep := range fm.DependsOn {
@@ -43,6 +45,18 @@ func (d *Dispatcher) checkDependencies(ctx context.Context, owner, repo string, 
 				blockers = append(blockers, dep.String())
 			}
 		} else {
+			// Fast path: check the issue cache (SQLite) instead of forge API.
+			if d.store != nil {
+				ci, cacheErr := d.store.GetCachedIssue(ctx, project, dep.Number)
+				if cacheErr == nil {
+					if !isDoneCached(ci) {
+						blockers = append(blockers, dep.String())
+					}
+					continue
+				}
+				// Cache miss: fall through to forge API.
+			}
+
 			tracker := d.trackerFor(owner, repo)
 			if tracker == nil {
 				return false, nil, fmt.Errorf("no tracker for %s/%s", owner, repo)
@@ -65,6 +79,16 @@ func (d *Dispatcher) checkDependencies(ctx context.Context, owner, repo string, 
 func (d *Dispatcher) checkCrossProjectDep(ctx context.Context, dep models.Dependency) (bool, error) {
 	if d.projects == nil {
 		return false, fmt.Errorf("no project resolver configured for cross-project dep %s", dep.String())
+	}
+
+	// Fast path: check the issue cache (SQLite) instead of forge API.
+	if d.store != nil {
+		depProject := dep.Owner + "/" + dep.Repo
+		ci, cacheErr := d.store.GetCachedIssue(ctx, depProject, dep.Number)
+		if cacheErr == nil {
+			return isDoneCached(ci), nil
+		}
+		// Cache miss: fall through to forge API.
 	}
 
 	tracker, ok := d.projects.TrackerFor(dep.Owner, dep.Repo)
@@ -91,6 +115,34 @@ func isDone(issue *forge.Issue) bool {
 		}
 	}
 	return false
+}
+
+// isDoneCached checks whether a cached issue is closed with status:done.
+func isDoneCached(ci *store.CachedIssue) bool {
+	if ci.State != "closed" {
+		return false
+	}
+	for _, label := range ci.Labels {
+		if label == models.LabelStatusDone {
+			return true
+		}
+	}
+	return false
+}
+
+// cachedToForgeIssue converts a store.CachedIssue to a forge.Issue.
+func cachedToForgeIssue(ci *store.CachedIssue) *forge.Issue {
+	return &forge.Issue{
+		Number:    ci.Number,
+		Title:     ci.Title,
+		Body:      ci.Body,
+		State:     forge.State(ci.State),
+		Labels:    ci.Labels,
+		Assignees: ci.Assignees,
+		CreatedAt: ci.CreatedAt,
+		UpdatedAt: ci.UpdatedAt,
+		ClosedAt:  ci.ClosedAt,
+	}
 }
 
 // detectCycle runs DFS from startIssue to find dependency cycles.
@@ -154,6 +206,28 @@ func (d *Dispatcher) detectCycle(ctx context.Context, owner, repo string, startI
 // are resolved separately in checkDependencies.
 // The graph is built for the specified owner/repo tracker only (per-repo).
 func (d *Dispatcher) buildDependencyGraph(ctx context.Context, owner, repo string) (graph map[int][]int, err error) {
+	project := owner + "/" + repo
+
+	// Fast path: build graph from the issue cache (SQLite).
+	if d.store != nil {
+		cached, cacheErr := d.store.ListCachedIssues(ctx, project, "open", nil)
+		if cacheErr == nil {
+			graph = make(map[int][]int, len(cached))
+			for i := range cached {
+				result, parseErr := models.ParseFrontmatter(cached[i].Body)
+				if parseErr != nil || result.Frontmatter == nil {
+					continue
+				}
+				localDeps := result.Frontmatter.DependsOn.LocalDeps()
+				if len(localDeps) > 0 {
+					graph[cached[i].Number] = localDeps
+				}
+			}
+			return graph, nil
+		}
+	}
+
+	// Fallback: query the forge API directly.
 	tracker := d.trackerFor(owner, repo)
 	if tracker == nil {
 		return nil, fmt.Errorf("no tracker for %s/%s", owner, repo)
@@ -182,16 +256,34 @@ func (d *Dispatcher) buildDependencyGraph(ctx context.Context, owner, repo strin
 // closedIssueNumber was closed. A close in repo B may unblock repo A.
 func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber int) error {
 	for _, entry := range d.trackerEntries {
-		blockedIssues, err := entry.Tracker.ListIssues(ctx, &forge.ListOptions{
-			State:  forge.StateOpen,
-			Labels: []string{models.LabelStatusBlocked},
-		})
-		if err != nil {
-			d.logger.Warn("list blocked issues", zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(err))
-			continue
+		// Fast path: query the issue cache (SQLite) for blocked issues.
+		var issues []*forge.Issue
+		if d.store != nil {
+			cached, cacheErr := d.store.ListCachedIssues(ctx, entry.Repo, "open", []string{models.LabelStatusBlocked})
+			if cacheErr == nil {
+				issues = make([]*forge.Issue, len(cached))
+				for i := range cached {
+					issues[i] = cachedToForgeIssue(&cached[i])
+				}
+			} else {
+				d.logger.Debug("unblockDependents: cache miss, falling back to API",
+					zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(cacheErr))
+			}
+		}
+		// Fallback: query the forge API directly.
+		if issues == nil {
+			var err error
+			issues, err = entry.Tracker.ListIssues(ctx, &forge.ListOptions{
+				State:  forge.StateOpen,
+				Labels: []string{models.LabelStatusBlocked},
+			})
+			if err != nil {
+				d.logger.Warn("list blocked issues", zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(err))
+				continue
+			}
 		}
 
-		for _, issue := range blockedIssues {
+		for _, issue := range issues {
 			result, parseErr := models.ParseFrontmatter(issue.Body)
 			if parseErr != nil || result.Frontmatter == nil {
 				continue
@@ -252,14 +344,32 @@ func (d *Dispatcher) recheckCrossProjectDeps(ctx context.Context) error {
 	}
 
 	for _, entry := range d.trackerEntries {
-		blockedIssues, err := entry.Tracker.ListIssues(ctx, &forge.ListOptions{
-			State:  forge.StateOpen,
-			Labels: []string{models.LabelStatusBlocked},
-		})
-		if err != nil {
-			d.logger.Warn("list blocked issues for cross-project recheck",
-				zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(err))
-			continue
+		// Fast path: query the issue cache (SQLite) for blocked issues.
+		var blockedIssues []*forge.Issue
+		if d.store != nil {
+			cached, cacheErr := d.store.ListCachedIssues(ctx, entry.Repo, "open", []string{models.LabelStatusBlocked})
+			if cacheErr == nil {
+				blockedIssues = make([]*forge.Issue, len(cached))
+				for i := range cached {
+					blockedIssues[i] = cachedToForgeIssue(&cached[i])
+				}
+			} else {
+				d.logger.Debug("recheckCrossProjectDeps: cache miss, falling back to API",
+					zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(cacheErr))
+			}
+		}
+		// Fallback: query the forge API directly.
+		if blockedIssues == nil {
+			var err error
+			blockedIssues, err = entry.Tracker.ListIssues(ctx, &forge.ListOptions{
+				State:  forge.StateOpen,
+				Labels: []string{models.LabelStatusBlocked},
+			})
+			if err != nil {
+				d.logger.Warn("list blocked issues for cross-project recheck",
+					zap.String("owner", entry.Owner), zap.String("repo", entry.Repo), zap.Error(err))
+				continue
+			}
 		}
 
 		for _, issue := range blockedIssues {
