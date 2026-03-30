@@ -223,6 +223,32 @@ func (c *Client) ListComments(ctx context.Context, number int) ([]*forge.Comment
 	return result, nil
 }
 
+// ListCommentsSince returns comments on the given issue created after since.
+// This avoids fetching the entire comment history when only recent comments
+// are needed (e.g. checkpoint detection), reducing JSON decoder memory
+// pressure (issue #516).
+func (c *Client) ListCommentsSince(ctx context.Context, number int, since time.Time) ([]*forge.Comment, error) {
+	var result []*forge.Comment
+	page := 1
+	for {
+		gc, _, err := c.gt.ListIssueComments(c.owner, c.repo, int64(number), gogitea.ListIssueCommentOptions{
+			ListOptions: gogitea.ListOptions{Page: page, PageSize: 50},
+			Since:       since,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("gitea: list comments since on #%d: %w", number, err)
+		}
+		for i := range gc {
+			result = append(result, convertComment(gc[i]))
+		}
+		if len(gc) < 50 {
+			break
+		}
+		page++
+	}
+	return result, nil
+}
+
 // SetLabels replaces all labels on the given issue.
 func (c *Client) SetLabels(ctx context.Context, number int, labels []string) error {
 	ids, err := c.resolveLabels(labels)
@@ -555,18 +581,32 @@ func convertIssue(gi *gogitea.Issue) *forge.Issue {
 }
 
 // convertComment transforms a Gitea SDK comment into a forge.Comment.
+// String fields are cloned via []byte round-trip to break references to the
+// JSON decoder's backing array, which otherwise prevents GC of the entire
+// response buffer (see issue #516).
 func convertComment(gc *gogitea.Comment) *forge.Comment {
 	author := ""
 	if gc.Poster != nil {
-		author = gc.Poster.UserName
+		author = cloneString(gc.Poster.UserName)
 	}
 
 	return &forge.Comment{
 		ID:        gc.ID,
-		Body:      gc.Body,
+		Body:      cloneString(gc.Body),
 		Author:    author,
 		CreatedAt: gc.Created,
 	}
+}
+
+// cloneString returns a copy of s with a new backing array, breaking any
+// reference to the original buffer (e.g. from encoding/json's decoder).
+func cloneString(s string) string {
+	if s == "" {
+		return ""
+	}
+	b := make([]byte, len(s))
+	copy(b, s)
+	return string(b)
 }
 
 // extractAssigneeLogins extracts usernames from a slice of Gitea User pointers.
