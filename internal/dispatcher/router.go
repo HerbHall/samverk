@@ -322,7 +322,7 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 
 	// Quality warning: check for missing file_context or constraints.
 	// This is advisory only and does not block dispatch.
-	d.postQualityWarningIfNeeded(ctx, tracker, issue.Number, fm)
+	d.postQualityWarningIfNeeded(ctx, tracker, owner, repo, issue.Number, fm)
 
 	// Pre-flight health gate: check if the routing chain has any healthy
 	// provider before claiming the issue. This prevents the tight
@@ -542,7 +542,10 @@ func hasQualityWarningComment(comments []*forge.Comment) bool {
 
 // postQualityWarningIfNeeded checks if file_context or constraints are missing
 // and posts a one-time warning comment if needed. Does not block dispatch.
-func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker forge.IssueTracker, issueNumber int, fm *models.IssueFrontmatter) {
+// Results are cached in qualityChecked to avoid calling ListComments on every
+// route() invocation (see issue #516 -- each ListComments fetches all comments
+// and the JSON decoder retains backing arrays that pressure GC).
+func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker forge.IssueTracker, owner, repo string, issueNumber int, fm *models.IssueFrontmatter) {
 	if fm == nil {
 		return // No frontmatter to check
 	}
@@ -553,6 +556,12 @@ func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker for
 
 	if !missingFileContext && !missingConstraints {
 		return // Both fields present, no warning needed
+	}
+
+	// Fast path: already checked this issue (survives across route() calls).
+	key := issueKey(owner, repo, issueNumber)
+	if _, loaded := d.qualityChecked.LoadOrStore(key, struct{}{}); loaded {
+		return
 	}
 
 	// Check if warning already exists
