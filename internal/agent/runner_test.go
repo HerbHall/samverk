@@ -354,12 +354,15 @@ func TestRunnerHeartbeatNil(t *testing.T) {
 }
 
 func TestRunnerResumeFromCheckpoint(t *testing.T) {
-	t.Skip("checkpoint detection disabled (issue #516) -- re-enable when checkpoints move to SQLite")
-	// When a prior CHECKPOINT comment exists, the runner should inject a
-	// resume prompt into the messages sent to the provider.
+	// When a prior checkpoint exists in the store, the runner should inject
+	// a resume prompt into the messages sent to the provider.
 	var capturedMessages []provider.Message
 
+	checkpointContent := "EDIT main.go\npackage main\nEND_EDIT"
 	ms := newDefaultMockStore()
+	ms.getLatestCheckpointFn = func(_ context.Context, _ int) (string, error) {
+		return checkpointContent, nil
+	}
 	mp := &mockProvider{
 		chatFn: func(_ context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 			capturedMessages = req.Messages
@@ -374,15 +377,12 @@ func TestRunnerResumeFromCheckpoint(t *testing.T) {
 		nameFn:    func() string { return "test-provider" },
 	}
 
-	checkpointBody := FormatCheckpoint("sess-old", "EDIT main.go\npackage main\nEND_EDIT")
 	mt := &mockTracker{
 		addCommentFn: func(_ context.Context, _ int, _ string) (*forge.Comment, error) {
 			return &forge.Comment{ID: 1}, nil
 		},
 		listCommentsFn: func(_ context.Context, _ int) ([]*forge.Comment, error) {
-			return []*forge.Comment{
-				{Body: checkpointBody},
-			}, nil
+			return nil, nil
 		},
 	}
 

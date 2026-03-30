@@ -39,6 +39,9 @@ type healthTestStore struct {
 func (s *healthTestStore) LatestSuccessByProvider(_ context.Context) (map[string]time.Time, error) {
 	return s.lastSuccess, nil
 }
+func (s *healthTestStore) GetLatestCheckpoint(_ context.Context, _ int) (string, error) {
+	return "", nil
+}
 
 // buildHealthAPI creates an API with a health monitor and optional provider registry,
 // starts the health monitor, and returns an httptest server.

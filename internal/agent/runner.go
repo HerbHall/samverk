@@ -137,12 +137,9 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		return fmt.Errorf("check budget: %w", err)
 	}
 
-	// Step 3: Checkpoint detection disabled (issue #516).
-	// ListComments/ListCommentsSince allocates multi-GB of cloned comment
-	// bodies that GC cannot reclaim fast enough under concurrent load.
-	// TODO(#516): re-enable when checkpoints are stored in SQLite instead
-	// of scanned from issue comments.
-	var resumePrompt string
+	// Step 3: Detect prior checkpoint for resume (reads from SQLite, not
+	// issue comments -- see #516 for why comment scanning was removed).
+	resumePrompt := r.detectCheckpoint(ctx, task)
 
 	// Step 3b: Create isolated workspace for code-gen/test agents.
 	var workDir string
@@ -550,9 +547,11 @@ func (r *Runner) postProcess(ctx context.Context, task Task, response, workDir s
 	case models.AgentTypeCodeGen, models.AgentTypeTest:
 		if r.repoWriter != nil && r.prManager != nil {
 			parsed := ParseEditBlocks(response)
-			// Checkpoint-based dedup disabled (issue #516): ListComments
-			// allocates multi-GB that GC cannot reclaim under load.
-			// TODO(#516): re-enable when checkpoints are in SQLite.
+			// Dedup edits against prior checkpoint from SQLite (not
+			// issue comments -- see #516).
+			if checkpoint, cpErr := r.store.GetLatestCheckpoint(ctx, task.Issue.Number); cpErr == nil && checkpoint != "" {
+				parsed.Edits = DeduplicateEdits(parsed.Edits, checkpoint)
+			}
 			if len(parsed.Edits) > 0 {
 				return r.openPR(ctx, task, parsed)
 			}
@@ -791,6 +790,27 @@ func (r *Runner) extractFileContext(body, workDir string) map[string]string {
 		result[p] = ""
 	}
 	return result
+}
+
+// detectCheckpoint queries SQLite for the most recent checkpoint on this issue.
+// Zero allocations from issue comments -- only a single string from the DB.
+func (r *Runner) detectCheckpoint(ctx context.Context, task Task) string {
+	checkpoint, err := r.store.GetLatestCheckpoint(ctx, task.Issue.Number)
+	if err != nil {
+		r.logger.Warn("failed to query checkpoint from store",
+			zap.Int("issue", task.Issue.Number),
+			zap.Error(err),
+		)
+		return ""
+	}
+	if checkpoint != "" {
+		r.logger.Info("resuming from checkpoint",
+			zap.Int("issue", task.Issue.Number),
+			zap.String("session", task.SessionID),
+		)
+		return BuildResumePrompt(checkpoint)
+	}
+	return ""
 }
 
 // updateSessionStatus fetches and updates a session's status in the store.

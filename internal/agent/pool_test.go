@@ -1035,12 +1035,13 @@ func (m *mockTracker) ListComments(ctx context.Context, number int) ([]*forge.Co
 
 type mockStore struct {
 	store.Store
-	createSessionFn func(ctx context.Context, s *models.Session) error
-	getSessionFn    func(ctx context.Context, id string) (*models.Session, error)
-	updateSessionFn func(ctx context.Context, s *models.Session) error
-	recordCostFn    func(ctx context.Context, r *models.CostRecord) error
-	computeCostFn   func(ctx context.Context, since time.Time) (*models.CostSummary, error)
-	getBudgetFn     func(ctx context.Context, dailyBudgetUSD float64) (float64, float64, error)
+	createSessionFn       func(ctx context.Context, s *models.Session) error
+	getSessionFn          func(ctx context.Context, id string) (*models.Session, error)
+	updateSessionFn       func(ctx context.Context, s *models.Session) error
+	recordCostFn          func(ctx context.Context, r *models.CostRecord) error
+	computeCostFn         func(ctx context.Context, since time.Time) (*models.CostSummary, error)
+	getBudgetFn           func(ctx context.Context, dailyBudgetUSD float64) (float64, float64, error)
+	getLatestCheckpointFn func(ctx context.Context, issueNumber int) (string, error)
 }
 
 func (m *mockStore) CreateSession(ctx context.Context, s *models.Session) error {
@@ -1095,6 +1096,13 @@ func (m *mockStore) SaveFailureEvent(_ context.Context, _ *models.FailureEvent) 
 
 func (m *mockStore) RecentFailuresForIssue(_ context.Context, _, _ int) ([]string, error) {
 	return nil, nil
+}
+
+func (m *mockStore) GetLatestCheckpoint(ctx context.Context, issueNumber int) (string, error) {
+	if m.getLatestCheckpointFn != nil {
+		return m.getLatestCheckpointFn(ctx, issueNumber)
+	}
+	return "", nil
 }
 
 func (m *mockStore) SaveTriageDecision(_ context.Context, _ *store.TriageDecision) error {

@@ -10,6 +10,13 @@ import (
 	"github.com/herbhall/samverk/pkg/models"
 )
 
+// fullCommenter is an optional interface for trackers that can fetch a single
+// comment with the full (untruncated) body. Used when ListComments returns
+// truncated bodies to save memory (issue #516).
+type fullCommenter interface {
+	GetComment(ctx context.Context, commentID int64) (*forge.Comment, error)
+}
+
 // tryApplyEdits checks whether the completed task's output contains EDIT
 // blocks posted as a comment. If so, it asks the pool to create a branch
 // and PR from them. Returns true when a PR was successfully created.
@@ -26,7 +33,9 @@ func (d *Dispatcher) tryApplyEdits(ctx context.Context, result agent.TaskResult,
 		return false
 	}
 
-	// Read the latest comment to get the agent's output.
+	// Read the latest comment to find one with EDIT blocks.
+	// ListComments returns truncated bodies (4 KB) to avoid OOM (#516).
+	// When a match is found, fetch the full body via GetComment.
 	comments, err := tracker.ListComments(ctx, result.IssueNumber)
 	if err != nil || len(comments) == 0 {
 		return false
@@ -36,7 +45,16 @@ func (d *Dispatcher) tryApplyEdits(ctx context.Context, result agent.TaskResult,
 	var commentBody string
 	for i := len(comments) - 1; i >= 0; i-- {
 		if agent.HasEditBlocks(comments[i].Body) {
-			commentBody = comments[i].Body
+			// Fetch full body for EDIT block parsing.
+			if fc, ok := tracker.(fullCommenter); ok {
+				full, fcErr := fc.GetComment(ctx, comments[i].ID)
+				if fcErr == nil {
+					commentBody = full.Body
+				}
+			}
+			if commentBody == "" {
+				commentBody = comments[i].Body // fallback to truncated
+			}
 			break
 		}
 	}
@@ -128,7 +146,7 @@ func (d *Dispatcher) BackfillEditComments(ctx context.Context) {
 				continue
 			}
 
-			// Read comments for EDIT blocks.
+			// Read comments for EDIT blocks (truncated bodies, see #516).
 			comments, err := entry.Tracker.ListComments(ctx, issue.Number)
 			if err != nil || len(comments) == 0 {
 				continue
@@ -137,7 +155,14 @@ func (d *Dispatcher) BackfillEditComments(ctx context.Context) {
 			var commentBody string
 			for i := len(comments) - 1; i >= 0; i-- {
 				if agent.HasEditBlocks(comments[i].Body) {
-					commentBody = comments[i].Body
+					if fc, ok := entry.Tracker.(fullCommenter); ok {
+						if full, fcErr := fc.GetComment(ctx, comments[i].ID); fcErr == nil {
+							commentBody = full.Body
+						}
+					}
+					if commentBody == "" {
+						commentBody = comments[i].Body
+					}
 					break
 				}
 			}

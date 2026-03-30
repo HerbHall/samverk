@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -106,6 +107,24 @@ func (s *SQLiteStore) UpdateSession(ctx context.Context, sess *models.Session) e
 		return ErrNotFound
 	}
 	return nil
+}
+
+// GetLatestCheckpoint returns the partial_output from the most recent session
+// for the given issue that has a non-empty checkpoint. Returns empty string
+// when no checkpoint exists (does not return ErrNotFound).
+func (s *SQLiteStore) GetLatestCheckpoint(ctx context.Context, issueNumber int) (string, error) {
+	var output string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT partial_output FROM sessions
+		 WHERE issue_number = ? AND partial_output != ''
+		 ORDER BY created_at DESC LIMIT 1`, issueNumber).Scan(&output)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("get latest checkpoint: %w", err)
+	}
+	return output, nil
 }
 
 // ListSessions returns all sessions matching the given status.

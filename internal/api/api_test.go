@@ -255,6 +255,9 @@ func (m *mockStore) GetCacheSyncTime(_ context.Context, _ string) (time.Time, er
 	return time.Time{}, nil
 }
 func (m *mockStore) Close() error { return nil }
+func (m *mockStore) GetLatestCheckpoint(_ context.Context, _ int) (string, error) {
+	return "", nil
+}
 
 // Compile-time check: mockStore implements store.Store.
 var _ store.Store = (*mockStore)(nil)
