@@ -12,55 +12,79 @@ import (
 )
 
 const (
-	// defaultIncrementalSyncInterval is the default interval for incremental issue sync.
-	// Override via Config.IssueSyncInterval.
-	defaultIncrementalSyncInterval = 60 * time.Second
-
 	// defaultFullReconcileInterval is the default interval for full reconciliation.
-	// Override via Config.IssueReconcileInterval.
+	// Override via Config.IssueReconcileInterval. Between reconciliations, the
+	// cache is kept current by event-driven updates from the Watch loop.
 	defaultFullReconcileInterval = 15 * time.Minute
 )
 
 // runIssueCacheSync syncs issues from all registered trackers to the local
-// SQLite cache. Uses incremental sync (?since=lastSyncAt) every 60s for
-// efficiency, with a full reconciliation every 15 minutes to catch any
-// missed updates. An initial full sync runs immediately on startup.
+// SQLite cache. The initial full sync runs on startup. After that, the cache
+// is kept current by event-driven updates from the Watch loop (via
+// updateCacheFromEvent). Periodic full reconciliation catches any events that
+// were missed or handles closed issues not covered by events.
 func (d *Dispatcher) runIssueCacheSync(ctx context.Context) {
 	if d.store == nil {
 		d.logger.Warn("issue cache sync disabled: no store configured")
 		return
 	}
 
-	// Track last sync time per tracker for incremental queries.
+	// Track last sync time per tracker for reconciliation.
 	var lastSyncMu sync.Mutex
-	lastSyncTimes := make(map[string]time.Time) // key: tracker repo name
+	lastSyncTimes := make(map[string]time.Time)
 
 	// Initial full sync on startup (open + closed).
 	d.syncAllIssuesFull(ctx, lastSyncTimes, &lastSyncMu)
 
-	syncInterval := d.config.IssueSyncInterval
-	if syncInterval == 0 {
-		syncInterval = defaultIncrementalSyncInterval
-	}
 	reconcileInterval := d.config.IssueReconcileInterval
 	if reconcileInterval == 0 {
 		reconcileInterval = defaultFullReconcileInterval
 	}
 
-	incrementalTicker := time.NewTicker(syncInterval)
 	reconcileTicker := time.NewTicker(reconcileInterval)
-	defer incrementalTicker.Stop()
 	defer reconcileTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-incrementalTicker.C:
-			d.syncAllIssuesIncremental(ctx, lastSyncTimes, &lastSyncMu)
 		case <-reconcileTicker.C:
 			d.syncAllIssuesFull(ctx, lastSyncTimes, &lastSyncMu)
 		}
+	}
+}
+
+// updateCacheFromEvent writes event issue data to the SQLite cache.
+// Called from handleEvent on each Watch event so the cache stays current
+// without a separate incremental sync goroutine.
+func (d *Dispatcher) updateCacheFromEvent(ctx context.Context, ev forge.Event) {
+	if d.store == nil || ev.Issue == nil {
+		return
+	}
+
+	project := ev.Repo
+	if project == "" && ev.Owner != "" {
+		project = ev.Repo
+	}
+	// Determine project from tracker entries if not set on event.
+	if project == "" {
+		d.mu.RLock()
+		for _, entry := range d.trackerEntries {
+			project = entry.Repo
+			break
+		}
+		d.mu.RUnlock()
+	}
+	if project == "" {
+		return
+	}
+
+	cached := forgeIssuesToCached([]*forge.Issue{ev.Issue})
+	if err := d.store.SyncIssues(ctx, project, cached); err != nil {
+		d.logger.Debug("issue cache: event update failed",
+			zap.Int("issue", ev.IssueNumber),
+			zap.String("event", string(ev.Type)),
+			zap.Error(err))
 	}
 }
 
@@ -126,63 +150,6 @@ func (d *Dispatcher) syncAllIssuesFull(ctx context.Context, lastSyncTimes map[st
 			zap.String("project", project),
 			zap.Int("open", len(openIssues)),
 			zap.Int("closed", len(closedIssues)),
-		)
-	}
-}
-
-// syncAllIssuesIncremental fetches only issues updated since the last sync.
-// Falls back to full sync if no lastSyncTime is available.
-func (d *Dispatcher) syncAllIssuesIncremental(ctx context.Context, lastSyncTimes map[string]time.Time, mu *sync.Mutex) {
-	d.mu.RLock()
-	entries := make([]TrackerEntry, len(d.trackerEntries))
-	copy(entries, d.trackerEntries)
-	d.mu.RUnlock()
-
-	now := time.Now().UTC()
-
-	for _, entry := range entries {
-		if ctx.Err() != nil {
-			return
-		}
-		project := entry.Repo
-
-		mu.Lock()
-		lastSync, hasLastSync := lastSyncTimes[project]
-		mu.Unlock()
-
-		if !hasLastSync {
-			// No previous sync -- do a full sync instead.
-			d.syncAllIssuesFull(ctx, lastSyncTimes, mu)
-			return
-		}
-
-		// Fetch only issues updated since lastSync.
-		// Use a small buffer to handle clock skew between samverk and forge.
-		since := lastSync.Add(-5 * time.Second)
-		updated, err := d.fetchAllIssues(ctx, entry.Tracker, "", &since)
-		if err != nil {
-			d.logger.Warn("issue cache: incremental sync failed",
-				zap.String("project", project), zap.Error(err))
-			continue
-		}
-
-		if len(updated) > 0 {
-			cached := forgeIssuesToCached(updated)
-			if syncErr := d.store.SyncIssues(ctx, project, cached); syncErr != nil {
-				d.logger.Warn("issue cache: incremental sync store failed",
-					zap.String("project", project), zap.Error(syncErr))
-				continue
-			}
-		}
-
-		mu.Lock()
-		lastSyncTimes[project] = now
-		mu.Unlock()
-
-		d.logger.Debug("issue cache: incremental sync",
-			zap.String("project", project),
-			zap.Int("updated", len(updated)),
-			zap.Duration("since_last", now.Sub(lastSync)),
 		)
 	}
 }

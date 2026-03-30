@@ -688,6 +688,12 @@ func (d *Dispatcher) DrainState() DrainStatus {
 // handleEvent dispatches a forge event to the correct handler.
 func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
 	d.metrics.EventProcessed()
+
+	// Update the issue cache from event data. This keeps the SQLite cache
+	// current without a separate incremental sync, eliminating redundant
+	// API calls that the incremental ticker previously made.
+	d.updateCacheFromEvent(ctx, ev)
+
 	var err error
 	switch ev.Type {
 	case forge.EventIssueOpened:
