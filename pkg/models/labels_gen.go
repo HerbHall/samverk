@@ -2,17 +2,6 @@
 // Source: overlay/labels.json (2026-03-30)
 package models
 
-// Status labels.
-const (
-	LabelStatusBlocked = "status:blocked"
-	LabelStatusClaimed = "status:claimed"
-	LabelStatusDone = "status:done"
-	LabelStatusInProgress = "status:in-progress"
-	LabelStatusNeedsHuman = "status:needs-human"
-	LabelStatusNeedsQc = "status:needs-qc"
-	LabelStatusQueued = "status:queued"
-)
-
 // Agent labels.
 const (
 	LabelAgentCodeGen = "agent:code-gen"
@@ -29,19 +18,19 @@ const (
 	LabelAgentTest = "agent:test"
 )
 
-// Priority labels.
-const (
-	LabelPriorityCritical = "priority:critical"
-	LabelPriorityHigh = "priority:high"
-	LabelPriorityLow = "priority:low"
-	LabelPriorityNormal = "priority:normal"
-)
-
 // Complexity labels.
 const (
 	LabelComplexityAmbiguous = "complexity:ambiguous"
 	LabelComplexityCloud = "complexity:cloud"
 	LabelComplexityLocal = "complexity:local"
+)
+
+// Human labels.
+const (
+	LabelHumanCredentials = "human:credentials"
+	LabelHumanDecision = "human:decision"
+	LabelHumanReview = "human:review"
+	LabelHumanWorkstation = "human:workstation"
 )
 
 // Phase labels.
@@ -57,12 +46,12 @@ const (
 	LabelPhaseScaffold = "phase:scaffold"
 )
 
-// Human labels.
+// Priority labels.
 const (
-	LabelHumanCredentials = "human:credentials"
-	LabelHumanDecision = "human:decision"
-	LabelHumanReview = "human:review"
-	LabelHumanWorkstation = "human:workstation"
+	LabelPriorityCritical = "priority:critical"
+	LabelPriorityHigh = "priority:high"
+	LabelPriorityLow = "priority:low"
+	LabelPriorityNormal = "priority:normal"
 )
 
 // Qc labels.
@@ -70,6 +59,17 @@ const (
 	LabelQcFail = "qc:fail"
 	LabelQcPass = "qc:pass"
 	LabelQcReview = "qc:review"
+)
+
+// Status labels.
+const (
+	LabelStatusBlocked = "status:blocked"
+	LabelStatusClaimed = "status:claimed"
+	LabelStatusDone = "status:done"
+	LabelStatusInProgress = "status:in-progress"
+	LabelStatusNeedsHuman = "status:needs-human"
+	LabelStatusNeedsQc = "status:needs-qc"
+	LabelStatusQueued = "status:queued"
 )
 
 // Warning labels.
@@ -80,13 +80,6 @@ const (
 // AllLabels returns every label defined in overlay/labels.json.
 func AllLabels() []string {
 	return []string{
-		LabelStatusBlocked,
-		LabelStatusClaimed,
-		LabelStatusDone,
-		LabelStatusInProgress,
-		LabelStatusNeedsHuman,
-		LabelStatusNeedsQc,
-		LabelStatusQueued,
 		LabelAgentCodeGen,
 		LabelAgentDispatcher,
 		LabelAgentDocs,
@@ -99,13 +92,13 @@ func AllLabels() []string {
 		LabelAgentQc,
 		LabelAgentResearch,
 		LabelAgentTest,
-		LabelPriorityCritical,
-		LabelPriorityHigh,
-		LabelPriorityLow,
-		LabelPriorityNormal,
 		LabelComplexityAmbiguous,
 		LabelComplexityCloud,
 		LabelComplexityLocal,
+		LabelHumanCredentials,
+		LabelHumanDecision,
+		LabelHumanReview,
+		LabelHumanWorkstation,
 		LabelPhaseDelivery,
 		LabelPhaseExecution,
 		LabelPhaseGate,
@@ -115,20 +108,13 @@ func AllLabels() []string {
 		LabelPhaseRequirements,
 		LabelPhaseResearch,
 		LabelPhaseScaffold,
-		LabelHumanCredentials,
-		LabelHumanDecision,
-		LabelHumanReview,
-		LabelHumanWorkstation,
+		LabelPriorityCritical,
+		LabelPriorityHigh,
+		LabelPriorityLow,
+		LabelPriorityNormal,
 		LabelQcFail,
 		LabelQcPass,
 		LabelQcReview,
-		LabelWarningQuality,
-	}
-}
-
-// StatusLabels returns all status:* labels.
-func StatusLabels() []string {
-	return []string{
 		LabelStatusBlocked,
 		LabelStatusClaimed,
 		LabelStatusDone,
@@ -136,6 +122,7 @@ func StatusLabels() []string {
 		LabelStatusNeedsHuman,
 		LabelStatusNeedsQc,
 		LabelStatusQueued,
+		LabelWarningQuality,
 	}
 }
 
@@ -157,22 +144,22 @@ func AgentLabels() []string {
 	}
 }
 
-// PriorityLabels returns all priority:* labels.
-func PriorityLabels() []string {
-	return []string{
-		LabelPriorityCritical,
-		LabelPriorityHigh,
-		LabelPriorityLow,
-		LabelPriorityNormal,
-	}
-}
-
 // ComplexityLabels returns all complexity:* labels.
 func ComplexityLabels() []string {
 	return []string{
 		LabelComplexityAmbiguous,
 		LabelComplexityCloud,
 		LabelComplexityLocal,
+	}
+}
+
+// HumanLabels returns all human:* labels.
+func HumanLabels() []string {
+	return []string{
+		LabelHumanCredentials,
+		LabelHumanDecision,
+		LabelHumanReview,
+		LabelHumanWorkstation,
 	}
 }
 
@@ -191,13 +178,13 @@ func PhaseLabels() []string {
 	}
 }
 
-// HumanLabels returns all human:* labels.
-func HumanLabels() []string {
+// PriorityLabels returns all priority:* labels.
+func PriorityLabels() []string {
 	return []string{
-		LabelHumanCredentials,
-		LabelHumanDecision,
-		LabelHumanReview,
-		LabelHumanWorkstation,
+		LabelPriorityCritical,
+		LabelPriorityHigh,
+		LabelPriorityLow,
+		LabelPriorityNormal,
 	}
 }
 
@@ -207,6 +194,19 @@ func QcLabels() []string {
 		LabelQcFail,
 		LabelQcPass,
 		LabelQcReview,
+	}
+}
+
+// StatusLabels returns all status:* labels.
+func StatusLabels() []string {
+	return []string{
+		LabelStatusBlocked,
+		LabelStatusClaimed,
+		LabelStatusDone,
+		LabelStatusInProgress,
+		LabelStatusNeedsHuman,
+		LabelStatusNeedsQc,
+		LabelStatusQueued,
 	}
 }
 

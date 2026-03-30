@@ -3,14 +3,6 @@
 
 Set-StrictMode -Version 3.0
 
-$LabelStatusBlocked = 'status:blocked'
-$LabelStatusClaimed = 'status:claimed'
-$LabelStatusDone = 'status:done'
-$LabelStatusInProgress = 'status:in-progress'
-$LabelStatusNeedsHuman = 'status:needs-human'
-$LabelStatusNeedsQc = 'status:needs-qc'
-$LabelStatusQueued = 'status:queued'
-
 $LabelAgentCodeGen = 'agent:code-gen'
 $LabelAgentDispatcher = 'agent:dispatcher'
 $LabelAgentDocs = 'agent:docs'
@@ -24,14 +16,14 @@ $LabelAgentQc = 'agent:qc'
 $LabelAgentResearch = 'agent:research'
 $LabelAgentTest = 'agent:test'
 
-$LabelPriorityCritical = 'priority:critical'
-$LabelPriorityHigh = 'priority:high'
-$LabelPriorityLow = 'priority:low'
-$LabelPriorityNormal = 'priority:normal'
-
 $LabelComplexityAmbiguous = 'complexity:ambiguous'
 $LabelComplexityCloud = 'complexity:cloud'
 $LabelComplexityLocal = 'complexity:local'
+
+$LabelHumanCredentials = 'human:credentials'
+$LabelHumanDecision = 'human:decision'
+$LabelHumanReview = 'human:review'
+$LabelHumanWorkstation = 'human:workstation'
 
 $LabelPhaseDelivery = 'phase:delivery'
 $LabelPhaseExecution = 'phase:execution'
@@ -43,26 +35,24 @@ $LabelPhaseRequirements = 'phase:requirements'
 $LabelPhaseResearch = 'phase:research'
 $LabelPhaseScaffold = 'phase:scaffold'
 
-$LabelHumanCredentials = 'human:credentials'
-$LabelHumanDecision = 'human:decision'
-$LabelHumanReview = 'human:review'
-$LabelHumanWorkstation = 'human:workstation'
+$LabelPriorityCritical = 'priority:critical'
+$LabelPriorityHigh = 'priority:high'
+$LabelPriorityLow = 'priority:low'
+$LabelPriorityNormal = 'priority:normal'
 
 $LabelQcFail = 'qc:fail'
 $LabelQcPass = 'qc:pass'
 $LabelQcReview = 'qc:review'
 
-$LabelWarningQuality = 'warning:quality'
+$LabelStatusBlocked = 'status:blocked'
+$LabelStatusClaimed = 'status:claimed'
+$LabelStatusDone = 'status:done'
+$LabelStatusInProgress = 'status:in-progress'
+$LabelStatusNeedsHuman = 'status:needs-human'
+$LabelStatusNeedsQc = 'status:needs-qc'
+$LabelStatusQueued = 'status:queued'
 
-$StatusLabels = @(
-    $LabelStatusBlocked
-    $LabelStatusClaimed
-    $LabelStatusDone
-    $LabelStatusInProgress
-    $LabelStatusNeedsHuman
-    $LabelStatusNeedsQc
-    $LabelStatusQueued
-)
+$LabelWarningQuality = 'warning:quality'
 
 $AgentLabels = @(
     $LabelAgentCodeGen
@@ -79,17 +69,17 @@ $AgentLabels = @(
     $LabelAgentTest
 )
 
-$PriorityLabels = @(
-    $LabelPriorityCritical
-    $LabelPriorityHigh
-    $LabelPriorityLow
-    $LabelPriorityNormal
-)
-
 $ComplexityLabels = @(
     $LabelComplexityAmbiguous
     $LabelComplexityCloud
     $LabelComplexityLocal
+)
+
+$HumanLabels = @(
+    $LabelHumanCredentials
+    $LabelHumanDecision
+    $LabelHumanReview
+    $LabelHumanWorkstation
 )
 
 $PhaseLabels = @(
@@ -104,17 +94,27 @@ $PhaseLabels = @(
     $LabelPhaseScaffold
 )
 
-$HumanLabels = @(
-    $LabelHumanCredentials
-    $LabelHumanDecision
-    $LabelHumanReview
-    $LabelHumanWorkstation
+$PriorityLabels = @(
+    $LabelPriorityCritical
+    $LabelPriorityHigh
+    $LabelPriorityLow
+    $LabelPriorityNormal
 )
 
 $QcLabels = @(
     $LabelQcFail
     $LabelQcPass
     $LabelQcReview
+)
+
+$StatusLabels = @(
+    $LabelStatusBlocked
+    $LabelStatusClaimed
+    $LabelStatusDone
+    $LabelStatusInProgress
+    $LabelStatusNeedsHuman
+    $LabelStatusNeedsQc
+    $LabelStatusQueued
 )
 
 $WarningLabels = @(
@@ -127,24 +127,17 @@ $HumanStatusLabels = @(
 )
 
 $AllLabels = @(
-    $StatusLabels
     $AgentLabels
-    $PriorityLabels
     $ComplexityLabels
-    $PhaseLabels
     $HumanLabels
+    $PhaseLabels
+    $PriorityLabels
     $QcLabels
+    $StatusLabels
     $WarningLabels
 )
 
 Export-ModuleMember -Variable @(
-    'LabelStatusBlocked'
-    'LabelStatusClaimed'
-    'LabelStatusDone'
-    'LabelStatusInProgress'
-    'LabelStatusNeedsHuman'
-    'LabelStatusNeedsQc'
-    'LabelStatusQueued'
     'LabelAgentCodeGen'
     'LabelAgentDispatcher'
     'LabelAgentDocs'
@@ -157,13 +150,13 @@ Export-ModuleMember -Variable @(
     'LabelAgentQc'
     'LabelAgentResearch'
     'LabelAgentTest'
-    'LabelPriorityCritical'
-    'LabelPriorityHigh'
-    'LabelPriorityLow'
-    'LabelPriorityNormal'
     'LabelComplexityAmbiguous'
     'LabelComplexityCloud'
     'LabelComplexityLocal'
+    'LabelHumanCredentials'
+    'LabelHumanDecision'
+    'LabelHumanReview'
+    'LabelHumanWorkstation'
     'LabelPhaseDelivery'
     'LabelPhaseExecution'
     'LabelPhaseGate'
@@ -173,21 +166,28 @@ Export-ModuleMember -Variable @(
     'LabelPhaseRequirements'
     'LabelPhaseResearch'
     'LabelPhaseScaffold'
-    'LabelHumanCredentials'
-    'LabelHumanDecision'
-    'LabelHumanReview'
-    'LabelHumanWorkstation'
+    'LabelPriorityCritical'
+    'LabelPriorityHigh'
+    'LabelPriorityLow'
+    'LabelPriorityNormal'
     'LabelQcFail'
     'LabelQcPass'
     'LabelQcReview'
+    'LabelStatusBlocked'
+    'LabelStatusClaimed'
+    'LabelStatusDone'
+    'LabelStatusInProgress'
+    'LabelStatusNeedsHuman'
+    'LabelStatusNeedsQc'
+    'LabelStatusQueued'
     'LabelWarningQuality'
-    'StatusLabels'
     'AgentLabels'
-    'PriorityLabels'
     'ComplexityLabels'
-    'PhaseLabels'
     'HumanLabels'
+    'PhaseLabels'
+    'PriorityLabels'
     'QcLabels'
+    'StatusLabels'
     'WarningLabels'
     'HumanStatusLabels'
     'AllLabels'

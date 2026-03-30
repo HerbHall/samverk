@@ -1643,10 +1643,17 @@ func probeCmd() *cobra.Command {
 
 func backfillLabelsCmd() *cobra.Command {
 	var projectsConfig string
+	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "backfill-labels",
 		Short: "Backfill qc:pass/fail/review labels on pre-existing issues (one-time migration)",
+		Long: `Scans open issues for QC verdict comments and adds the corresponding
+label (qc:pass, qc:fail, qc:review). Processes issues one at a time to
+limit memory usage. Safe to re-run: skips issues that already have a qc: label.
+
+WARNING: This command calls ListComments per issue. On large repos, run
+from a local machine (not CT 202) or set GOMEMLIMIT to cap RSS.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 
@@ -1684,9 +1691,9 @@ func backfillLabelsCmd() *cobra.Command {
 					continue
 				}
 
+				fmt.Printf("%s: checking %d open issues...\n", pc.Name, len(issues))
 				backfilled := 0
 				for _, issue := range issues {
-					// Only process issues that might have QC verdicts.
 					hasQCLabel := false
 					for _, l := range issue.Labels {
 						if l == models.LabelQcPass || l == models.LabelQcFail || l == models.LabelQcReview {
@@ -1695,41 +1702,33 @@ func backfillLabelsCmd() *cobra.Command {
 						}
 					}
 					if hasQCLabel {
-						continue // Already has a QC label.
-					}
-
-					comments, cErr := tracker.ListComments(ctx, issue.Number)
-					if cErr != nil {
 						continue
 					}
 
-					for i := len(comments) - 1; i >= 0; i-- {
-						body := comments[i].Body
-						if strings.Contains(body, "**QC Review: [PASS]**") {
-							if addErr := tracker.AddLabels(ctx, issue.Number, models.LabelQcPass); addErr == nil {
-								backfilled++
-								fmt.Printf("  #%d: added qc:pass\n", issue.Number)
-							}
-							break
-						}
-						if strings.Contains(body, "**QC Review: [FAIL]**") {
-							if addErr := tracker.AddLabels(ctx, issue.Number, models.LabelQcFail); addErr == nil {
-								backfilled++
-								fmt.Printf("  #%d: added qc:fail\n", issue.Number)
-							}
-							break
-						}
-						if strings.Contains(body, "**QC Review: [REVIEW]**") {
-							if addErr := tracker.AddLabels(ctx, issue.Number, models.LabelQcReview); addErr == nil {
-								backfilled++
-								fmt.Printf("  #%d: added qc:review\n", issue.Number)
-							}
-							break
-						}
+					label := backfillScanIssue(ctx, tracker, issue.Number)
+					if label == "" {
+						continue
+					}
+
+					if dryRun {
+						fmt.Printf("  #%d: would add %s\n", issue.Number, label)
+						backfilled++
+						continue
+					}
+
+					if addErr := tracker.AddLabels(ctx, issue.Number, label); addErr == nil {
+						backfilled++
+						fmt.Printf("  #%d: added %s\n", issue.Number, label)
+					} else {
+						fmt.Printf("  #%d: FAILED to add %s: %v\n", issue.Number, label, addErr)
 					}
 				}
 
-				fmt.Printf("%s: backfilled %d issues out of %d open\n", pc.Name, backfilled, len(issues))
+				action := "backfilled"
+				if dryRun {
+					action = "would backfill"
+				}
+				fmt.Printf("%s: %s %d issues out of %d open\n", pc.Name, action, backfilled, len(issues))
 			}
 
 			return nil
@@ -1737,7 +1736,33 @@ func backfillLabelsCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&projectsConfig, "projects", "", "Path to projects.yaml config")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print what would be done without making changes")
 	return cmd
+}
+
+// backfillScanIssue checks a single issue's comments for a QC verdict and
+// returns the label to apply (empty string if none found). Comments are
+// scanned in reverse order (most recent first) and discarded after the scan
+// to limit memory pressure.
+func backfillScanIssue(ctx context.Context, tracker forge.IssueTracker, issueNumber int) string {
+	comments, err := tracker.ListComments(ctx, issueNumber)
+	if err != nil || len(comments) == 0 {
+		return ""
+	}
+
+	// Scan from newest to oldest -- the most recent verdict wins.
+	for i := len(comments) - 1; i >= 0; i-- {
+		body := comments[i].Body
+		switch {
+		case strings.Contains(body, "**QC Review: [PASS]**"):
+			return models.LabelQcPass
+		case strings.Contains(body, "**QC Review: [FAIL]**"):
+			return models.LabelQcFail
+		case strings.Contains(body, "**QC Review: [REVIEW]**"):
+			return models.LabelQcReview
+		}
+	}
+	return ""
 }
 
 func versionCmd() *cobra.Command {
