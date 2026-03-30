@@ -1,0 +1,25 @@
+[Unit]
+Description=Weekly Documentation Review (Claude CLI)
+After=network-online.target samverk-serve.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=samverk
+Group=samverk
+WorkingDirectory=/var/lib/samverk/repo
+ExecStart=/usr/local/bin/doc-weekly-review.sh
+EnvironmentFile=/var/lib/samverk/.samverk/samverk.env
+# claude --print can take a while with MCP tool calls
+TimeoutStartSec=1800
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=doc-weekly-review
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/samverk
+ReadWritePaths=/var/lib/samverk/.claude
+PrivateTmp=true

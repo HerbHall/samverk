@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Documentation Review Timer (Monday 6:03am ET)
+
+[Timer]
+# 6:03am America/New_York. Systemd handles DST automatically.
+OnCalendar=Mon *-*-* 06:03:00 America/New_York
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
