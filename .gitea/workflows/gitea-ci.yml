@@ -126,3 +126,89 @@ jobs:
           "!CHANGELOG.md"
           "!node_modules"
           "!web/node_modules"
+
+  # Build release binary on merge to main and deploy to CT 202.
+  # Uses the Gitea-built artifact so the deploy matches the source of truth.
+  deploy:
+    name: Deploy
+    needs: [lint, build, test]
+    if: gitea.event_name == 'push' && gitea.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ gitea.runner.os }}-go-deploy-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ gitea.runner.os }}-go-deploy-
+
+      - name: Build SPA
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Copy dist to static
+        run: cp -r web/dist/* internal/server/static/
+
+      - name: Cross-compile release binary
+        env:
+          VERSION_PKG: github.com/herbhall/samverk/internal/version
+        run: |
+          VERSION=$(git describe --tags --always 2>/dev/null || echo "dev")
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags "-s -w -X ${VERSION_PKG}.Version=${VERSION} -X ${VERSION_PKG}.GitCommit=${COMMIT} -X ${VERSION_PKG}.BuildDate=${DATE}" \
+            -o bin/samverk-linux-amd64 ./cmd/samverk/
+
+      - name: Deploy to CT 202
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          # Write SSH key from Gitea secret.
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "192.168.1.162 $(ssh-keyscan -t ed25519 192.168.1.162 2>/dev/null)" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          SSH_OPTS="-i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+          HOST="root@192.168.1.162"
+
+          # Stop services gracefully via drain API.
+          ssh $SSH_OPTS "$HOST" "curl -sf -X POST 'http://localhost:9090/api/v1/dispatcher/drain' || true"
+          sleep 5
+          ssh $SSH_OPTS "$HOST" 'systemctl stop samverk-dispatch samverk-serve 2>/dev/null || true'
+
+          # Deploy binary.
+          ssh $SSH_OPTS "$HOST" 'fuser -k /usr/local/bin/samverk 2>/dev/null || true'
+          sleep 1
+          scp $SSH_OPTS bin/samverk-linux-amd64 "$HOST:/usr/local/bin/samverk"
+
+          # Deploy configs and run installer.
+          scp $SSH_OPTS deploy/samverk-serve.service deploy/samverk-dispatch.service "$HOST:/tmp/"
+          scp $SSH_OPTS deploy/install.sh "$HOST:/tmp/install.sh"
+          ssh $SSH_OPTS "$HOST" 'sed -i "s/\r$//" /tmp/install.sh && bash /tmp/install.sh'
+
+          # Start services.
+          ssh $SSH_OPTS "$HOST" 'systemctl start samverk-serve samverk-dispatch'
+
+          # Verify health.
+          sleep 3
+          ssh $SSH_OPTS "$HOST" "curl -sf http://localhost:8080/healthz" > /dev/null
+          echo "Deploy successful. Health check OK."

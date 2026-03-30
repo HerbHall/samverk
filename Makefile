@@ -1,5 +1,6 @@
 .PHONY: build test test-race test-coverage test-integration test-all lint lint-md lint-all ci hooks run clean web dev-web \
-       cross-build cross-build-full deploy deploy-config deploy-force deploy-staging redeploy ssh ssh-staging version-check
+       cross-build cross-build-full deploy deploy-config deploy-force deploy-staging redeploy ssh ssh-staging version-check \
+       check-sync
 
 # Binary
 BIN=samverk
@@ -78,9 +79,15 @@ cross-build:
 # Always rebuilds web first to prevent stale embedded SPA (see issue #458).
 cross-build-full: web cross-build
 
+# Pre-deploy: verify local tree matches Gitea main (prevents stale deploys).
+# Skip with: DEPLOY_SKIP_SYNC_CHECK=1 make redeploy
+check-sync:
+	bash scripts/check-gitea-sync.sh
+
 # Deploy: rebuild SPA + binary, wait for idle dispatcher, then swap.
 # This is the ONLY deploy target that should be used.
-deploy: cross-build-full
+# Enforces Gitea sync check to prevent deploying stale local code.
+deploy: check-sync cross-build-full
 	bash scripts/safe-deploy.sh $(DEPLOY_HOST)
 
 # One-step redeploy to production with safety gate.
