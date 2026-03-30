@@ -1,6 +1,6 @@
 # DES-001: Dispatch Efficiency and Event-Driven Migration
 
-- **Status**: Draft
+- **Status**: Active (Observation Phase -- Waves 1-3 shipped, Waves 4-5 deferred)
 - **Date**: 2026-03-30
 - **Author**: Herb Hall + Claude
 - **Related**: ADR-027 (failure recovery), ADR-032 (adaptive scaling), ADR-013 (forge abstraction), ADR-012 (git issues protocol), ADR-039 (two-location rule)
@@ -619,6 +619,120 @@ Only Watch polling and full reconciliation (15 min) make forge API calls.
 - EventBus subscribers can replace remaining polling patterns
 - `issue_state` computed cache can be derived from bus events
 - The event recorder provides an audit trail for debugging
+
+## Observation Phase (2026-03-30 -- target: 2-4 weeks)
+
+Waves 1-3 shipped in a single day and stabilized the pipeline from OOM (7+ GB)
+to 23 MB steady state. Before continuing to Wave 4, we run the current
+architecture under real load to gather operational data and validate assumptions.
+
+### Why Pause
+
+- **Data-driven design**: Wave 4 (encoded state register) is an optimization.
+  The right schema depends on which routing decisions are actually hot, how
+  often they fire, and what the real bottlenecks are at 88+ open issues.
+  Running the pipeline under load reveals this.
+- **Diminishing returns**: Waves 1-3 eliminated the emergency (OOM) and the
+  waste (redundant API calls). What remains is incremental. Premature
+  optimization without load data risks building the wrong abstraction.
+- **Stability validation**: The EventBus, cache-based routing, and label
+  decision surface are all new. They need soak time to expose edge cases
+  (cache staleness, event drops, label sync gaps).
+
+### What to Monitor
+
+Track these metrics during the observation period. Review weekly.
+
+| Metric | How to Check | Target | Action If Exceeded |
+|--------|-------------|--------|-------------------|
+| Dispatch RSS | `curl http://192.168.1.162:8080/debug/pprof/heap` | < 100 MB | Investigate allocator; likely cache growth |
+| API calls/min | Gitea rate limit headers or server logs | < 10/min steady | Check if Watch polling is batching correctly |
+| EventBus drops | grep logs for "event dropped" or buffer-full | 0 drops/day | Increase channel buffer or add slow-subscriber detection |
+| Cache staleness | Compare `issue_cache.synced_at` to `updated_at` on spot checks | < 5 min drift | Check reconciliation is firing |
+| Timeout failures | `get_failure_summary` via MCP | Trend down from 7/day | Review agent timeout settings; may need provider-specific tuning |
+| Queue depth | `get_diagnostics` via MCP | 0 when no work queued | Expected; nonzero means work is flowing |
+| Label sync accuracy | Spot-check: do Gitea labels match pipeline decisions? | 100% match | Debug dual-write path |
+
+### Observation Checklist (run weekly)
+
+```bash
+# 1. Pipeline health
+# Via MCP: get_diagnostics, get_project_summary, scale_status
+
+# 2. Memory profile (from any machine with access)
+curl -s http://192.168.1.162:8080/debug/pprof/heap > heap_$(date +%Y%m%d).prof
+go tool pprof -top heap_$(date +%Y%m%d).prof | head -20
+
+# 3. Event bus activity (from CT 202)
+sqlite3 /data/samverk.db "SELECT event_type, COUNT(*) FROM pipeline_events WHERE created_at > datetime('now', '-7 days') GROUP BY event_type ORDER BY COUNT(*) DESC"
+
+# 4. Cache freshness
+sqlite3 /data/samverk.db "SELECT project, COUNT(*), MIN(synced_at), MAX(synced_at) FROM issue_cache GROUP BY project"
+
+# 5. Failure trends
+sqlite3 /data/samverk.db "SELECT DATE(created_at), failure_class, COUNT(*) FROM sessions WHERE status='failed' AND created_at > datetime('now', '-7 days') GROUP BY 1,2 ORDER BY 1"
+```
+
+### Decision Gate: When to Proceed to Wave 4
+
+Resume Wave 4 when **any** of these conditions are met:
+
+- **Scale trigger**: Open issue count exceeds 200 and routing latency is
+  measurable (> 100ms per cycle)
+- **Cache staleness**: Repeated incidents where stale cache caused incorrect
+  routing decisions
+- **EventBus saturation**: Sustained event drops indicating subscribers
+  cannot keep up
+- **New subsystem**: A new consumer needs routing state (e.g., dashboard
+  real-time, external webhook receiver)
+- **Time-based**: 4 weeks elapsed with stable operation -- review data and
+  decide whether Wave 4 adds value or can be deferred indefinitely
+
+If none of these trigger within 4 weeks, Wave 4 becomes a backlog item
+rather than a planned sprint.
+
+### Planned Waves (Deferred)
+
+#### Wave 4: Encoded State Register
+
+**Prerequisites**: Observation phase data showing which routing decisions
+dominate, and evidence that label+cache reads are insufficient.
+
+1. Audit signal vocabulary from routing code (all `if` conditions)
+2. Design `issue_state` schema informed by observed access patterns
+3. Implement label -> issue_state derivation via EventBus subscriber
+4. Refactor hot routing decisions to read issue_state
+5. Benchmark before/after
+
+**Estimated value**: Reduces per-issue routing from multiple cache lookups
+to single-row read. Matters at 500+ issues; marginal at current 88.
+
+#### Wave 5: Webhook Integration (Research)
+
+**Prerequisites**: Wave 4 complete, or evidence that 15-min reconciliation
+causes operational issues.
+
+- Research Gitea webhook delivery guarantees and configuration
+- Implement webhook endpoint with signature verification
+- Event deduplication with polling reconciliation
+- Demote polling to reconciliation-only
+
+**Estimated value**: Sub-second event processing. Only needed at 5000+
+issues or when real-time dashboard updates become a requirement.
+
+### Residual Items from Waves 1-3
+
+These are not blocking but should be addressed when convenient:
+
+- [ ] **gen-labels groupOrder hardcoded in 3 places** (lesson #3): Consider
+  deriving from groups map keys or adding a test that verifies all JSON
+  prefixes appear in generated output
+- [ ] **Backfill CLI memory safety**: Add `GOMEMLIMIT` or pagination if the
+  CLI is ever needed again on CT 202
+- [ ] **`qualityChecked` sync.Map cleanup**: Label check makes it redundant
+  for restart recovery; could be removed when convenient
+- [ ] **Reconciliation interval tuning**: Currently 15 min (ADR-027). May
+  be too frequent or too infrequent based on observation data
 
 ## References
 
