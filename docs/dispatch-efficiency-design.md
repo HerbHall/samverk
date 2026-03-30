@@ -438,10 +438,51 @@ vocabulary is finite and known at compile time.
 - [ ] What is the right reconciliation interval for Phase 2? ADR-027 says 15
       min but this was before incremental sync existed.
 - [ ] Should the EventBus be typed (Go generics) or stringly-typed?
-- [ ] Does the forge interface need a `BatchAddLabels([]string)` method or
+- [x] Does the forge interface need a `BatchAddLabels([]string)` method or
       should the existing `AddLabel` accept variadic args?
+      **Resolved (Wave 1)**: Variadic `AddLabels(...string)` -- backward-compatible,
+      batch-capable, single API call.
 - [ ] At what scale does the SQLite issue_state table need WAL mode or
       connection pooling?
+
+## Wave 1 Results (2026-03-30)
+
+**PR #523** merged and deployed to CT 202.
+
+| Metric | Before | Target | Actual |
+|--------|--------|--------|--------|
+| Dispatch RSS | 7+ GB (OOM) | < 500 MB | 23 MB |
+| ListComments in hot paths | 80+ issues x 50+ comments/30s | 0 | 0 |
+| Pipeline status | Down (OOM) | Running | Running, pressure: low |
+
+### Lessons learned
+
+1. **Backfill CLI has the same OOM risk**: `backfill-labels` calls
+   `ListComments` on all open issues -- the exact pattern Wave 1 eliminates.
+   Three concurrent backfill processes consumed 18+ GB. Run backfills from a
+   local machine via API, not on CT 202. Add `GOMEMLIMIT` or pagination if
+   the CLI must run on the server.
+
+2. **Backfill was unnecessary**: All QC-passed issues were already closed.
+   Zero open issues needed `qc:pass` labels. Future backfills should either
+   include closed issues or accept that pre-migration issues don't need labels.
+
+3. **gen-labels groupOrder is hardcoded in 3 places**: New label prefixes
+   require updating Go, TypeScript, and PowerShell generators. Missing one
+   silently omits the group. Consider deriving groupOrder from the groups map.
+
+4. **Base process RSS is ~20 MB**: Scaling estimates should include process
+   overhead, not just per-subsystem costs. The "< 1 MB for marker checking"
+   estimate was correct for that subsystem but misleading as a total RSS
+   target.
+
+### Input to Wave 2
+
+- The `IssueCacheReader` interface and `WithIssueCache` option pattern
+  established in Wave 1 is the injection point for Wave 2's incremental sync.
+- The `qualityChecked` sync.Map remains as in-process dedup but the label
+  check makes it redundant for restart recovery -- could be removed in Wave 2.
+- Backfill tooling should be improved before Wave 3 adds more label types.
 
 ## References
 
