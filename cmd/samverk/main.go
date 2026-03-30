@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/logging"
 	"net/http"
+	_ "net/http/pprof" //nolint:gosec // G108: intentional pprof endpoint for memory diagnosis (#516)
 	"os"
 	"os/signal"
 	"strings"
@@ -597,6 +598,12 @@ func dispatchCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
+
+			// Start pprof server for memory diagnosis (issue #516).
+			go func() {
+				pprofServer := &http.Server{Addr: ":6060", ReadHeaderTimeout: 10 * time.Second}
+				_ = pprofServer.ListenAndServe()
+			}()
 
 			// Build project registry from config and/or legacy flags.
 			registry := internalmcp.NewProjectRegistry()
