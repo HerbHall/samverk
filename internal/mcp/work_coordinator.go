@@ -78,7 +78,7 @@ func (f *ForgeWorkCoordinator) ClaimIssue(ctx context.Context, owner, repo strin
 
 	// Transition labels.
 	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusQueued)
-	if err := tracker.AddLabel(ctx, number, models.LabelStatusClaimed); err != nil {
+	if err := tracker.AddLabels(ctx, number, models.LabelStatusClaimed); err != nil {
 		return nil, fmt.Errorf("add claimed label to #%d: %w", number, err)
 	}
 
@@ -202,7 +202,7 @@ func (f *ForgeWorkCoordinator) CompleteIssue(ctx context.Context, owner, repo st
 
 	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusClaimed)
 	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusInProgress)
-	if err := tracker.AddLabel(ctx, number, models.LabelStatusNeedsQc); err != nil {
+	if err := tracker.AddLabels(ctx, number, models.LabelStatusNeedsQc); err != nil {
 		f.logger.Warn("add needs-qc label", zap.Int("issue", number), zap.Error(err))
 	}
 
@@ -252,7 +252,7 @@ func (f *ForgeWorkCoordinator) ReleaseIssue(ctx context.Context, owner, repo str
 
 	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusClaimed)
 	_ = tracker.RemoveLabel(ctx, number, models.LabelStatusInProgress)
-	if err := tracker.AddLabel(ctx, number, models.LabelStatusQueued); err != nil {
+	if err := tracker.AddLabels(ctx, number, models.LabelStatusQueued); err != nil {
 		f.logger.Warn("add queued label", zap.Int("issue", number), zap.Error(err))
 	}
 

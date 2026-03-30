@@ -151,7 +151,7 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, key string) error {
 	_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusInProgress)
 	_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusClaimed)
 
-	if err := tracker.AddLabel(ctx, issueNumber, models.LabelStatusQueued); err != nil {
+	if err := tracker.AddLabels(ctx, issueNumber, models.LabelStatusQueued); err != nil {
 		d.logger.Warn("add label", zap.Int("issue", issueNumber), zap.String("label", models.LabelStatusQueued), zap.String("error", err.Error()))
 	}
 	if err := tracker.Unassign(ctx, issueNumber, agentID); err != nil {
@@ -177,7 +177,7 @@ func (d *Dispatcher) releaseTimedOut(ctx context.Context, key string) error {
 			time.Now().UTC().Format(time.RFC3339),
 			failureCount, issueNumber, agentID, failureCount,
 		)
-		if err := tracker.AddLabel(ctx, issueNumber, models.LabelStatusNeedsHuman); err != nil {
+		if err := tracker.AddLabels(ctx, issueNumber, models.LabelStatusNeedsHuman); err != nil {
 			d.logger.Error("add label", zap.Int("issue", issueNumber), zap.String("label", models.LabelStatusNeedsHuman), zap.String("error", err.Error()))
 		}
 		if _, err := tracker.AddComment(ctx, issueNumber, escalateComment); err != nil {

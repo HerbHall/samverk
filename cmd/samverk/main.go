@@ -46,6 +46,7 @@ import (
 	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/internal/synapset"
 	"github.com/herbhall/samverk/internal/version"
+	"github.com/herbhall/samverk/pkg/models"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
@@ -82,6 +83,7 @@ func run() int {
 	root.AddCommand(docAuditCmd())
 	root.AddCommand(auditCmd())
 	root.AddCommand(probeCmd())
+	root.AddCommand(backfillLabelsCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
@@ -1096,7 +1098,15 @@ func dispatchCmd() *cobra.Command {
 				if primaryPRMgr == nil {
 					return fmt.Errorf("auto_merge_on_ci_pass is enabled but PR manager failed to initialize")
 				}
-				pw := prwatcher.New(primaryPRMgr, primaryTracker, policyCfg.Merge, time.Duration(pollSeconds)*time.Second, logger)
+				var pwOpts []prwatcher.Option
+				if st != nil {
+					projectName := ""
+					if ap, apErr := registry.Active(); apErr == nil {
+						projectName = ap.Name
+					}
+					pwOpts = append(pwOpts, prwatcher.WithIssueCache(st, projectName))
+				}
+				pw := prwatcher.New(primaryPRMgr, primaryTracker, policyCfg.Merge, time.Duration(pollSeconds)*time.Second, logger, pwOpts...)
 				g.Go(func() error {
 					return pw.Run(gctx)
 				})
@@ -1628,6 +1638,105 @@ func probeCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&synapsetURL, "synapset-url", "", "Synapset MCP endpoint URL (default: env or "+synapset.DefaultURL+")")
+	return cmd
+}
+
+func backfillLabelsCmd() *cobra.Command {
+	var projectsConfig string
+
+	cmd := &cobra.Command{
+		Use:   "backfill-labels",
+		Short: "Backfill qc:pass/fail/review labels on pre-existing issues (one-time migration)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+
+			if projectsConfig == "" {
+				return fmt.Errorf("--projects is required")
+			}
+
+			configs, err := internalmcp.LoadProjectConfig(projectsConfig)
+			if err != nil {
+				return fmt.Errorf("load project config: %w", err)
+			}
+
+			for i := range configs {
+				pc := &configs[i]
+				var tracker forge.IssueTracker
+				if pc.Forge == "gitea" {
+					giteaToken := pc.GiteaToken
+					if giteaToken == "" {
+						giteaToken = os.Getenv("GITEA_TOKEN")
+					}
+					gt, gtErr := giteaadapter.New(pc.GiteaURL, giteaToken, pc.Owner, pc.Repo)
+					if gtErr != nil {
+						logger.Warn("skip project", zap.String("name", pc.Name), zap.Error(gtErr))
+						continue
+					}
+					tracker = gt
+				} else {
+					logger.Warn("skip non-gitea project", zap.String("name", pc.Name))
+					continue
+				}
+
+				issues, listErr := tracker.ListIssues(ctx, &forge.ListOptions{State: forge.StateOpen})
+				if listErr != nil {
+					logger.Warn("list issues failed", zap.String("project", pc.Name), zap.Error(listErr))
+					continue
+				}
+
+				backfilled := 0
+				for _, issue := range issues {
+					// Only process issues that might have QC verdicts.
+					hasQCLabel := false
+					for _, l := range issue.Labels {
+						if l == models.LabelQcPass || l == models.LabelQcFail || l == models.LabelQcReview {
+							hasQCLabel = true
+							break
+						}
+					}
+					if hasQCLabel {
+						continue // Already has a QC label.
+					}
+
+					comments, cErr := tracker.ListComments(ctx, issue.Number)
+					if cErr != nil {
+						continue
+					}
+
+					for i := len(comments) - 1; i >= 0; i-- {
+						body := comments[i].Body
+						if strings.Contains(body, "**QC Review: [PASS]**") {
+							if addErr := tracker.AddLabels(ctx, issue.Number, models.LabelQcPass); addErr == nil {
+								backfilled++
+								fmt.Printf("  #%d: added qc:pass\n", issue.Number)
+							}
+							break
+						}
+						if strings.Contains(body, "**QC Review: [FAIL]**") {
+							if addErr := tracker.AddLabels(ctx, issue.Number, models.LabelQcFail); addErr == nil {
+								backfilled++
+								fmt.Printf("  #%d: added qc:fail\n", issue.Number)
+							}
+							break
+						}
+						if strings.Contains(body, "**QC Review: [REVIEW]**") {
+							if addErr := tracker.AddLabels(ctx, issue.Number, models.LabelQcReview); addErr == nil {
+								backfilled++
+								fmt.Printf("  #%d: added qc:review\n", issue.Number)
+							}
+							break
+						}
+					}
+				}
+
+				fmt.Printf("%s: backfilled %d issues out of %d open\n", pc.Name, backfilled, len(issues))
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&projectsConfig, "projects", "", "Path to projects.yaml config")
 	return cmd
 }
 

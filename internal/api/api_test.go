@@ -77,7 +77,7 @@ func (m *mockTracker) SetLabels(_ context.Context, _ int, _ []string) error {
 	return errors.New("not implemented")
 }
 
-func (m *mockTracker) AddLabel(_ context.Context, _ int, _ string) error {
+func (m *mockTracker) AddLabels(_ context.Context, _ int, _ ...string) error {
 	return errors.New("not implemented")
 }
 
@@ -253,6 +253,9 @@ func (m *mockStore) GetIssueLabelCounts(_ context.Context, _ string) (map[string
 }
 func (m *mockStore) GetCacheSyncTime(_ context.Context, _ string) (time.Time, error) {
 	return time.Time{}, nil
+}
+func (m *mockStore) GetCachedIssue(_ context.Context, _ string, _ int) (*store.CachedIssue, error) {
+	return nil, store.ErrNotFound
 }
 func (m *mockStore) Close() error { return nil }
 func (m *mockStore) GetLatestCheckpoint(_ context.Context, _ int) (string, error) {
@@ -876,7 +879,7 @@ func (m *capturingMockTracker) SetLabels(_ context.Context, _ int, _ []string) e
 	return errors.New("not implemented")
 }
 
-func (m *capturingMockTracker) AddLabel(_ context.Context, _ int, _ string) error {
+func (m *capturingMockTracker) AddLabels(_ context.Context, _ int, _ ...string) error {
 	return errors.New("not implemented")
 }
 

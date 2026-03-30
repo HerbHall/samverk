@@ -197,7 +197,7 @@ func TestDecomposeAndCreateChildren_CreatesChildren(t *testing.T) {
 	hasBlockLabel := false
 	hasBlockComment := false
 	for _, call := range tracker.calls {
-		if call == "AddLabel" {
+		if call == "AddLabels" {
 			hasBlockLabel = true
 		}
 		if call == "AddComment" {

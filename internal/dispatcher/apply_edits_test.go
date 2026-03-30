@@ -72,8 +72,8 @@ func (m *mockForgeAll) ListComments(_ context.Context, number int) ([]*forge.Com
 	return m.comments[number], nil
 }
 func (m *mockForgeAll) SetLabels(_ context.Context, _ int, _ []string) error { return nil }
-func (m *mockForgeAll) AddLabel(_ context.Context, number int, label string) error {
-	m.labelsAdded[number] = append(m.labelsAdded[number], label)
+func (m *mockForgeAll) AddLabels(_ context.Context, number int, labels ...string) error {
+	m.labelsAdded[number] = append(m.labelsAdded[number], labels...)
 	return nil
 }
 func (m *mockForgeAll) RemoveLabel(_ context.Context, number int, label string) error {

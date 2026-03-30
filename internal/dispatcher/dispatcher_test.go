@@ -151,17 +151,23 @@ func (m *mockTracker) SetLabels(_ context.Context, number int, labels []string) 
 	return nil
 }
 
-func (m *mockTracker) AddLabel(_ context.Context, number int, label string) error {
-	m.record("AddLabel")
+func (m *mockTracker) AddLabels(_ context.Context, number int, labels ...string) error {
+	m.record("AddLabels")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if issue, ok := m.issues[number]; ok {
-		for _, l := range issue.Labels {
-			if l == label {
-				return nil
+		for _, label := range labels {
+			found := false
+			for _, l := range issue.Labels {
+				if l == label {
+					found = true
+					break
+				}
+			}
+			if !found {
+				issue.Labels = append(issue.Labels, label)
 			}
 		}
-		issue.Labels = append(issue.Labels, label)
 	}
 	return nil
 }

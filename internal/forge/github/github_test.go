@@ -334,7 +334,7 @@ func TestAddLabel(t *testing.T) {
 
 	c, _ := newTestClient(t, mux)
 
-	err := c.AddLabel(context.Background(), 7, "new-label")
+	err := c.AddLabels(context.Background(), 7, "new-label")
 	if err != nil {
 		t.Fatalf("AddLabel: %v", err)
 	}

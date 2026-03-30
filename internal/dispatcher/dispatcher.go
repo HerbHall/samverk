@@ -305,7 +305,7 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 				d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, "status:pr-open", "dispatcher")
 				d.logger.Info("task completed (EDIT auto-applied as PR)", zap.Int("issue", result.IssueNumber), zap.String("session", result.SessionID))
 			} else {
-				if err := tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc); err != nil {
+				if err := tracker.AddLabels(ctx, result.IssueNumber, models.LabelStatusNeedsQc); err != nil {
 					d.logger.Error("add label", zap.Int("issue", result.IssueNumber), zap.String("label", models.LabelStatusNeedsQc), zap.String("error", err.Error()))
 				}
 				d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusInProgress, models.LabelStatusNeedsQc, "agent")
@@ -1003,7 +1003,7 @@ func (d *Dispatcher) escalate(ctx context.Context, owner, repo string, issueNumb
 	// Clear in-progress status labels before marking as needs-human.
 	_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusClaimed)
 	_ = tracker.RemoveLabel(ctx, issueNumber, models.LabelStatusInProgress)
-	if err := tracker.AddLabel(ctx, issueNumber, models.LabelStatusNeedsHuman); err != nil {
+	if err := tracker.AddLabels(ctx, issueNumber, models.LabelStatusNeedsHuman); err != nil {
 		return fmt.Errorf("add needs-human label: %w", err)
 	}
 	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {
@@ -1029,7 +1029,7 @@ func (d *Dispatcher) escalateCycle(ctx context.Context, owner, repo string, cycl
 			"ESCALATE [dispatcher] [%s]\ntrigger: dependency_cycle\ndetails: Cycle detected: %s\naction_needed: Break the dependency cycle.",
 			time.Now().UTC().Format(time.RFC3339), cyclePath,
 		)
-		if err := tracker.AddLabel(ctx, num, models.LabelStatusNeedsHuman); err != nil {
+		if err := tracker.AddLabels(ctx, num, models.LabelStatusNeedsHuman); err != nil {
 			d.logger.Error("add label", zap.Int("issue", num), zap.String("label", models.LabelStatusNeedsHuman), zap.String("error", err.Error()))
 		}
 		if _, err := tracker.AddComment(ctx, num, comment); err != nil {
@@ -1049,7 +1049,7 @@ func (d *Dispatcher) blockIssue(ctx context.Context, owner, repo string, issueNu
 		"BLOCKED [dispatcher] [%s]\nWaiting on: %v\nWill auto-unblock when all dependencies reach status:done.",
 		time.Now().UTC().Format(time.RFC3339), blockers,
 	)
-	if err := tracker.AddLabel(ctx, issueNumber, models.LabelStatusBlocked); err != nil {
+	if err := tracker.AddLabels(ctx, issueNumber, models.LabelStatusBlocked); err != nil {
 		return fmt.Errorf("add blocked label: %w", err)
 	}
 	if _, err := tracker.AddComment(ctx, issueNumber, comment); err != nil {

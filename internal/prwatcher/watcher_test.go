@@ -234,11 +234,11 @@ func (m *mockIssueTracker) SetLabels(_ context.Context, number int, labels []str
 	m.setLabelsCalls = append(m.setLabelsCalls, setLabelsCall{number: number, labels: labels})
 	return m.setLabelsErr
 }
-func (m *mockIssueTracker) AddLabel(_ context.Context, number int, label string) error {
+func (m *mockIssueTracker) AddLabels(_ context.Context, number int, labels ...string) error {
 	if m.addLabelCalls == nil {
 		m.addLabelCalls = make(map[int][]string)
 	}
-	m.addLabelCalls[number] = append(m.addLabelCalls[number], label)
+	m.addLabelCalls[number] = append(m.addLabelCalls[number], labels...)
 	return nil
 }
 func (m *mockIssueTracker) RemoveLabel(_ context.Context, number int, label string) error {

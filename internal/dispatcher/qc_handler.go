@@ -157,7 +157,7 @@ func (d *Dispatcher) spawnQCTask(ctx context.Context, owner, repo string, issueN
 
 	if d.pool == nil || d.store == nil {
 		// No pool available; fall back to labeling needs-qc for manual review.
-		if labelErr := tracker.AddLabel(ctx, issueNumber, models.LabelStatusNeedsQc); labelErr != nil {
+		if labelErr := tracker.AddLabels(ctx, issueNumber, models.LabelStatusNeedsQc); labelErr != nil {
 			d.logger.Error("spawnQCTask: fallback label", zap.Int("issue", issueNumber), zap.Error(labelErr))
 		}
 		return
@@ -177,7 +177,7 @@ func (d *Dispatcher) spawnQCTask(ctx context.Context, owner, repo string, issueN
 	if err := d.store.CreateSession(ctx, session); err != nil {
 		d.logger.Error("spawnQCTask: create session", zap.Int("issue", issueNumber), zap.Error(err))
 		// Fall back to labeling needs-qc.
-		_ = tracker.AddLabel(ctx, issueNumber, models.LabelStatusNeedsQc)
+		_ = tracker.AddLabels(ctx, issueNumber, models.LabelStatusNeedsQc)
 		return
 	}
 
@@ -218,7 +218,7 @@ func (d *Dispatcher) spawnQCTask(ctx context.Context, owner, repo string, issueN
 		d.mu.Lock()
 		delete(d.claimed, key)
 		d.mu.Unlock()
-		_ = tracker.AddLabel(ctx, issueNumber, models.LabelStatusNeedsQc)
+		_ = tracker.AddLabels(ctx, issueNumber, models.LabelStatusNeedsQc)
 		return
 	}
 
@@ -272,7 +272,7 @@ func (d *Dispatcher) handleQCComplete(ctx context.Context, result agent.TaskResu
 			zap.Int("issue", result.IssueNumber),
 			zap.String("error", result.Error),
 		)
-		_ = tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc)
+		_ = tracker.AddLabels(ctx, result.IssueNumber, models.LabelStatusNeedsQc)
 		return
 	}
 
@@ -304,7 +304,7 @@ func (d *Dispatcher) handleQCComplete(ctx context.Context, result agent.TaskResu
 		d.logger.Warn("QC agent produced no parseable output, escalating to manual review",
 			zap.Int("issue", result.IssueNumber),
 		)
-		_ = tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc)
+		_ = tracker.AddLabels(ctx, result.IssueNumber, models.LabelStatusNeedsQc)
 		return
 	}
 
@@ -345,8 +345,11 @@ func (d *Dispatcher) handleQCPass(ctx context.Context, result agent.TaskResult, 
 		d.logger.Error("handleQCPass: add comment", zap.Int("target", commentTarget), zap.Error(err))
 	}
 
-	// Remove needs-qc and add qc-pass label for PR watcher to pick up.
+	// Remove needs-qc and add qc:pass label for PR watcher to pick up.
 	_ = tracker.RemoveLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc)
+	if err := tracker.AddLabels(ctx, result.IssueNumber, models.LabelQcPass); err != nil {
+		d.logger.Warn("handleQCPass: add qc:pass label", zap.Int("issue", result.IssueNumber), zap.Error(err))
+	}
 
 	// Label the PR for auto-merge if it exists.
 	if prNumber > 0 {
@@ -378,8 +381,11 @@ func (d *Dispatcher) handleQCFail(ctx context.Context, result agent.TaskResult, 
 		d.logger.Error("handleQCFail: add comment", zap.Int("issue", result.IssueNumber), zap.Error(err))
 	}
 
-	// Remove needs-qc label and re-queue via correction engine.
+	// Remove needs-qc label and add qc:fail for decision surface.
 	_ = tracker.RemoveLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc)
+	if err := tracker.AddLabels(ctx, result.IssueNumber, models.LabelQcFail); err != nil {
+		d.logger.Warn("handleQCFail: add qc:fail label", zap.Int("issue", result.IssueNumber), zap.Error(err))
+	}
 
 	// Build structured feedback for the correction engine.
 	feedback := "QC review failed."
@@ -413,7 +419,7 @@ func (d *Dispatcher) handleQCReview(ctx context.Context, result agent.TaskResult
 	}
 
 	_ = tracker.RemoveLabel(ctx, result.IssueNumber, models.LabelStatusNeedsQc)
-	_ = tracker.AddLabel(ctx, result.IssueNumber, models.LabelStatusNeedsHuman)
+	_ = tracker.AddLabels(ctx, result.IssueNumber, models.LabelStatusNeedsHuman, models.LabelQcReview)
 
 	d.recordPipelineEvent(ctx, result.Owner, result.Repo, result.IssueNumber, models.LabelStatusNeedsQc, models.LabelStatusNeedsHuman, "qc-agent")
 

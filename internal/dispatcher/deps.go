@@ -223,7 +223,7 @@ func (d *Dispatcher) unblockDependents(ctx context.Context, closedIssueNumber in
 			if removeErr := entry.Tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusBlocked); removeErr != nil {
 				d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusBlocked), zap.String("error", removeErr.Error()))
 			}
-			if addErr := entry.Tracker.AddLabel(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
+			if addErr := entry.Tracker.AddLabels(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
 				d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusQueued), zap.String("error", addErr.Error()))
 			}
 
@@ -289,7 +289,7 @@ func (d *Dispatcher) recheckCrossProjectDeps(ctx context.Context) error {
 			if removeErr := entry.Tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusBlocked); removeErr != nil {
 				d.logger.Warn("remove label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusBlocked), zap.String("error", removeErr.Error()))
 			}
-			if addErr := entry.Tracker.AddLabel(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
+			if addErr := entry.Tracker.AddLabels(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
 				d.logger.Warn("add label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusQueued), zap.String("error", addErr.Error()))
 			}
 

@@ -19,13 +19,23 @@ import (
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
 )
+
+// IssueCacheReader provides read-only access to cached issue data and failure counts.
+// The store.SQLiteStore satisfies this interface directly.
+type IssueCacheReader interface {
+	GetCachedIssue(ctx context.Context, project string, number int) (*store.CachedIssue, error)
+	GetIssueFailureCount(ctx context.Context, issueNumber int) (int, error)
+}
 
 // Watcher polls open PRs and auto-merges eligible ones.
 type Watcher struct {
 	prManager    forge.PullRequestManager
 	issueTracker forge.IssueTracker
+	issueCache   IssueCacheReader
+	project      string // project key for issue cache lookups
 	mergeCfg     autonomy.MergeConfig
 	interval     time.Duration
 	logger       *zap.Logger
@@ -34,16 +44,32 @@ type Watcher struct {
 // New creates a Watcher with the given PR manager, issue tracker, and merge policy.
 // The issue tracker is used to create remediation issues for PRs with blocking
 // review comments. It may be nil to disable remediation.
-func New(pm forge.PullRequestManager, issues forge.IssueTracker, cfg autonomy.MergeConfig, interval time.Duration, logger *zap.Logger) *Watcher {
+// The issueCache provides label reads from the cached issue data (avoids ListComments).
+func New(pm forge.PullRequestManager, issues forge.IssueTracker, cfg autonomy.MergeConfig, interval time.Duration, logger *zap.Logger, opts ...Option) *Watcher {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &Watcher{
+	w := &Watcher{
 		prManager:    pm,
 		issueTracker: issues,
 		mergeCfg:     cfg,
 		interval:     interval,
 		logger:       logger,
+	}
+	for _, opt := range opts {
+		opt(w)
+	}
+	return w
+}
+
+// Option configures a Watcher.
+type Option func(*Watcher)
+
+// WithIssueCache sets the issue cache reader for label-based checks.
+func WithIssueCache(cache IssueCacheReader, project string) Option {
+	return func(w *Watcher) {
+		w.issueCache = cache
+		w.project = project
 	}
 }
 
@@ -245,7 +271,7 @@ func (w *Watcher) labelTier3(ctx context.Context, pr *forge.PullRequest) {
 		}
 	}
 	if w.issueTracker != nil {
-		if err := w.issueTracker.AddLabel(ctx, pr.Number, models.LabelStatusNeedsHuman); err != nil {
+		if err := w.issueTracker.AddLabels(ctx, pr.Number, models.LabelStatusNeedsHuman); err != nil {
 			w.logger.Error("pr-watcher: label tier-3 PR", zap.Int("pr", pr.Number), zap.Error(err))
 		}
 	}
@@ -604,7 +630,7 @@ func (w *Watcher) unblockDependents(ctx context.Context, closedIssueNumber int) 
 			w.log().Warn("pr-watcher: remove status:blocked",
 				zap.Int("issue", issue.Number), zap.Error(removeErr))
 		}
-		if addErr := w.issueTracker.AddLabel(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
+		if addErr := w.issueTracker.AddLabels(ctx, issue.Number, models.LabelStatusQueued); addErr != nil {
 			w.log().Warn("pr-watcher: add status:queued",
 				zap.Int("issue", issue.Number), zap.Error(addErr))
 		}
@@ -730,9 +756,16 @@ func (w *Watcher) getFailedCheckNames(checks []forge.Check) []string {
 	return failed
 }
 
-// countCIFailures counts the number of CI failure comments on an issue.
-// It looks for comments matching the pattern "CI FAILED [prwatcher]".
+// countCIFailures returns the persisted CI failure count for an issue.
+// Uses the issue_failure_counts SQLite table via the issue cache reader.
+// Falls back to comment scanning when no cache reader is configured.
 func (w *Watcher) countCIFailures(ctx context.Context, issueNum int) (int, error) {
+	// Fast path: query the store directly.
+	if w.issueCache != nil {
+		return w.issueCache.GetIssueFailureCount(ctx, issueNum)
+	}
+
+	// Fallback: comment scanning (only when issue cache is not configured).
 	if w.issueTracker == nil {
 		return 0, nil
 	}
@@ -818,7 +851,7 @@ func (w *Watcher) remediateStaleCIFailure(ctx context.Context, pr *forge.PullReq
 
 	// Re-queue or escalate based on CI failure count.
 	if ciFailCount < 3 {
-		if err := w.issueTracker.AddLabel(ctx, sourceIssueNum, models.LabelStatusQueued); err != nil {
+		if err := w.issueTracker.AddLabels(ctx, sourceIssueNum, models.LabelStatusQueued); err != nil {
 			w.log().Warn("pr-watcher: add status:queued",
 				zap.Int("issue", sourceIssueNum), zap.Error(err))
 		}
@@ -830,11 +863,11 @@ func (w *Watcher) remediateStaleCIFailure(ctx context.Context, pr *forge.PullReq
 			zap.Strings("failed_checks", failedChecks))
 	} else {
 		// Escalate to needs-human.
-		if err := w.issueTracker.AddLabel(ctx, sourceIssueNum, models.LabelStatusNeedsHuman); err != nil {
+		if err := w.issueTracker.AddLabels(ctx, sourceIssueNum, models.LabelStatusNeedsHuman); err != nil {
 			w.log().Warn("pr-watcher: add status:needs-human",
 				zap.Int("issue", sourceIssueNum), zap.Error(err))
 		}
-		if err := w.issueTracker.AddLabel(ctx, sourceIssueNum, models.LabelHumanReview); err != nil {
+		if err := w.issueTracker.AddLabels(ctx, sourceIssueNum, models.LabelHumanReview); err != nil {
 			w.log().Warn("pr-watcher: add human:review",
 				zap.Int("issue", sourceIssueNum), zap.Error(err))
 		}
@@ -896,7 +929,7 @@ func (w *Watcher) remediateNonMergeableConflict(ctx context.Context, pr *forge.P
 	}
 
 	// Add status:queued to the issue.
-	if err := w.issueTracker.AddLabel(ctx, sourceIssueNum, models.LabelStatusQueued); err != nil {
+	if err := w.issueTracker.AddLabels(ctx, sourceIssueNum, models.LabelStatusQueued); err != nil {
 		w.log().Warn("pr-watcher: add status:queued",
 			zap.Int("issue", sourceIssueNum), zap.Error(err))
 	}
@@ -981,14 +1014,33 @@ func buildCIFailureIssueComment(pr *forge.PullRequest, failedChecks []string, ci
 // The dispatcher posts this as part of the QC PASS comment.
 const QCApprovalMarker = "**QC Review: [PASS]**"
 
-// hasQCApproval checks whether a PR has received a [PASS] verdict from the
-// automated QC agent. It examines PR comments (via the issue tracker, since
-// PRs are issues on most forges) for the QC approval marker.
+// hasQCApproval checks whether a PR's linked issues have a qc:pass label.
+// QC labels are written to issues (not PRs) by the dispatcher, so we check
+// linked issue labels via the issue cache. Falls back to comment scanning
+// if no issue cache is configured.
 func (w *Watcher) hasQCApproval(ctx context.Context, pr *forge.PullRequest) bool {
 	if w.issueTracker == nil {
 		return false
 	}
 
+	// Fast path: check linked issue labels via issue cache.
+	if w.issueCache != nil {
+		issueNums := parseLinkedIssues(pr)
+		for _, issueNum := range issueNums {
+			cached, err := w.issueCache.GetCachedIssue(ctx, w.project, issueNum)
+			if err != nil {
+				continue
+			}
+			for _, label := range cached.Labels {
+				if label == models.LabelQcPass {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// Fallback: comment scanning (only when issue cache is not configured).
 	comments, err := w.issueTracker.ListComments(ctx, pr.Number)
 	if err != nil {
 		w.log().Debug("pr-watcher: check QC approval", zap.Int("pr", pr.Number), zap.Error(err))
@@ -1001,7 +1053,6 @@ func (w *Watcher) hasQCApproval(ctx context.Context, pr *forge.PullRequest) bool
 		}
 	}
 
-	// Also check linked issue comments (the QC comment may be on the issue, not the PR).
 	issueNums := parseLinkedIssues(pr)
 	for _, issueNum := range issueNums {
 		issueComments, err := w.issueTracker.ListComments(ctx, issueNum)

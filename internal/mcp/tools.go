@@ -263,7 +263,7 @@ func (h *Handler) handleAddLabel(
 }
 
 func (h *Handler) executeAddLabel(ctx context.Context, input addLabelInput) (*gosdk.CallToolResult, error) {
-	if err := h.activeTracker().AddLabel(ctx, input.IssueNumber, input.Label); err != nil {
+	if err := h.activeTracker().AddLabels(ctx, input.IssueNumber, input.Label); err != nil {
 		return nil, fmt.Errorf("adding label: %w", err)
 	}
 

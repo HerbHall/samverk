@@ -387,7 +387,7 @@ func (a *API) handleBulkIssues(w http.ResponseWriter, r *http.Request) {
 			closed := forge.StateClosed
 			_, opErr = a.tracker.UpdateIssue(ctx, num, &forge.UpdateIssueRequest{State: &closed})
 		case "label":
-			opErr = a.tracker.AddLabel(ctx, num, req.Value)
+			opErr = a.tracker.AddLabels(ctx, num, req.Value)
 		case "assign":
 			opErr = a.tracker.Assign(ctx, num, req.Value)
 		}

@@ -322,7 +322,7 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 
 	// Quality warning: check for missing file_context or constraints.
 	// This is advisory only and does not block dispatch.
-	d.postQualityWarningIfNeeded(ctx, tracker, owner, repo, issue.Number, fm)
+	d.postQualityWarningIfNeeded(ctx, tracker, owner, repo, issue.Number, issue.Labels, fm)
 
 	// Pre-flight health gate: check if the routing chain has any healthy
 	// provider before claiming the issue. This prevents the tight
@@ -348,12 +348,12 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	if agentType == models.AgentTypeHuman {
 		d.logger.Info("issue classified as human", zap.Int("issue", issue.Number))
 		// Apply status:needs-human label
-		if err := tracker.AddLabel(ctx, issue.Number, models.LabelStatusNeedsHuman); err != nil {
+		if err := tracker.AddLabels(ctx, issue.Number, models.LabelStatusNeedsHuman); err != nil {
 			d.logger.Error("add label", zap.Int("issue", issue.Number), zap.String("label", models.LabelStatusNeedsHuman), zap.String("error", err.Error()))
 		}
 		// Classify and apply human:* subtype label
 		subtype := classifyHumanSubtype(issue)
-		if err := tracker.AddLabel(ctx, issue.Number, subtype); err != nil {
+		if err := tracker.AddLabels(ctx, issue.Number, subtype); err != nil {
 			d.logger.Debug("add human subtype label (non-fatal)", zap.Int("issue", issue.Number), zap.String("label", subtype), zap.String("error", err.Error()))
 		}
 		return nil
@@ -385,7 +385,7 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	// Auto-classify complexity if no complexity label exists.
 	if !hasComplexityLabel(issue) {
 		complexityLabel := classifyComplexity(fm)
-		if err := tracker.AddLabel(ctx, issue.Number, complexityLabel); err != nil {
+		if err := tracker.AddLabels(ctx, issue.Number, complexityLabel); err != nil {
 			// Best-effort: log but don't block routing
 			d.logger.Debug("add complexity label (non-fatal)", zap.Int("issue", issue.Number), zap.String("label", complexityLabel), zap.String("error", err.Error()))
 		} else {
@@ -397,7 +397,7 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	if err := tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusQueued); err != nil {
 		d.logger.Debug("remove queued label", zap.Int("issue", issue.Number), zap.String("error", err.Error()))
 	}
-	if err := tracker.AddLabel(ctx, issue.Number, models.LabelStatusClaimed); err != nil {
+	if err := tracker.AddLabels(ctx, issue.Number, models.LabelStatusClaimed); err != nil {
 		return fmt.Errorf("add claimed label to #%d: %w", issue.Number, err)
 	}
 	d.recordPipelineEvent(ctx, owner, repo, issue.Number, models.LabelStatusQueued, models.LabelStatusClaimed, "dispatcher")
@@ -528,24 +528,12 @@ func (d *Dispatcher) parseFrontmatter(issue *forge.Issue) (*models.IssueFrontmat
 	return result.Frontmatter, nil
 }
 
-// hasQualityWarningComment checks if a quality warning comment already exists on the issue.
-// Returns true if a comment containing the quality warning marker is found.
-func hasQualityWarningComment(comments []*forge.Comment) bool {
-	const marker = "[dispatcher] Issue quality warning"
-	for _, c := range comments {
-		if strings.Contains(c.Body, marker) {
-			return true
-		}
-	}
-	return false
-}
-
 // postQualityWarningIfNeeded checks if file_context or constraints are missing
 // and posts a one-time warning comment if needed. Does not block dispatch.
 // Results are cached in qualityChecked to avoid calling ListComments on every
 // route() invocation (see issue #516 -- each ListComments fetches all comments
 // and the JSON decoder retains backing arrays that pressure GC).
-func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker forge.IssueTracker, owner, repo string, issueNumber int, fm *models.IssueFrontmatter) {
+func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker forge.IssueTracker, owner, repo string, issueNumber int, issueLabels []string, fm *models.IssueFrontmatter) {
 	if fm == nil {
 		return // No frontmatter to check
 	}
@@ -558,24 +546,15 @@ func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker for
 		return // Both fields present, no warning needed
 	}
 
-	// Fast path: already checked this issue (survives across route() calls).
+	// Check label first (survives restarts, zero API cost).
+	if labelSliceContains(issueLabels, models.LabelWarningQuality) {
+		return // Warning already posted (label is the decision surface)
+	}
+
+	// Fast path: already checked this issue in this process lifetime.
 	key := issueKey(owner, repo, issueNumber)
 	if _, loaded := d.qualityChecked.LoadOrStore(key, struct{}{}); loaded {
 		return
-	}
-
-	// Check if warning already exists
-	comments, err := tracker.ListComments(ctx, issueNumber)
-	if err != nil {
-		d.logger.Debug("quality check: failed to list comments",
-			zap.Int("issue", issueNumber),
-			zap.Error(err),
-		)
-		return // Best-effort: if we can't list comments, don't block
-	}
-
-	if hasQualityWarningComment(comments) {
-		return // Warning already posted
 	}
 
 	// Build warning message
@@ -598,6 +577,13 @@ func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker for
 			zap.Int("issue", issueNumber),
 			zap.Error(err),
 		)
-		// Best-effort: don't block dispatch if comment posting fails
+	}
+
+	// Dual-write: add warning:quality label for future reads.
+	if err := tracker.AddLabels(ctx, issueNumber, models.LabelWarningQuality); err != nil {
+		d.logger.Info("quality check: failed to add warning:quality label",
+			zap.Int("issue", issueNumber),
+			zap.Error(err),
+		)
 	}
 }

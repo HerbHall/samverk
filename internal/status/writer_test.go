@@ -46,7 +46,7 @@ func (m *mockTracker) ListComments(_ context.Context, _ int) ([]*forge.Comment, 
 }
 
 func (m *mockTracker) SetLabels(_ context.Context, _ int, _ []string) error { panic("not implemented") }
-func (m *mockTracker) AddLabel(_ context.Context, _ int, _ string) error    { panic("not implemented") }
+func (m *mockTracker) AddLabels(_ context.Context, _ int, _ ...string) error    { panic("not implemented") }
 func (m *mockTracker) RemoveLabel(_ context.Context, _ int, _ string) error {
 	panic("not implemented")
 }

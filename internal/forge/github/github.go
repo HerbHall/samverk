@@ -220,11 +220,14 @@ func (c *Client) SetLabels(ctx context.Context, number int, labels []string) err
 	return nil
 }
 
-// AddLabel adds a single label to the given issue.
-func (c *Client) AddLabel(ctx context.Context, number int, label string) error {
-	_, _, err := c.gh.Issues.AddLabelsToIssue(ctx, c.owner, c.repo, number, []string{label})
+// AddLabels adds one or more labels to the given issue in a single API call.
+func (c *Client) AddLabels(ctx context.Context, number int, labels ...string) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	_, _, err := c.gh.Issues.AddLabelsToIssue(ctx, c.owner, c.repo, number, labels)
 	if err != nil {
-		return fmt.Errorf("github: add label %q to #%d: %w", label, number, err)
+		return fmt.Errorf("github: add labels to #%d: %w", number, err)
 	}
 
 	return nil

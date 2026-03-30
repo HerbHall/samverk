@@ -502,9 +502,9 @@ func applyRelabel(ctx context.Context, tracker forge.IssueTracker, issueNumber i
 			return fmt.Errorf("removing label %q: %w", removeLabels[i], err)
 		}
 	}
-	for i := range addLabels {
-		if err := tracker.AddLabel(ctx, issueNumber, addLabels[i]); err != nil {
-			return fmt.Errorf("adding label %q: %w", addLabels[i], err)
+	if len(addLabels) > 0 {
+		if err := tracker.AddLabels(ctx, issueNumber, addLabels...); err != nil {
+			return fmt.Errorf("adding labels: %w", err)
 		}
 	}
 	return nil

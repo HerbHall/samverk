@@ -230,7 +230,7 @@ func (m *projectsMockTracker) ListComments(_ context.Context, _ int) ([]*forge.C
 func (m *projectsMockTracker) SetLabels(_ context.Context, _ int, _ []string) error {
 	return fmt.Errorf("not implemented")
 }
-func (m *projectsMockTracker) AddLabel(_ context.Context, _ int, _ string) error {
+func (m *projectsMockTracker) AddLabels(_ context.Context, _ int, _ ...string) error {
 	return fmt.Errorf("not implemented")
 }
 func (m *projectsMockTracker) RemoveLabel(_ context.Context, _ int, _ string) error {

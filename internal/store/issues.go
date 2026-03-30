@@ -232,3 +232,49 @@ func (s *SQLiteStore) GetCacheSyncTime(ctx context.Context, project string) (tim
 	}
 	return t, nil
 }
+
+// GetCachedIssue returns a single cached issue by project and number.
+func (s *SQLiteStore) GetCachedIssue(ctx context.Context, project string, number int) (*CachedIssue, error) {
+	var ci CachedIssue
+	var labelsJSON, assigneesJSON string
+	var closedAt sql.NullString
+	var createdAt, updatedAt string
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT number, title, state, labels, assignees, created_at, updated_at, closed_at
+		 FROM issue_cache WHERE project = ? AND number = ?`,
+		project, number,
+	).Scan(&ci.Number, &ci.Title, &ci.State, &labelsJSON, &assigneesJSON,
+		&createdAt, &updatedAt, &closedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get cached issue: %w", err)
+	}
+
+	if labelsJSON != "" {
+		if jsonErr := json.Unmarshal([]byte(labelsJSON), &ci.Labels); jsonErr != nil {
+			return nil, fmt.Errorf("unmarshal labels: %w", jsonErr)
+		}
+	}
+	if assigneesJSON != "" {
+		if jsonErr := json.Unmarshal([]byte(assigneesJSON), &ci.Assignees); jsonErr != nil {
+			return nil, fmt.Errorf("unmarshal assignees: %w", jsonErr)
+		}
+	}
+
+	if t, parseErr := time.Parse(time.RFC3339, createdAt); parseErr == nil {
+		ci.CreatedAt = t
+	}
+	if t, parseErr := time.Parse(time.RFC3339, updatedAt); parseErr == nil {
+		ci.UpdatedAt = t
+	}
+	if closedAt.Valid && closedAt.String != "" {
+		if t, parseErr := time.Parse(time.RFC3339, closedAt.String); parseErr == nil {
+			ci.ClosedAt = &t
+		}
+	}
+
+	return &ci, nil
+}

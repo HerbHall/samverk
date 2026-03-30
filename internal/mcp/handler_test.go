@@ -138,8 +138,10 @@ func (m *mockTracker) SetLabels(_ context.Context, number int, labels []string) 
 	return nil
 }
 
-func (m *mockTracker) AddLabel(_ context.Context, number int, label string) error {
-	m.addLabelCalls = append(m.addLabelCalls, labelCall{Number: number, Label: label})
+func (m *mockTracker) AddLabels(_ context.Context, number int, labels ...string) error {
+	for _, label := range labels {
+		m.addLabelCalls = append(m.addLabelCalls, labelCall{Number: number, Label: label})
+	}
 	return nil
 }
 

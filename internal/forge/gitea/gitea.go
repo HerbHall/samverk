@@ -33,10 +33,9 @@ type Client struct {
 	// polling state for Watch
 	pollInterval time.Duration
 
-	// label name-to-ID cache (populated on first label operation)
-	labelOnce  sync.Once
+	// label name-to-ID cache (populated on first label operation, refreshed on miss)
+	labelMu    sync.RWMutex
 	labelCache map[string]int64
-	labelErr   error
 }
 
 // New creates a Gitea IssueTracker client for the given owner/repo.
@@ -266,18 +265,26 @@ func (c *Client) SetLabels(ctx context.Context, number int, labels []string) err
 	return nil
 }
 
-// AddLabel adds a single label to the given issue.
-func (c *Client) AddLabel(ctx context.Context, number int, label string) error {
-	id, err := c.resolveLabelID(label)
-	if err != nil {
-		return fmt.Errorf("gitea: add label %q to #%d: %w", label, number, err)
+// AddLabels adds one or more labels to the given issue in a single API call.
+func (c *Client) AddLabels(ctx context.Context, number int, labels ...string) error {
+	if len(labels) == 0 {
+		return nil
 	}
 
-	_, _, err = c.gt.AddIssueLabels(c.owner, c.repo, int64(number), gogitea.IssueLabelsOption{
-		Labels: []int64{id},
+	ids := make([]int64, 0, len(labels))
+	for _, label := range labels {
+		id, err := c.resolveLabelID(label)
+		if err != nil {
+			return fmt.Errorf("gitea: add labels to #%d: %w", number, err)
+		}
+		ids = append(ids, id)
+	}
+
+	_, _, err := c.gt.AddIssueLabels(c.owner, c.repo, int64(number), gogitea.IssueLabelsOption{
+		Labels: ids,
 	})
 	if err != nil {
-		return fmt.Errorf("gitea: add label %q to #%d: %w", label, number, err)
+		return fmt.Errorf("gitea: add labels to #%d: %w", number, err)
 	}
 
 	return nil
@@ -500,61 +507,71 @@ func diffAndEmit(known map[int]*forge.Issue, current []*forge.Issue, handler fun
 	}
 }
 
-func (c *Client) ensureLabelCache() error {
-	c.labelOnce.Do(func() {
-		c.labelCache = make(map[string]int64)
-		page := 1
-		for {
-			labels, _, err := c.gt.ListRepoLabels(c.owner, c.repo, gogitea.ListLabelsOptions{
-				ListOptions: gogitea.ListOptions{Page: page, PageSize: 50},
-			})
-			if err != nil {
-				c.labelErr = fmt.Errorf("fetch repo labels: %w", err)
-				return
-			}
-			for i := range labels {
-				c.labelCache[labels[i].Name] = labels[i].ID
-			}
-			if len(labels) < 50 {
-				break
-			}
-			page++
+// fetchLabelCache fetches all repo labels from Gitea and populates the cache.
+// Caller must hold c.labelMu write lock.
+func (c *Client) fetchLabelCache() error {
+	c.labelCache = make(map[string]int64)
+	page := 1
+	for {
+		labels, _, err := c.gt.ListRepoLabels(c.owner, c.repo, gogitea.ListLabelsOptions{
+			ListOptions: gogitea.ListOptions{Page: page, PageSize: 50},
+		})
+		if err != nil {
+			return fmt.Errorf("fetch repo labels: %w", err)
 		}
-	})
+		for i := range labels {
+			c.labelCache[labels[i].Name] = labels[i].ID
+		}
+		if len(labels) < 50 {
+			break
+		}
+		page++
+	}
+	return nil
+}
 
-	return c.labelErr
+// resolveLabelID converts a single label name to its Gitea integer ID.
+// Uses a read lock fast path with retry-on-miss under write lock.
+func (c *Client) resolveLabelID(name string) (int64, error) {
+	// Fast path: read lock.
+	c.labelMu.RLock()
+	if c.labelCache != nil {
+		if id, ok := c.labelCache[name]; ok {
+			c.labelMu.RUnlock()
+			return id, nil
+		}
+	}
+	c.labelMu.RUnlock()
+
+	// Slow path: re-fetch all labels under write lock.
+	c.labelMu.Lock()
+	defer c.labelMu.Unlock()
+	// Double-check after acquiring write lock.
+	if c.labelCache != nil {
+		if id, ok := c.labelCache[name]; ok {
+			return id, nil
+		}
+	}
+	if err := c.fetchLabelCache(); err != nil {
+		return 0, err
+	}
+	if id, ok := c.labelCache[name]; ok {
+		return id, nil
+	}
+	return 0, fmt.Errorf("unknown label %q", name)
 }
 
 // resolveLabels converts label names to Gitea integer IDs.
 func (c *Client) resolveLabels(names []string) (ids []int64, err error) {
-	if err := c.ensureLabelCache(); err != nil {
-		return nil, err
-	}
-
 	ids = make([]int64, 0, len(names))
 	for _, name := range names {
-		id, ok := c.labelCache[name]
-		if !ok {
-			return nil, fmt.Errorf("unknown label %q", name)
+		id, resolveErr := c.resolveLabelID(name)
+		if resolveErr != nil {
+			return nil, resolveErr
 		}
 		ids = append(ids, id)
 	}
-
 	return ids, nil
-}
-
-// resolveLabelID converts a single label name to its Gitea integer ID.
-func (c *Client) resolveLabelID(name string) (int64, error) {
-	if err := c.ensureLabelCache(); err != nil {
-		return 0, err
-	}
-
-	id, ok := c.labelCache[name]
-	if !ok {
-		return 0, fmt.Errorf("unknown label %q", name)
-	}
-
-	return id, nil
 }
 
 // convertIssue transforms a Gitea SDK issue into a forge.Issue.

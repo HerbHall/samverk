@@ -121,6 +121,7 @@ type Store interface {
 	GetAllIssueCounts(ctx context.Context) (map[string]IssueCounts, error)
 	GetIssueLabelCounts(ctx context.Context, project string) (map[string]int, error)
 	GetCacheSyncTime(ctx context.Context, project string) (time.Time, error)
+	GetCachedIssue(ctx context.Context, project string, number int) (*CachedIssue, error)
 
 	Close() error
 }

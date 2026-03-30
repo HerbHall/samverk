@@ -365,7 +365,7 @@ func (t *TriageAgent) autoUnblock(ctx context.Context, entry TrackerEntry, issue
 	if err := entry.Tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusNeedsHuman); err != nil {
 		return fmt.Errorf("remove needs-human: %w", err)
 	}
-	if err := entry.Tracker.AddLabel(ctx, issue.Number, models.LabelStatusQueued); err != nil {
+	if err := entry.Tracker.AddLabels(ctx, issue.Number, models.LabelStatusQueued); err != nil {
 		return fmt.Errorf("add queued: %w", err)
 	}
 

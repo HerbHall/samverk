@@ -60,7 +60,7 @@ func (d *Dispatcher) RecoverOrphanedIssues(ctx context.Context) {
 			// Orphan detected — re-queue.
 			_ = entry.Tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusClaimed)
 			_ = entry.Tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusInProgress)
-			_ = entry.Tracker.AddLabel(ctx, issue.Number, models.LabelStatusQueued)
+			_ = entry.Tracker.AddLabels(ctx, issue.Number, models.LabelStatusQueued)
 
 			comment := fmt.Sprintf(
 				"RECOVER [dispatcher] [%s]\nOrphaned issue detected on startup (previous dispatcher process ended without cleanup). Re-queued for dispatch.",

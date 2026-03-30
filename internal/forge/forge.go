@@ -55,7 +55,7 @@ type IssueTracker interface {
 
 	// Labels
 	SetLabels(ctx context.Context, number int, labels []string) error
-	AddLabel(ctx context.Context, number int, label string) error
+	AddLabels(ctx context.Context, number int, labels ...string) error
 	RemoveLabel(ctx context.Context, number int, label string) error
 
 	// Assignment
