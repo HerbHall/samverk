@@ -34,8 +34,10 @@ function priorityColor(label: string): string {
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return 'unknown'
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
+  if (diffMs < 1000) return 'just now'
   const diffMins = Math.floor(diffMs / 60_000)
   const diffHours = Math.floor(diffMs / 3_600_000)
   const diffDays = Math.floor(diffMs / 86_400_000)
@@ -45,6 +47,12 @@ function formatDate(dateStr: string): string {
   if (diffHours < 24) return `${diffHours}h ago`
   if (diffDays < 30) return `${diffDays}d ago`
   return date.toLocaleDateString()
+}
+
+function issueRefLabel(issue: Issue): string {
+  const prefix = issue.is_pull_request ? 'PR' : 'IS'
+  const project = issue.project_name || ''
+  return project ? `${project} ${prefix}#${issue.number}` : `${prefix}#${issue.number}`
 }
 
 function issueURL(issue: Issue): string {
@@ -193,7 +201,7 @@ export function MyQueue() {
                     {priority.label.replace('priority:', '').toUpperCase()}
                   </span>
 
-                  <a href={issueURL(issue)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400" onClick={(e) => e.stopPropagation()}>#{issue.number}</a>
+                  <a href={issueURL(issue)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400" onClick={(e) => e.stopPropagation()}>{issueRefLabel(issue)}</a>
 
                   <span className="flex-1 font-medium text-gray-900 dark:text-gray-100">{issue.title}</span>
 

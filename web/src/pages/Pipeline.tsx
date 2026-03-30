@@ -24,7 +24,10 @@ function formatCycleTime(hours: number): string {
 }
 
 function formatRelativeTime(ts: string): string {
-  const diffMs = Date.now() - new Date(ts).getTime()
+  const parsed = new Date(ts).getTime()
+  if (isNaN(parsed)) return 'unknown'
+  const diffMs = Date.now() - parsed
+  if (diffMs < 1000) return 'just now'
   const diffS = Math.floor(diffMs / 1000)
   if (diffS < 60) return `${diffS}s ago`
   const diffM = Math.floor(diffS / 60)
@@ -36,7 +39,7 @@ function formatRelativeTime(ts: string): string {
 
 function stageLabel(name: string): string {
   const labels: Record<string, string> = {
-    open: 'Open',
+    open: 'Unrouted',
     queued: 'Queued',
     claimed: 'Claimed',
     in_progress: 'In Progress',
@@ -47,6 +50,21 @@ function stageLabel(name: string): string {
     failed: 'Failed',
   }
   return labels[name] ?? name
+}
+
+function stageTooltip(name: string): string | undefined {
+  const tips: Record<string, string> = {
+    open: 'Issues with no status label yet — not queued or claimed.',
+    queued: 'Issues waiting for an available agent to pick up.',
+    claimed: 'An agent has claimed this issue but has not started work.',
+    in_progress: 'An agent is actively working on this issue.',
+    needs_qc: 'Work is complete, awaiting quality check.',
+    needs_human: 'Requires human review or input before proceeding.',
+    blocked: 'Blocked by a dependency or external factor.',
+    done: 'Closed / completed issues.',
+    failed: 'Issues currently in failed state (not historical failure count).',
+  }
+  return tips[name]
 }
 
 // Stages in the primary flow order (left to right)
@@ -138,19 +156,16 @@ function StagePanel({
             <ul className="space-y-2">
               {stage.issues.map((issue) => (
                 <li key={issue.number}>
-                  <a
-                    href={`https://github.com/HerbHall/samverk/issues/${issue.number}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-2 rounded-lg border dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm hover:border-blue-300 dark:hover:border-blue-600 transition-colors no-underline"
+                  <div
+                    className="flex items-start gap-2 rounded-lg border dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
                   >
                     <span className="shrink-0 font-semibold text-blue-600 dark:text-blue-400">
-                      #{issue.number}
+                      IS#{issue.number}
                     </span>
                     <span className="text-gray-800 dark:text-gray-200 leading-snug">
                       {issue.title}
                     </span>
-                  </a>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -172,11 +187,14 @@ function StageCard({
 }) {
   const colors = stageColors(stage.name, stage.count)
 
+  const tip = stageTooltip(stage.name)
+
   return (
     <button
       className={`rounded-lg border px-3 py-2 text-left transition-colors hover:opacity-80 ${colors.card}`}
       onClick={onClick}
       aria-label={`View ${stageLabel(stage.name)} issues`}
+      title={tip}
     >
       <div className={`text-xs font-semibold uppercase tracking-wide ${colors.text}`}>
         {stageLabel(stage.name)}
@@ -228,6 +246,9 @@ function EventsTable({ events, isLoading }: { events: PipelineEvent[]; isLoading
         <thead>
           <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
             <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Project
+            </th>
+            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Issue
             </th>
             <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -250,17 +271,12 @@ function EventsTable({ events, isLoading }: { events: PipelineEvent[]; isLoading
               key={idx}
               className="border-b dark:border-gray-700 last:border-0 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
             >
+              <td className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
+                {ev.project || 'samverk'}
+              </td>
               <td className="px-4 py-2 font-medium">
-                <a
-                  href={`https://github.com/HerbHall/samverk/issues/${ev.issue_number}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  #{ev.issue_number}
-                </a>
-                <span className="ml-1 text-xs text-gray-400 dark:text-gray-500 truncate max-w-[120px] inline-block align-middle">
-                  {ev.issue_title}
+                <span className="text-blue-600 dark:text-blue-400">
+                  IS#{ev.issue_number}
                 </span>
               </td>
               <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
@@ -400,9 +416,9 @@ export function Pipeline() {
             subtitle="open → done"
           />
           <MetricCard
-            label="Open Issues"
+            label="Total Open Issues"
             value={totals != null ? String(totals.open) : '—'}
-            subtitle="across all stages"
+            subtitle="all open issues across all stages"
           />
           <MetricCard
             label="Closed (24h)"

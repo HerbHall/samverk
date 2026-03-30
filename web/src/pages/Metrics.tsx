@@ -21,7 +21,10 @@ function formatMs(ms: number): string {
 }
 
 function formatRelative(dateStr: string): string {
-  const diffMs = Date.now() - new Date(dateStr).getTime()
+  const parsed = new Date(dateStr).getTime()
+  if (isNaN(parsed)) return 'unknown'
+  const diffMs = Date.now() - parsed
+  if (diffMs < 1000) return 'just now'
   const m = Math.floor(diffMs / 60_000)
   const h = Math.floor(diffMs / 3_600_000)
   const d = Math.floor(diffMs / 86_400_000)
@@ -258,8 +261,8 @@ function IssueSummary({ issues }: { issues: Issue[] }) {
     <SectionCard title="Issues">
       <div className="grid grid-cols-2 gap-3 py-2">
         <div>
-          <MetricRow label="Total Open" value={openCount.toString()} />
-          <MetricRow label="Total Closed" value={closedCount.toString()} />
+          <MetricRow label="Total Open" value={openCount.toString()} tooltip="All open issues across all pipeline stages." />
+          <MetricRow label="Total Closed" value={closedCount.toString()} tooltip="All closed/completed issues." />
           <MetricRow label="Closed (24h)" value={closed24h.toString()} />
           <MetricRow label="Closed (7d)" value={closed7d.toString()} />
         </div>
@@ -301,7 +304,7 @@ function ActivityFeed({ sessions }: { sessions: Session[] }) {
               <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[s.status] ?? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
                 {s.status}
               </span>
-              <a href={`https://github.com/HerbHall/samverk/issues/${s.issue_number}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">#{s.issue_number}</a>
+              <span className="text-sm font-medium text-blue-600 dark:text-blue-400">IS#{s.issue_number}</span>
               <span className="text-xs text-gray-500 dark:text-gray-400">{s.agent_type}</span>
               <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{s.provider}</span>
               <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">{formatRelative(s.started_at)}</span>
@@ -598,12 +601,12 @@ export function Metrics() {
         <div className="space-y-6">
           {/* Top-line stats */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-            <StatCard label="Open Issues" value={openCount.toString()} color="text-blue-700 dark:text-blue-400" sub={`${closedCount} closed`} />
+            <StatCard label="Total Open Issues" value={openCount.toString()} color="text-blue-700 dark:text-blue-400" sub={`all open across all stages · ${closedCount} closed`} />
             <StatCard label="Sessions" value={totalSessions.toString()} sub={`${completedSessions} completed`} />
             <StatCard
               label="Tasks Completed"
               value={(metrics.data.pool?.tasks_completed ?? 0).toLocaleString()}
-              sub={`${metrics.data.pool?.tasks_failed ?? 0} failed`}
+              sub={`${metrics.data.pool?.tasks_failed ?? 0} pool task failures (since startup)`}
             />
             <StatCard
               label="Events Processed"

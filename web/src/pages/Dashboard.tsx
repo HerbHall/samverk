@@ -237,15 +237,11 @@ function WorkerCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <a
-              href={`https://github.com/HerbHall/samverk/issues/${w.issue_number}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400 shrink-0"
-              onClick={(e) => e.stopPropagation()}
+            <span
+              className="text-sm font-semibold text-blue-600 dark:text-blue-400 shrink-0"
             >
-              #{w.issue_number}
-            </a>
+              IS#{w.issue_number}
+            </span>
             <span
               className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${agentColor}`}
             >
@@ -491,9 +487,9 @@ export function Dashboard() {
             to="/metrics"
           />
           <OverviewCard
-            title="Open Issues"
+            title="Total Open Issues"
             value={openIssueCount.toString()}
-            subtitle={issues.isLoading ? 'loading…' : undefined}
+            subtitle={issues.isLoading ? 'loading…' : 'all open across all stages'}
             to="/issues"
           />
           <OverviewCard

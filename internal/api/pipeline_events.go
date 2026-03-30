@@ -18,7 +18,7 @@ type pipelineEventDTO struct {
 	FromStage   string    `json:"from_stage"`
 	ToStage     string    `json:"to_stage"`
 	TriggeredBy string    `json:"triggered_by"`
-	OccurredAt  time.Time `json:"occurred_at"`
+	OccurredAt  time.Time `json:"timestamp"`
 }
 
 // throughputDTO is the JSON shape returned by GET /api/v1/pipeline/throughput.

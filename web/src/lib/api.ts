@@ -45,6 +45,7 @@ export interface Issue {
   repo?: string
   forge_url?: string
   forge_type?: string
+  is_pull_request?: boolean
 }
 
 export interface Session {
@@ -617,7 +618,7 @@ export interface IssueSummary {
 
 export interface PipelineEvent {
   issue_number: number
-  issue_title: string
+  project: string
   from_stage: string
   to_stage: string
   triggered_by: string

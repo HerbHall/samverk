@@ -40,8 +40,10 @@ function LabelBadge({ label }: { label: string }) {
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return 'unknown'
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
+  if (diffMs < 1000) return 'just now'
   const diffMins = Math.floor(diffMs / 60_000)
   const diffHours = Math.floor(diffMs / 3_600_000)
   const diffDays = Math.floor(diffMs / 86_400_000)
@@ -51,6 +53,12 @@ function formatDate(dateStr: string): string {
   if (diffHours < 24) return `${diffHours}h ago`
   if (diffDays < 30) return `${diffDays}d ago`
   return date.toLocaleDateString()
+}
+
+function issueRefLabel(issue: Issue): string {
+  const prefix = issue.is_pull_request ? 'PR' : 'IS'
+  const project = issue.project_name || ''
+  return project ? `${project} ${prefix}#${issue.number}` : `${prefix}#${issue.number}`
 }
 
 interface Toast {
@@ -494,15 +502,11 @@ function IssueRow({
           />
         </td>
         <td className="px-4 py-2.5 font-medium">
-          <a
-            href={`https://github.com/HerbHall/samverk/issues/${issue.number}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:underline dark:text-blue-400"
-            onClick={(e) => e.stopPropagation()}
+          <span
+            className="text-blue-600 dark:text-blue-400"
           >
-            #{issue.number}
-          </a>
+            {issueRefLabel(issue)}
+          </span>
         </td>
         <td className="px-4 py-2.5">
           <div className="flex items-center gap-2">

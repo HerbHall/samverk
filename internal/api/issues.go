@@ -32,7 +32,8 @@ type issueResponse struct {
 	Owner       string `json:"owner,omitempty"`
 	Repo        string `json:"repo,omitempty"`
 	ForgeURL    string `json:"forge_url,omitempty"`
-	ForgeType   string `json:"forge_type,omitempty"`
+	ForgeType     string `json:"forge_type,omitempty"`
+	IsPullRequest bool   `json:"is_pull_request,omitempty"`
 }
 
 // toIssueResponse converts a forge.Issue to the API response type without
@@ -65,6 +66,7 @@ func toIssueResponseForProject(iss *forge.Issue, p *internalmcp.Project) issueRe
 	if r.Assignees == nil {
 		r.Assignees = []string{}
 	}
+	r.IsPullRequest = iss.IsPullRequest
 	if p != nil {
 		r.ProjectName = p.Name
 		r.Owner = p.Owner
