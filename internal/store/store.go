@@ -20,7 +20,7 @@ import (
 // ErrNotFound is returned when a requested record does not exist.
 var ErrNotFound = errors.New("not found")
 
-// PipelineEvent records a stage transition for an issue in the pipeline.
+// PipelineEvent records a stage transition or general event for an issue.
 type PipelineEvent struct {
 	ID          int64
 	IssueNumber int
@@ -29,6 +29,11 @@ type PipelineEvent struct {
 	ToStage     string
 	TriggeredBy string
 	OccurredAt  time.Time
+	// Extended fields (Wave 3): broader event types beyond stage transitions.
+	EventType string // "stage_change", "label_added", "label_removed", etc.
+	Key       string // label name, field name, or other event-specific key
+	Value     string // new value
+	OldValue  string // previous value
 }
 
 // Store defines the persistence interface for Samverk.
@@ -106,6 +111,7 @@ type Store interface {
 
 	// Pipeline events (written by dispatcher on each stage transition, read by API)
 	RecordPipelineEvent(ctx context.Context, e PipelineEvent) error
+	RecordEvent(ctx context.Context, e PipelineEvent) error
 	GetPipelineEvents(ctx context.Context, issueNumber int, since time.Time, limit int) ([]PipelineEvent, error)
 
 	// Triage decisions (written by triage agent, read by API and digest)
@@ -385,6 +391,11 @@ CREATE INDEX IF NOT EXISTS idx_issue_cache_state ON issue_cache(project, state);
 		`ALTER TABLE failure_events ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
 		// Issue cache body column for frontmatter parsing without API calls.
 		`ALTER TABLE issue_cache ADD COLUMN body TEXT NOT NULL DEFAULT ''`,
+		// Extended pipeline_events columns for general event recording (Wave 3).
+		`ALTER TABLE pipeline_events ADD COLUMN event_type TEXT NOT NULL DEFAULT 'stage_change'`,
+		`ALTER TABLE pipeline_events ADD COLUMN key TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE pipeline_events ADD COLUMN value TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE pipeline_events ADD COLUMN old_value TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		if _, err := s.db.ExecContext(context.Background(), m); err != nil {

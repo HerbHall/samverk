@@ -14,6 +14,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/agent"
 	"github.com/herbhall/samverk/internal/autonomy"
+	"github.com/herbhall/samverk/internal/eventbus"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/provider"
@@ -67,6 +68,7 @@ type Dispatcher struct {
 	configReloadError error          // last config reload error; nil = OK
 	primaryForgeType  string         // current primary forge type label (for logging)
 	primaryForgeURL   string         // current primary forge URL (for logging)
+	eventBus          *eventbus.Bus  // optional in-process event pub/sub
 	triageAgent       *TriageAgent   // optional autonomous triage agent
 	qualityChecked    sync.Map       // issueKey -> struct{}; tracks issues with quality warning already checked
 	draining          atomic.Bool    // when true, no new work is claimed
@@ -153,6 +155,11 @@ func (d *Dispatcher) SetHealthMonitor(hm *provider.HealthMonitor) {
 // in other registered projects (e.g., "owner/repo#42").
 func (d *Dispatcher) SetProjectResolver(pr ProjectResolver) {
 	d.projects = pr
+}
+
+// SetEventBus configures the in-process event bus for pub/sub.
+func (d *Dispatcher) SetEventBus(bus *eventbus.Bus) {
+	d.eventBus = bus
 }
 
 // SetBroadcaster configures an optional event broadcaster for real-time WebSocket updates.
@@ -400,6 +407,11 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 
 	// Start issue cache sync (populates SQLite with accurate issue counts).
 	go d.runIssueCacheSync(ctx)
+
+	// Start event recorder: subscribes to all bus events and persists to SQLite.
+	if d.eventBus != nil && d.store != nil {
+		go d.runEventRecorder(ctx)
+	}
 
 	// Start autonomous triage agent if configured.
 	if d.triageAgent != nil {
@@ -693,6 +705,18 @@ func (d *Dispatcher) handleEvent(ctx context.Context, ev forge.Event) {
 	// current without a separate incremental sync, eliminating redundant
 	// API calls that the incremental ticker previously made.
 	d.updateCacheFromEvent(ctx, ev)
+
+	// Publish to in-process event bus for subscribers (event recorder, future consumers).
+	if d.eventBus != nil {
+		d.eventBus.Publish(eventbus.Event{
+			Type:        eventbus.EventType(ev.Type),
+			Project:     ev.Repo,
+			IssueNumber: ev.IssueNumber,
+			Key:         ev.Label,
+			Source:      "watch",
+			Timestamp:   time.Now(),
+		})
+	}
 
 	var err error
 	switch ev.Type {

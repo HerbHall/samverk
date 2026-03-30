@@ -27,6 +27,7 @@ import (
 	"github.com/herbhall/samverk/internal/cost"
 	"github.com/herbhall/samverk/internal/digest"
 	"github.com/herbhall/samverk/internal/dispatcher"
+	"github.com/herbhall/samverk/internal/eventbus"
 	"github.com/herbhall/samverk/internal/forge"
 	"github.com/herbhall/samverk/internal/logstore"
 	giteaadapter "github.com/herbhall/samverk/internal/forge/gitea"
@@ -887,6 +888,10 @@ func dispatchCmd() *cobra.Command {
 			}
 			disp := dispatcher.New(trackerEntries, policy, st, pool, nil, logger)
 			disp.SetProjectResolver(registry)
+
+			// Wire in-process event bus for pub/sub (event recording, future subscribers).
+			bus := eventbus.New(64)
+			disp.SetEventBus(bus)
 
 			// Wire WebSocket hub for real-time event broadcasting.
 			// The hub runs independently; a future serve+dispatch combined mode

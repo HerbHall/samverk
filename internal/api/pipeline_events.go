@@ -69,15 +69,15 @@ func (a *API) handlePipelineEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dtos := make([]pipelineEventDTO, len(events))
-	for i, ev := range events {
+	for i := range events {
 		dtos[i] = pipelineEventDTO{
-			ID:          ev.ID,
-			IssueNumber: ev.IssueNumber,
-			Project:     ev.Project,
-			FromStage:   ev.FromStage,
-			ToStage:     ev.ToStage,
-			TriggeredBy: ev.TriggeredBy,
-			OccurredAt:  ev.OccurredAt,
+			ID:          events[i].ID,
+			IssueNumber: events[i].IssueNumber,
+			Project:     events[i].Project,
+			FromStage:   events[i].FromStage,
+			ToStage:     events[i].ToStage,
+			TriggeredBy: events[i].TriggeredBy,
+			OccurredAt:  events[i].OccurredAt,
 		}
 	}
 

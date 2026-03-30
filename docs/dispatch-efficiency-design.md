@@ -585,6 +585,41 @@ is nil.
 **Steady-state API calls from heartbeat ticker: 0** (down from ~6/min).
 Only Watch polling and full reconciliation (15 min) make forge API calls.
 
+### What Shipped (PR 2: EventBus + event recording)
+
+**EventBus (`internal/eventbus/`):**
+
+- Lightweight in-process pub/sub with buffered channels (default 64)
+- Subscribe to all events or filter by type
+- Non-blocking publish: drops events for slow subscribers
+- Thread-safe via sync.RWMutex
+- 6 tests: subscribe, filter, multi-subscriber, full-buffer drop, unsubscribe, close
+
+**Extended pipeline_events table:**
+
+- Added `event_type`, `key`, `value`, `old_value` columns (idempotent migration)
+- New `RecordEvent` method writes the extended fields
+- Existing `RecordPipelineEvent` continues working (defaults for new columns)
+
+**Event recorder goroutine:**
+
+- Subscribes to all bus events in the dispatcher
+- Persists each event to pipeline_events via `RecordEvent`
+- Runs as a goroutine alongside issue cache sync and triage agent
+
+**Integration:**
+
+- `handleEvent` publishes to the bus after `updateCacheFromEvent`
+- Bus created in `cmd/samverk/main.go` and wired via `SetEventBus`
+- Foundation for future subscribers (e.g., dashboard real-time updates,
+  metrics aggregation) without modifying the event switch
+
+### Input to Wave 4
+
+- EventBus subscribers can replace remaining polling patterns
+- `issue_state` computed cache can be derived from bus events
+- The event recorder provides an audit trail for debugging
+
 ## References
 
 - [ADR-027: Failure Recovery](decisions/ADR-027-failure-recovery.md)

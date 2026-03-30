@@ -49,6 +49,26 @@ func (s *SQLiteStore) RecordPipelineEvent(ctx context.Context, e PipelineEvent) 
 	return nil
 }
 
+// RecordEvent inserts a general event into the pipeline_events table.
+// Unlike RecordPipelineEvent, this writes the extended fields (event_type, key, value, old_value).
+func (s *SQLiteStore) RecordEvent(ctx context.Context, e PipelineEvent) error {
+	eventType := e.EventType
+	if eventType == "" {
+		eventType = "stage_change"
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO pipeline_events (issue_number, project, from_stage, to_stage, triggered_by, occurred_at, event_type, key, value, old_value)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.IssueNumber, e.Project, e.FromStage, e.ToStage, e.TriggeredBy,
+		e.OccurredAt.UTC().Format(time.RFC3339),
+		eventType, e.Key, e.Value, e.OldValue,
+	)
+	if err != nil {
+		return fmt.Errorf("record event: %w", err)
+	}
+	return nil
+}
+
 // GetPipelineEvents returns pipeline events for an issue since the given time,
 // ordered by occurred_at ascending. Use issueNumber=0 to query all issues.
 // Use limit=0 for no row limit.
