@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbhall/samverk/internal/autonomy"
 	"github.com/herbhall/samverk/internal/forge"
+	"github.com/herbhall/samverk/internal/store"
 	"github.com/herbhall/samverk/pkg/models"
 )
 
@@ -253,6 +254,33 @@ func (m *mockIssueTracker) Unassign(context.Context, int, string) error    { pan
 func (m *mockIssueTracker) Watch(context.Context, func(forge.Event)) error { panic("not called") }
 func (m *mockIssueTracker) SearchIssues(context.Context, *forge.SearchOptions) ([]*forge.Issue, error) {
 	panic("not called")
+}
+
+// mockIssueCacheReader implements IssueCacheReader for tests.
+type mockIssueCacheReader struct {
+	issues       map[int]*store.CachedIssue
+	failureCounts map[int]int
+	cachedByLabel []store.CachedIssue
+}
+
+func (m *mockIssueCacheReader) GetCachedIssue(_ context.Context, _ string, number int) (*store.CachedIssue, error) {
+	if m.issues == nil {
+		return nil, store.ErrNotFound
+	}
+	ci, ok := m.issues[number]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return ci, nil
+}
+func (m *mockIssueCacheReader) GetIssueFailureCount(_ context.Context, issueNum int) (int, error) {
+	if m.failureCounts == nil {
+		return 0, nil
+	}
+	return m.failureCounts[issueNum], nil
+}
+func (m *mockIssueCacheReader) ListCachedIssues(_ context.Context, _, _ string, _ []string) ([]store.CachedIssue, error) {
+	return m.cachedByLabel, nil
 }
 
 func TestCheckReviewComments_CreatesRemediationIssue(t *testing.T) {
@@ -1183,5 +1211,176 @@ func TestRemediateNonMergeableConflict_NoLinkedIssue(t *testing.T) {
 	}
 	if len(it.removeLabelCalls) > 0 {
 		t.Error("should not remove labels when no linked issue")
+	}
+}
+
+// --- Cache-based path tests ---
+
+func TestCheckReviewComments_CacheFindsExistingRemediation(t *testing.T) {
+	pm := &mockPRManager{
+		reviewComments: []forge.ReviewComment{
+			{Author: "copilot", Body: "Fix this", Path: "main.go", EndLine: 1},
+		},
+	}
+	it := &mockIssueTracker{}
+	cache := &mockIssueCacheReader{
+		cachedByLabel: []store.CachedIssue{
+			{Number: 99, Title: "fix(#42): existing remediation", Labels: []string{"pr:42"}},
+		},
+	}
+
+	w := &Watcher{
+		prManager:    pm,
+		issueTracker: it,
+		issueCache:   cache,
+		project:      "test-project",
+		mergeCfg:     autonomy.MergeConfig{TrustedReviewers: []string{"copilot"}},
+	}
+
+	pr := &forge.PullRequest{Number: 42, Title: "Some PR", Labels: []string{"auto"}}
+
+	hasBlocking, err := w.checkReviewComments(context.Background(), pr)
+	if err != nil {
+		t.Fatalf("checkReviewComments: %v", err)
+	}
+	if !hasBlocking {
+		t.Error("expected hasBlocking=true (existing issue in cache)")
+	}
+	if it.createdIssue != nil {
+		t.Error("should not create duplicate issue when cache finds existing")
+	}
+}
+
+func TestCheckReviewComments_CacheFindsNoExisting_CreatesIssue(t *testing.T) {
+	pm := &mockPRManager{
+		reviewComments: []forge.ReviewComment{
+			{Author: "copilot", Body: "Fix this", Path: "main.go", EndLine: 1},
+		},
+	}
+	it := &mockIssueTracker{}
+	cache := &mockIssueCacheReader{
+		cachedByLabel: nil,
+	}
+
+	w := &Watcher{
+		prManager:    pm,
+		issueTracker: it,
+		issueCache:   cache,
+		project:      "test-project",
+		mergeCfg:     autonomy.MergeConfig{TrustedReviewers: []string{"copilot"}},
+	}
+
+	pr := &forge.PullRequest{Number: 42, Title: "feat: something", Head: "feature/x", Labels: []string{"auto"}}
+
+	hasBlocking, err := w.checkReviewComments(context.Background(), pr)
+	if err != nil {
+		t.Fatalf("checkReviewComments: %v", err)
+	}
+	if !hasBlocking {
+		t.Error("expected hasBlocking=true")
+	}
+	if it.createdIssue == nil {
+		t.Fatal("expected remediation issue to be created")
+	}
+}
+
+func TestUnblockDependents_CachePath(t *testing.T) {
+	it := &mockIssueTracker{}
+	cache := &mockIssueCacheReader{
+		cachedByLabel: []store.CachedIssue{
+			{
+				Number: 10,
+				Body:   "---\ndepends_on:\n  - 5\n---\nBlocked issue",
+				Labels: []string{models.LabelStatusBlocked},
+			},
+			{
+				Number: 20,
+				Body:   "---\ndepends_on:\n  - 99\n---\nUnrelated blocked issue",
+				Labels: []string{models.LabelStatusBlocked},
+			},
+		},
+		issues: map[int]*store.CachedIssue{
+			5: {Number: 5, State: "closed", Labels: []string{models.LabelStatusDone}},
+		},
+	}
+
+	w := &Watcher{
+		issueTracker: it,
+		issueCache:   cache,
+		project:      "test-project",
+	}
+
+	err := w.unblockDependents(context.Background(), 5)
+	if err != nil {
+		t.Fatalf("unblockDependents: %v", err)
+	}
+
+	// Issue #10 depends on #5 (now closed) -> should be unblocked.
+	if labels, ok := it.removeLabelCalls[10]; !ok {
+		t.Error("expected RemoveLabel call for issue #10")
+	} else if len(labels) != 1 || labels[0] != models.LabelStatusBlocked {
+		t.Errorf("RemoveLabel labels = %v, want [status:blocked]", labels)
+	}
+
+	if labels, ok := it.addLabelCalls[10]; !ok {
+		t.Error("expected AddLabels call for issue #10")
+	} else if len(labels) != 1 || labels[0] != models.LabelStatusQueued {
+		t.Errorf("AddLabels labels = %v, want [status:queued]", labels)
+	}
+
+	// Issue #20 depends on #99 (not #5) -> should NOT be unblocked.
+	if _, ok := it.removeLabelCalls[20]; ok {
+		t.Error("should not remove labels from issue #20 (depends on #99, not #5)")
+	}
+}
+
+func TestCheckAllDependenciesSatisfied_CachePath(t *testing.T) {
+	cache := &mockIssueCacheReader{
+		issues: map[int]*store.CachedIssue{
+			5:  {Number: 5, State: "closed", Labels: []string{models.LabelStatusDone}},
+			10: {Number: 10, State: "open", Labels: []string{models.LabelStatusQueued}},
+		},
+	}
+
+	w := &Watcher{
+		issueCache: cache,
+		project:    "test-project",
+	}
+
+	tests := []struct {
+		name    string
+		deps    []models.Dependency
+		blocked bool
+	}{
+		{
+			name:    "all deps satisfied",
+			deps:    []models.Dependency{{Number: 5}},
+			blocked: false,
+		},
+		{
+			name:    "dep still open",
+			deps:    []models.Dependency{{Number: 10}},
+			blocked: true,
+		},
+		{
+			name:    "mixed deps - one open blocks",
+			deps:    []models.Dependency{{Number: 5}, {Number: 10}},
+			blocked: true,
+		},
+		{
+			name:    "no deps",
+			deps:    nil,
+			blocked: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fm := &models.IssueFrontmatter{DependsOn: tt.deps}
+			got := w.checkAllDependenciesSatisfied(context.Background(), fm)
+			if got != tt.blocked {
+				t.Errorf("checkAllDependenciesSatisfied() = %v, want %v", got, tt.blocked)
+			}
+		})
 	}
 }

@@ -257,6 +257,9 @@ func (m *mockStore) GetCacheSyncTime(_ context.Context, _ string) (time.Time, er
 func (m *mockStore) GetCachedIssue(_ context.Context, _ string, _ int) (*store.CachedIssue, error) {
 	return nil, store.ErrNotFound
 }
+func (m *mockStore) ListCachedIssues(_ context.Context, _, _ string, _ []string) ([]store.CachedIssue, error) {
+	return nil, nil
+}
 func (m *mockStore) Close() error { return nil }
 func (m *mockStore) GetLatestCheckpoint(_ context.Context, _ int) (string, error) {
 	return "", nil

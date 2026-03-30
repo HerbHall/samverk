@@ -206,3 +206,75 @@ func TestSyncIssuesEmpty(t *testing.T) {
 		t.Errorf("counts = %d/%d, want 0/0", open, closed)
 	}
 }
+
+func TestListCachedIssues(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	issues := []CachedIssue{
+		{Number: 1, Title: "Bug", Body: "body1", State: "open", Labels: []string{"bug", "priority:high"}, Assignees: []string{}, CreatedAt: now, UpdatedAt: now},
+		{Number: 2, Title: "Feature", Body: "body2", State: "open", Labels: []string{"feat"}, Assignees: []string{}, CreatedAt: now, UpdatedAt: now},
+		{Number: 3, Title: "Blocked", Body: "body3", State: "open", Labels: []string{"status:blocked", "bug"}, Assignees: []string{}, CreatedAt: now, UpdatedAt: now},
+		{Number: 4, Title: "Closed", Body: "body4", State: "closed", Labels: []string{"bug"}, Assignees: []string{}, CreatedAt: now, UpdatedAt: now, ClosedAt: &now},
+	}
+	if err := s.SyncIssues(ctx, "proj", issues); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	t.Run("filter by state only", func(t *testing.T) {
+		result, err := s.ListCachedIssues(ctx, "proj", "open", nil)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		if len(result) != 3 {
+			t.Errorf("got %d issues, want 3", len(result))
+		}
+	})
+
+	t.Run("filter by label", func(t *testing.T) {
+		result, err := s.ListCachedIssues(ctx, "proj", "open", []string{"bug"})
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		if len(result) != 2 {
+			t.Errorf("got %d issues, want 2 (issues 1 and 3)", len(result))
+		}
+	})
+
+	t.Run("filter by multiple labels (AND)", func(t *testing.T) {
+		result, err := s.ListCachedIssues(ctx, "proj", "open", []string{"bug", "priority:high"})
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		if len(result) != 1 {
+			t.Errorf("got %d issues, want 1 (issue 1 only)", len(result))
+		}
+		if len(result) > 0 && result[0].Number != 1 {
+			t.Errorf("got issue #%d, want #1", result[0].Number)
+		}
+	})
+
+	t.Run("no matches", func(t *testing.T) {
+		result, err := s.ListCachedIssues(ctx, "proj", "open", []string{"nonexistent"})
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("got %d issues, want 0", len(result))
+		}
+	})
+
+	t.Run("body is preserved", func(t *testing.T) {
+		result, err := s.ListCachedIssues(ctx, "proj", "open", []string{"status:blocked"})
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		if len(result) != 1 {
+			t.Fatalf("got %d issues, want 1", len(result))
+		}
+		if result[0].Body != "body3" {
+			t.Errorf("body = %q, want %q", result[0].Body, "body3")
+		}
+	})
+}

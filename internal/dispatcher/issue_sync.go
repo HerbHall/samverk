@@ -227,6 +227,7 @@ func forgeIssuesToCached(issues []*forge.Issue) []store.CachedIssue {
 		result[i] = store.CachedIssue{
 			Number:    iss.Number,
 			Title:     iss.Title,
+			Body:      iss.Body,
 			State:     string(iss.State),
 			Labels:    labels,
 			Assignees: assignees,

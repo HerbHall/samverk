@@ -484,6 +484,70 @@ vocabulary is finite and known at compile time.
   check makes it redundant for restart recovery -- could be removed in Wave 2.
 - Backfill tooling should be improved before Wave 3 adds more label types.
 
+## Wave 2 Results (2026-03-30)
+
+### What Shipped
+
+**PR watcher: ListIssues elimination (prwatcher/watcher.go)**
+
+- `checkReviewComments`: replaced `ListIssues(state=open, labels=[pr:N])`
+  with `ListCachedIssues` SQLite query. Falls back to API when cache
+  unavailable.
+- `unblockDependents`: replaced `ListIssues(state=open, labels=[status:blocked])`
+  with `ListCachedIssues` SQLite query. Extracted `tryUnblockIssue` helper
+  for both cache and fallback paths.
+- `checkAllDependenciesSatisfied`: replaced per-dependency `GetIssue` API
+  calls with `GetCachedIssue` SQLite lookups. Eliminates N API calls per
+  blocked issue check.
+
+**Issue cache: body column + ListCachedIssues**
+
+- Added `body` column to `issue_cache` table (schema migration for existing
+  databases). Enables frontmatter parsing from cache without API calls.
+- Added `ListCachedIssues(ctx, project, state, labels)` to store. Uses
+  `LIKE` on JSON-encoded label arrays for label filtering.
+- Extended `IssueCacheReader` interface so prwatcher can query cache.
+- Updated `forgeIssuesToCached` to include body.
+
+**Watch + issue_sync consolidation**
+
+- Eliminated incremental sync ticker (was 60s). Watch events now update
+  the cache directly via `updateCacheFromEvent` called from `handleEvent`.
+- Full reconciliation remains at 15-minute intervals as a safety net.
+- Removed `syncAllIssuesIncremental` function and
+  `defaultIncrementalSyncInterval` constant.
+- Net result: ~15 fewer API calls per 15-minute window (eliminated the
+  `?since=` polling entirely).
+
+### API Call Reduction
+
+| Component | Before Wave 2 | After Wave 2 | Savings |
+| --------- | ------------- | ------------ | ------- |
+| Issue sync incremental (60s) | ~15 calls/15min | 0 | -15 |
+| prwatcher ListIssues (remediation check) | 1 per PR per poll | 0 (cache) | variable |
+| prwatcher ListIssues (unblock deps) | 1 per merge | 0 (cache) | variable |
+| prwatcher GetIssue (dep check) | N per blocked issue | 0 (cache) | variable |
+| Full reconciliation (15min) | unchanged | unchanged | 0 |
+| Watch (30s) | unchanged | unchanged | 0 |
+
+### Architecture Established
+
+- **Event-driven cache updates**: Watch events write to SQLite cache
+  immediately, replacing poll-based incremental sync.
+- **Body in cache**: enables frontmatter parsing without API calls,
+  unlocking future dependency resolution from cache.
+- **Graceful degradation**: all cache-based paths fall back to API
+  when cache is unavailable (nil issueCache).
+
+### Input to Wave 3
+
+- Event-driven updates from Watch demonstrate the EventBus pattern.
+  Wave 3 formalizes this with `issue_events` SQLite table.
+- `updateCacheFromEvent` is the natural integration point for an
+  `EventBus.Publish()` call when the bus is introduced.
+- The `issue_state` computed cache table (Wave 3) can be populated
+  from the same events.
+
 ## References
 
 - [ADR-027: Failure Recovery](decisions/ADR-027-failure-recovery.md)

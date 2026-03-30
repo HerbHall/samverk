@@ -122,6 +122,7 @@ type Store interface {
 	GetIssueLabelCounts(ctx context.Context, project string) (map[string]int, error)
 	GetCacheSyncTime(ctx context.Context, project string) (time.Time, error)
 	GetCachedIssue(ctx context.Context, project string, number int) (*CachedIssue, error)
+	ListCachedIssues(ctx context.Context, project, state string, labels []string) ([]CachedIssue, error)
 
 	Close() error
 }
@@ -344,6 +345,7 @@ CREATE TABLE IF NOT EXISTS issue_cache (
 	number       INTEGER NOT NULL,
 	project      TEXT NOT NULL,
 	title        TEXT NOT NULL,
+	body         TEXT NOT NULL DEFAULT '',
 	state        TEXT NOT NULL,
 	labels       TEXT NOT NULL DEFAULT '[]',
 	assignees    TEXT NOT NULL DEFAULT '[]',
@@ -381,6 +383,8 @@ CREATE INDEX IF NOT EXISTS idx_issue_cache_state ON issue_cache(project, state);
 		`ALTER TABLE failure_events ADD COLUMN component TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE failure_events ADD COLUMN resolved_at TEXT`,
 		`ALTER TABLE failure_events ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
+		// Issue cache body column for frontmatter parsing without API calls.
+		`ALTER TABLE issue_cache ADD COLUMN body TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		if _, err := s.db.ExecContext(context.Background(), m); err != nil {

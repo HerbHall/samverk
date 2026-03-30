@@ -14,6 +14,7 @@ import (
 type CachedIssue struct {
 	Number    int
 	Title     string
+	Body      string // full body text (includes frontmatter)
 	State     string // "open" or "closed"
 	Labels    []string
 	Assignees []string
@@ -43,10 +44,11 @@ func (s *SQLiteStore) SyncIssues(ctx context.Context, project string, issues []C
 	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO issue_cache (number, project, title, state, labels, assignees, created_at, updated_at, closed_at, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO issue_cache (number, project, title, body, state, labels, assignees, created_at, updated_at, closed_at, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(project, number) DO UPDATE SET
 			title     = excluded.title,
+			body      = excluded.body,
 			state     = excluded.state,
 			labels    = excluded.labels,
 			assignees = excluded.assignees,
@@ -77,6 +79,7 @@ func (s *SQLiteStore) SyncIssues(ctx context.Context, project string, issues []C
 			iss.Number,
 			project,
 			iss.Title,
+			iss.Body,
 			iss.State,
 			string(labelsJSON),
 			string(assigneesJSON),
@@ -212,6 +215,68 @@ func (s *SQLiteStore) GetIssueLabelCounts(ctx context.Context, project string) (
 	return counts, rows.Err()
 }
 
+// ListCachedIssues returns cached issues matching the given state and containing
+// all specified labels. Labels are stored as JSON arrays; each is checked via
+// a JSON substring match. An empty labels slice returns all issues in that state.
+func (s *SQLiteStore) ListCachedIssues(ctx context.Context, project, state string, labels []string) ([]CachedIssue, error) {
+	query := `SELECT number, title, body, state, labels, assignees, created_at, updated_at, closed_at
+		FROM issue_cache WHERE project = ? AND state = ?`
+	args := make([]any, 0, 2+len(labels))
+	args = append(args, project, state)
+
+	// Each label must appear in the JSON array. Use LIKE for portability
+	// (no json_each extension needed). The format is '["label1","label2"]'.
+	for _, label := range labels {
+		query += ` AND labels LIKE ?`
+		args = append(args, `%"`+label+`"%`)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list cached issues: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []CachedIssue
+	for rows.Next() {
+		var ci CachedIssue
+		var labelsJSON, assigneesJSON string
+		var closedAt sql.NullString
+		var createdAt, updatedAt string
+
+		if err := rows.Scan(&ci.Number, &ci.Title, &ci.Body, &ci.State,
+			&labelsJSON, &assigneesJSON, &createdAt, &updatedAt, &closedAt); err != nil {
+			return nil, fmt.Errorf("list cached issues: scan: %w", err)
+		}
+
+		if labelsJSON != "" {
+			if jsonErr := json.Unmarshal([]byte(labelsJSON), &ci.Labels); jsonErr != nil {
+				continue // skip malformed rows
+			}
+		}
+		if assigneesJSON != "" {
+			if jsonErr := json.Unmarshal([]byte(assigneesJSON), &ci.Assignees); jsonErr != nil {
+				continue
+			}
+		}
+		if t, parseErr := time.Parse(time.RFC3339, createdAt); parseErr == nil {
+			ci.CreatedAt = t
+		}
+		if t, parseErr := time.Parse(time.RFC3339, updatedAt); parseErr == nil {
+			ci.UpdatedAt = t
+		}
+		if closedAt.Valid && closedAt.String != "" {
+			if t, parseErr := time.Parse(time.RFC3339, closedAt.String); parseErr == nil {
+				ci.ClosedAt = &t
+			}
+		}
+
+		result = append(result, ci)
+	}
+
+	return result, rows.Err()
+}
+
 // GetCacheSyncTime returns the most recent synced_at time for a project.
 func (s *SQLiteStore) GetCacheSyncTime(ctx context.Context, project string) (time.Time, error) {
 	var ts string
@@ -241,10 +306,10 @@ func (s *SQLiteStore) GetCachedIssue(ctx context.Context, project string, number
 	var createdAt, updatedAt string
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT number, title, state, labels, assignees, created_at, updated_at, closed_at
+		`SELECT number, title, body, state, labels, assignees, created_at, updated_at, closed_at
 		 FROM issue_cache WHERE project = ? AND number = ?`,
 		project, number,
-	).Scan(&ci.Number, &ci.Title, &ci.State, &labelsJSON, &assigneesJSON,
+	).Scan(&ci.Number, &ci.Title, &ci.Body, &ci.State, &labelsJSON, &assigneesJSON,
 		&createdAt, &updatedAt, &closedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
