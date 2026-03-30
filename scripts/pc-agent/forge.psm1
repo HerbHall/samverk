@@ -28,19 +28,30 @@ $script:DefaultForgeConfig = @{
     Project         = 'HerbHall/samverk'
     AgentId         = 'pc-worker'
     PollInterval    = 60
-    AgentLabels     = @('agent:code-gen', 'agent:triage', 'agent:research', 'agent:docs')
+    AgentLabels     = @('agent:code-gen', 'agent:triage', 'agent:research', 'agent:docs', 'agent:pc')
 }
 
 function Get-ForgeConfig {
     <#
     .SYNOPSIS
-        Returns forge configuration from .samverk/pc-agent.yaml or defaults.
+        Returns forge configuration, merging defaults with environment overrides.
+    .DESCRIPTION
+        Environment variables override hardcoded defaults so PC workers can be
+        configured per-deployment (Docker, different forges, multi-project).
+        Env vars: SAMVERK_FORGE, SAMVERK_FORGE_URL, SAMVERK_FORGE_PROJECT,
+        SAMVERK_AGENT_ID.
     #>
     [CmdletBinding()]
     param([string]$YamlPath = '')
-    # YAML parsing requires powershell-yaml module (optional dependency).
-    # Falls back to defaults when the module or file is unavailable.
-    return $script:DefaultForgeConfig
+
+    $config = $script:DefaultForgeConfig.Clone()
+
+    if ($env:SAMVERK_FORGE)         { $config.Forge    = $env:SAMVERK_FORGE }
+    if ($env:SAMVERK_FORGE_URL)     { $config.GiteaUrl = $env:SAMVERK_FORGE_URL }
+    if ($env:SAMVERK_FORGE_PROJECT) { $config.Project  = $env:SAMVERK_FORGE_PROJECT }
+    if ($env:SAMVERK_AGENT_ID)      { $config.AgentId  = $env:SAMVERK_AGENT_ID }
+
+    return $config
 }
 
 # ---------------------------------------------------------------------------
@@ -268,11 +279,13 @@ function Update-IssueStatus {
         if ($AddLabels.Count -gt 0) {
             # Gitea: first get label IDs, then POST /issues/{index}/labels
             $allLabels = Invoke-GiteaAPI -Path "/repos/$owner/$repo/labels?limit=50" -Config $Config
-            $addIds = $allLabels | Where-Object { $_.name -in $AddLabels } | ForEach-Object { $_.id }
-            $null = Invoke-GiteaAPI -Path "/repos/$owner/$repo/issues/$IssueNumber/labels" `
-                -Method 'POST' `
-                -Body @{ labels = $addIds } `
-                -Config $Config
+            $addIds = @($allLabels | Where-Object { $_.name -in $AddLabels } | ForEach-Object { $_.id })
+            if ($addIds.Count -gt 0) {
+                $null = Invoke-GiteaAPI -Path "/repos/$owner/$repo/issues/$IssueNumber/labels" `
+                    -Method 'POST' `
+                    -Body @{ labels = $addIds } `
+                    -Config $Config
+            }
         }
         foreach ($label in $RemoveLabels) {
             $allLabels = Invoke-GiteaAPI -Path "/repos/$owner/$repo/labels?limit=50" -Config $Config

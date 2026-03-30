@@ -399,6 +399,23 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 		}
 	}
 
+	// Capacity gate: only claim when a pool worker is available to process
+	// the task immediately. Without this, the dispatcher greedily claims all
+	// queued issues into a buffer, starving PC workers that poll for
+	// status:queued issues on a 60s interval. Leaving excess issues as
+	// status:queued lets PC workers (and future poll cycles) pick them up.
+	if d.pool != nil {
+		snap := d.pool.Snapshot()
+		if snap.IdleWorkers <= 0 && snap.QueueDepth > 0 {
+			d.logger.Debug("capacity gate: no idle workers, leaving issue queued for PC workers or next cycle",
+				zap.Int("issue", issue.Number),
+				zap.Int("active", snap.ActiveWorkers),
+				zap.Int("queue_depth", snap.QueueDepth),
+			)
+			return nil
+		}
+	}
+
 	if err := tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusQueued); err != nil {
 		d.logger.Debug("remove queued label", zap.Int("issue", issue.Number), zap.String("error", err.Error()))
 	}

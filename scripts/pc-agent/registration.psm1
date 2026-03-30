@@ -189,7 +189,7 @@ function Register-PCAgent {
     #>
     [CmdletBinding()]
     param(
-        [string[]]$Capabilities = @('codegen', 'go', 'react', 'windows'),
+        [string[]]$Capabilities = @('codegen', 'go', 'react', $(if ($IsLinux) { 'linux' } else { 'windows' })),
         [int]$MaxConcurrent = 1,
         [string]$WorkspaceRoot = 'D:\bots'
     )

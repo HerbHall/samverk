@@ -1,0 +1,28 @@
+services:
+  pc-agent:
+    build:
+      context: ../..
+      dockerfile: deploy/pc-agent/Dockerfile
+    container_name: samverk-pc-agent
+    hostname: hdh-unraid-agent
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - SAMVERK_SERVER_URL=http://192.168.1.162:8080
+      - SAMVERK_AUTH_TOKEN=${SAMVERK_AUTH_TOKEN}
+      - SAMVERK_FORGE=gitea
+      - SAMVERK_FORGE_URL=http://192.168.1.160:3000
+      - SAMVERK_FORGE_PROJECT=samverk/samverk
+      - SAMVERK_AGENT_ID=hdh-unraid-agent
+      - GITEA_TOKEN=${GITEA_TOKEN}
+      - GITEA_REPO_URL=http://192.168.1.160:3000/samverk/samverk.git
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - COMPUTERNAME=hdh-unraid-agent
+      - SAMVERK_WORKSPACE_ROOT=/workspace
+    volumes:
+      - agent-workspace:/workspace
+    mem_limit: 8g
+    cpus: 4
+
+volumes:
+  agent-workspace:
