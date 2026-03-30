@@ -19,6 +19,7 @@ import (
 	"github.com/herbhall/samverk/internal/metrics"
 	"github.com/herbhall/samverk/internal/provider"
 	"github.com/herbhall/samverk/internal/store"
+	"github.com/herbhall/samverk/internal/synapset"
 	"github.com/herbhall/samverk/pkg/models"
 )
 
@@ -70,6 +71,7 @@ type Dispatcher struct {
 	primaryForgeURL   string         // current primary forge URL (for logging)
 	eventBus          *eventbus.Bus  // optional in-process event pub/sub
 	triageAgent       *TriageAgent   // optional autonomous triage agent
+	synapset          *synapset.Client // optional; nil disables doc review enrichment
 	draining          atomic.Bool    // when true, no new work is claimed
 	mu                sync.RWMutex
 	logger            *zap.Logger
@@ -170,6 +172,13 @@ func (d *Dispatcher) SetBroadcaster(b EventBroadcaster) {
 // needs-human issues on a periodic interval.
 func (d *Dispatcher) SetTriageAgent(ta *TriageAgent) {
 	d.triageAgent = ta
+}
+
+// SetSynapset configures the Synapset memory client for doc review enrichment.
+// When set, the dispatcher checks documentation quality before QC for issues
+// that touch .md files.
+func (d *Dispatcher) SetSynapset(sc *synapset.Client) {
+	d.synapset = sc
 }
 
 // Snapshot returns a point-in-time snapshot of dispatcher metrics.

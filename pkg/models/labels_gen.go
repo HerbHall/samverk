@@ -25,6 +25,14 @@ const (
 	LabelComplexityLocal = "complexity:local"
 )
 
+// Doc labels.
+const (
+	LabelDocDecisionReview = "doc:decision-review"
+	LabelDocInconsistent = "doc:inconsistent"
+	LabelDocStale = "doc:stale"
+	LabelDocStructure = "doc:structure"
+)
+
 // Human labels.
 const (
 	LabelHumanCredentials = "human:credentials"
@@ -95,6 +103,10 @@ func AllLabels() []string {
 		LabelComplexityAmbiguous,
 		LabelComplexityCloud,
 		LabelComplexityLocal,
+		LabelDocDecisionReview,
+		LabelDocInconsistent,
+		LabelDocStale,
+		LabelDocStructure,
 		LabelHumanCredentials,
 		LabelHumanDecision,
 		LabelHumanReview,
@@ -150,6 +162,16 @@ func ComplexityLabels() []string {
 		LabelComplexityAmbiguous,
 		LabelComplexityCloud,
 		LabelComplexityLocal,
+	}
+}
+
+// DocLabels returns all doc:* labels.
+func DocLabels() []string {
+	return []string{
+		LabelDocDecisionReview,
+		LabelDocInconsistent,
+		LabelDocStale,
+		LabelDocStructure,
 	}
 }
 

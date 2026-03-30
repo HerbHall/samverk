@@ -43,6 +43,7 @@ type Task struct {
 	Timeout       time.Duration             // per-task timeout; 0 means no deadline
 	HeartbeatFunc func()                    // called periodically while running; signals dispatcher that work is in progress; may be nil
 	Frontmatter   *models.IssueFrontmatter  // parsed frontmatter from issue body; may be nil
+	DocContext    string                    // optional doc review findings injected into QC prompts
 }
 
 // TaskResult reports the outcome of a pool task back to the dispatcher.

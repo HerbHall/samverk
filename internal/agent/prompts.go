@@ -173,6 +173,11 @@ No praise, no encouragement — only concrete evaluation.`, task.Issue.Number, t
 		b.WriteString("\nFlag any changes to files outside this scope.\n")
 	}
 
+	// Include doc review findings when present (pre-QC enrichment).
+	if task.DocContext != "" {
+		b.WriteString(task.DocContext)
+	}
+
 	issueNum := 0
 	if task.Issue != nil {
 		issueNum = task.Issue.Number

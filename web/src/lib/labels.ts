@@ -18,6 +18,11 @@ export const LABEL_COMPLEXITY_AMBIGUOUS = "complexity:ambiguous" as const
 export const LABEL_COMPLEXITY_CLOUD = "complexity:cloud" as const
 export const LABEL_COMPLEXITY_LOCAL = "complexity:local" as const
 
+export const LABEL_DOC_DECISION_REVIEW = "doc:decision-review" as const
+export const LABEL_DOC_INCONSISTENT = "doc:inconsistent" as const
+export const LABEL_DOC_STALE = "doc:stale" as const
+export const LABEL_DOC_STRUCTURE = "doc:structure" as const
+
 export const LABEL_HUMAN_CREDENTIALS = "human:credentials" as const
 export const LABEL_HUMAN_DECISION = "human:decision" as const
 export const LABEL_HUMAN_REVIEW = "human:review" as const
@@ -71,6 +76,13 @@ export const COMPLEXITY_LABELS = [
   LABEL_COMPLEXITY_AMBIGUOUS,
   LABEL_COMPLEXITY_CLOUD,
   LABEL_COMPLEXITY_LOCAL,
+] as const
+
+export const DOC_LABELS = [
+  LABEL_DOC_DECISION_REVIEW,
+  LABEL_DOC_INCONSISTENT,
+  LABEL_DOC_STALE,
+  LABEL_DOC_STRUCTURE,
 ] as const
 
 export const HUMAN_LABELS = [
@@ -127,6 +139,7 @@ export const HUMAN_STATUS_LABELS = [
 export const ALL_LABELS = [
   ...AGENT_LABELS,
   ...COMPLEXITY_LABELS,
+  ...DOC_LABELS,
   ...HUMAN_LABELS,
   ...PHASE_LABELS,
   ...PRIORITY_LABELS,
