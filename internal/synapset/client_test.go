@@ -232,6 +232,60 @@ func TestStoreMemory(t *testing.T) {
 	}
 }
 
+func TestFindContradictions(t *testing.T) {
+	memories := []Memory{
+		{ID: "1", Content: "Build uses make build", Category: "general", Source: "devkit", Similarity: 0.92},
+	}
+
+	srv := newTestServer(t, func(name string, args json.RawMessage) (interface{}, error) {
+		if name != "find_contradictions" {
+			t.Errorf("unexpected tool call: %s", name)
+		}
+		var a map[string]interface{}
+		_ = json.Unmarshal(args, &a)
+		if a["pool"] != "docs" {
+			t.Errorf("pool = %v, want docs", a["pool"])
+		}
+		if a["threshold"] != 0.85 {
+			t.Errorf("threshold = %v, want 0.85", a["threshold"])
+		}
+		memoriesJSON, _ := json.Marshal(memories)
+		return toolResult{Content: []toolContent{{Type: "text", Text: string(memoriesJSON)}}}, nil
+	})
+	defer srv.Close()
+
+	client := New(Config{URL: srv.URL, Pool: "test"}, zap.NewNop())
+	results, err := client.FindContradictions(context.Background(), "docs", "Build uses go build", 0.85, 5)
+	if err != nil {
+		t.Fatalf("FindContradictions failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d memories, want 1", len(results))
+	}
+	if results[0].Source != "devkit" {
+		t.Errorf("source = %q, want devkit", results[0].Source)
+	}
+}
+
+func TestFindContradictions_Defaults(t *testing.T) {
+	var capturedArgs map[string]interface{}
+
+	srv := newTestServer(t, func(name string, args json.RawMessage) (interface{}, error) {
+		_ = json.Unmarshal(args, &capturedArgs)
+		return toolResult{Content: []toolContent{{Type: "text", Text: `[]`}}}, nil
+	})
+	defer srv.Close()
+
+	client := New(Config{URL: srv.URL, Pool: "test"}, zap.NewNop())
+	_, _ = client.FindContradictions(context.Background(), "docs", "test query", 0, 0)
+	if capturedArgs["threshold"] != 0.85 {
+		t.Errorf("default threshold = %v, want 0.85", capturedArgs["threshold"])
+	}
+	if capturedArgs["limit"] != float64(5) {
+		t.Errorf("default limit = %v, want 5", capturedArgs["limit"])
+	}
+}
+
 func TestGracefulDegradation_ServerUnavailable(t *testing.T) {
 	// Point at a server that doesn't exist.
 	client := New(Config{URL: "http://127.0.0.1:1", Pool: "test"}, zap.NewNop())

@@ -144,6 +144,21 @@ func (d *Dispatcher) spawnQCTask(ctx context.Context, owner, repo string, issueN
 
 	fm, _ := d.parseFrontmatter(issue)
 
+	// Pre-QC doc enrichment: check .md files for staleness and contradictions.
+	var docContext string
+	if docFindings := d.checkDocFindings(ctx, owner, repo, fm); docFindings != nil {
+		docContext = docFindings.RenderDocSection()
+		for _, f := range docFindings.Findings {
+			if label := docLabelFor(f.Category); label != "" {
+				_ = tracker.AddLabels(ctx, issueNumber, label)
+			}
+		}
+		d.logger.Info("doc enrichment: findings injected into QC context",
+			zap.Int("issue", issueNumber),
+			zap.Int("findings", len(docFindings.Findings)),
+		)
+	}
+
 	// Build QC-specific task with cross-model provider selection.
 	providerKey := d.selectQCProvider(issue, generatorProvider)
 
@@ -204,6 +219,7 @@ func (d *Dispatcher) spawnQCTask(ctx context.Context, owner, repo string, issueN
 		ProviderKey: providerKey,
 		Timeout:     timeout,
 		Frontmatter: fm,
+		DocContext:  docContext,
 		HeartbeatFunc: func() {
 			d.mu.Lock()
 			if c, ok := d.claimed[key]; ok {

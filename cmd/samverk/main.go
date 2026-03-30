@@ -889,6 +889,11 @@ func dispatchCmd() *cobra.Command {
 			disp := dispatcher.New(trackerEntries, policy, st, pool, nil, logger)
 			disp.SetProjectResolver(registry)
 
+			// Wire Synapset client for doc review enrichment in the dispatcher.
+			if synCfg := synapset.ConfigFromEnv(synapset.Config{}); synCfg.URL != "" {
+				disp.SetSynapset(synapset.New(synCfg, logger))
+			}
+
 			// Wire in-process event bus for pub/sub (event recording, future subscribers).
 			bus := eventbus.New(64)
 			disp.SetEventBus(bus)

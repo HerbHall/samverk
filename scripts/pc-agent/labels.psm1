@@ -20,6 +20,11 @@ $LabelComplexityAmbiguous = 'complexity:ambiguous'
 $LabelComplexityCloud = 'complexity:cloud'
 $LabelComplexityLocal = 'complexity:local'
 
+$LabelDocDecisionReview = 'doc:decision-review'
+$LabelDocInconsistent = 'doc:inconsistent'
+$LabelDocStale = 'doc:stale'
+$LabelDocStructure = 'doc:structure'
+
 $LabelHumanCredentials = 'human:credentials'
 $LabelHumanDecision = 'human:decision'
 $LabelHumanReview = 'human:review'
@@ -73,6 +78,13 @@ $ComplexityLabels = @(
     $LabelComplexityAmbiguous
     $LabelComplexityCloud
     $LabelComplexityLocal
+)
+
+$DocLabels = @(
+    $LabelDocDecisionReview
+    $LabelDocInconsistent
+    $LabelDocStale
+    $LabelDocStructure
 )
 
 $HumanLabels = @(
@@ -129,6 +141,7 @@ $HumanStatusLabels = @(
 $AllLabels = @(
     $AgentLabels
     $ComplexityLabels
+    $DocLabels
     $HumanLabels
     $PhaseLabels
     $PriorityLabels
@@ -153,6 +166,10 @@ Export-ModuleMember -Variable @(
     'LabelComplexityAmbiguous'
     'LabelComplexityCloud'
     'LabelComplexityLocal'
+    'LabelDocDecisionReview'
+    'LabelDocInconsistent'
+    'LabelDocStale'
+    'LabelDocStructure'
     'LabelHumanCredentials'
     'LabelHumanDecision'
     'LabelHumanReview'
@@ -183,6 +200,7 @@ Export-ModuleMember -Variable @(
     'LabelWarningQuality'
     'AgentLabels'
     'ComplexityLabels'
+    'DocLabels'
     'HumanLabels'
     'PhaseLabels'
     'PriorityLabels'

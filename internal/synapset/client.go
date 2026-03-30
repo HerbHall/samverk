@@ -521,6 +521,28 @@ func (c *Client) UpdateMemory(ctx context.Context, pool, id string, updates map[
 	return err
 }
 
+// FindContradictions searches for memories semantically similar to the query
+// that may contradict it. Returns candidates above the similarity threshold.
+func (c *Client) FindContradictions(ctx context.Context, pool, query string, threshold float64, limit int) ([]Memory, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	if threshold <= 0 {
+		threshold = 0.85
+	}
+	args := map[string]interface{}{
+		"pool":      pool,
+		"query":     query,
+		"threshold": threshold,
+		"limit":     limit,
+	}
+	result, err := c.callTool(ctx, "find_contradictions", args)
+	if err != nil {
+		return nil, err
+	}
+	return parseMemories(result)
+}
+
 // parseMemories extracts Memory entries from a tool result's text content.
 func parseMemories(result *toolResult) ([]Memory, error) {
 	if result == nil || len(result.Content) == 0 {

@@ -193,5 +193,25 @@
     "name": "warning:quality",
     "color": "e4e669",
     "description": "Quality warning posted"
+  },
+  {
+    "name": "doc:stale",
+    "color": "FBCA04",
+    "description": "Documentation freshness violation"
+  },
+  {
+    "name": "doc:inconsistent",
+    "color": "E4E669",
+    "description": "Cross-document conflict detected"
+  },
+  {
+    "name": "doc:structure",
+    "color": "BFD4F2",
+    "description": "Missing required document sections"
+  },
+  {
+    "name": "doc:decision-review",
+    "color": "D4C5F9",
+    "description": "Decision needing broader review"
   }
 ]
