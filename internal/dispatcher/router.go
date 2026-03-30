@@ -77,6 +77,11 @@ func classifyByHeuristic(issue *forge.Issue) models.AgentType {
 	if labels["bug"] {
 		return models.AgentTypeCodeGen
 	}
+	// Doc-review labels route to docs agent (always Claude, never Ollama).
+	if labels[models.LabelDocStale] || labels[models.LabelDocInconsistent] ||
+		labels[models.LabelDocStructure] || labels[models.LabelDocDecisionReview] {
+		return models.AgentTypeDocs
+	}
 
 	// Title-prefix rules.
 	lower := strings.ToLower(issue.Title)
@@ -530,9 +535,8 @@ func (d *Dispatcher) parseFrontmatter(issue *forge.Issue) (*models.IssueFrontmat
 
 // postQualityWarningIfNeeded checks if file_context or constraints are missing
 // and posts a one-time warning comment if needed. Does not block dispatch.
-// Results are cached in qualityChecked to avoid calling ListComments on every
-// route() invocation (see issue #516 -- each ListComments fetches all comments
-// and the JSON decoder retains backing arrays that pressure GC).
+// The warning:quality label is the decision surface -- it persists across
+// restarts and costs zero API calls to check (read from issue_cache).
 func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker forge.IssueTracker, owner, repo string, issueNumber int, issueLabels []string, fm *models.IssueFrontmatter) {
 	if fm == nil {
 		return // No frontmatter to check
@@ -546,15 +550,9 @@ func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker for
 		return // Both fields present, no warning needed
 	}
 
-	// Check label first (survives restarts, zero API cost).
+	// Check label (survives restarts, zero API cost).
 	if labelSliceContains(issueLabels, models.LabelWarningQuality) {
 		return // Warning already posted (label is the decision surface)
-	}
-
-	// Fast path: already checked this issue in this process lifetime.
-	key := issueKey(owner, repo, issueNumber)
-	if _, loaded := d.qualityChecked.LoadOrStore(key, struct{}{}); loaded {
-		return
 	}
 
 	// Build warning message
