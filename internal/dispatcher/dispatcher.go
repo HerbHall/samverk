@@ -70,7 +70,6 @@ type Dispatcher struct {
 	primaryForgeURL   string         // current primary forge URL (for logging)
 	eventBus          *eventbus.Bus  // optional in-process event pub/sub
 	triageAgent       *TriageAgent   // optional autonomous triage agent
-	qualityChecked    sync.Map       // issueKey -> struct{}; tracks issues with quality warning already checked
 	draining          atomic.Bool    // when true, no new work is claimed
 	mu                sync.RWMutex
 	logger            *zap.Logger
