@@ -1,6 +1,6 @@
 ---
 phase: agent-autonomy
-updated: 2026-03-29T07:45:00Z
+updated: 2026-03-31T00:30:00Z
 updated_by: claude-code
 ---
 
@@ -8,13 +8,13 @@ updated_by: claude-code
 
 ## Phase
 
-Agent Autonomy -- pipeline running autonomously. 4 runners online, dispatcher unpaused.
+Agent Autonomy -- pipeline running autonomously. Fleet expanded to 4 PC workers + 1 dispatcher pool.
 
 ## What Is Running
 
 - Samverk server: CT 202 (192.168.1.162:8080) -- healthy
-- Dispatcher: RUNNING (1-5 workers, 8 providers, 3 projects)
-- Projects: samverk, devkit, synapset (all Gitea, all with dedicated repo clones)
+- Dispatcher: RUNNING (2-3 workers, 8 providers, 4 projects)
+- Projects: samverk, devkit, synapset, opskit (all Gitea)
 - Synapset memory: AUTHENTICATED
 - Go 1.24.1 + Node v22.22.1 + pnpm 10.33.0: INSTALLED on CT 202
 - Dashboard: unified with Synapset native + DevKit iframe
@@ -38,11 +38,23 @@ Agent Autonomy -- pipeline running autonomously. 4 runners online, dispatcher un
 | unraid-runner (ID 5) | HDH-UNRAID | /boot/config/go script |
 | hdh-nzxt-win (ID 4) | HDH-NZXT | Scheduled Task (logon) |
 
+### Worker Fleet
+
+| Machine | Role | Status | OAuth |
+|---------|------|--------|-------|
+| CT 202 | Dispatcher + pool (2-3 workers) | Running | Working |
+| HDH-NZXT | PC worker + CI runner + Ollama | Registered | Working |
+| HDH-D10U | PC worker + CI runner | Registered | Working |
+| CM-ASUS | PC worker + Ollama | Registered | Working |
+| HDH-UNRAID | Docker PC worker + CI runner | Running | Working |
+
+**Auth policy:** All Claude instances use OAuth (Max plan). No API keys anywhere in the fleet. See credentials.md.
+
 ## Blocking Issue
 
-None.
+- #560 -- Worker repo model needs rework for multi-repo support
 
-## Open Issues Summary (50 open / 50 closed)
+## Open Issues Summary (~104 open / ~338 closed)
 
 | Status | Count | Notes |
 |--------|-------|-------|
@@ -88,7 +100,37 @@ See `docs/planning-system-design.md` for decisions and sequencing.
 
 - Various pipeline quality and UI issues awaiting human decisions
 
-## Session Summary (2026-03-29 early morning)
+## Session Summary (2026-03-31 early morning)
+
+OAuth fleet migration + pipeline unblock session.
+
+### PRs Merged (6)
+
+| PR | Project | What |
+|----|---------|------|
+| #558 | samverk | Capacity-aware claiming (unblocks PC workers) |
+| #546 | samverk | Deploy sync check against Gitea main |
+| #563 | samverk | Remove ANTHROPIC_API_KEY from fleet -- OAuth only |
+| #19 | opskit | Topology update |
+| #24 | opskit | ROADMAP update |
+
+### Fleet OAuth Migration
+
+- Removed all ANTHROPIC_API_KEY references from codebase + live configs
+- UNRAID Docker agent: rebuilt with claude-auth volume, OAuth working
+- CT 202: OAuth token refreshed, working
+- All 5 machines verified working on Max plan
+- DevKit issue #58 filed for rules file updates
+
+### Key Rule Established
+
+**No API keys anywhere in the fleet.** All Claude Code instances authenticate via OAuth (`claude login`). API keys hit separate pay-as-you-go billing.
+
+## Previous Session (2026-03-30 evening)
+
+Major pipeline hygiene + fleet expansion session.
+
+## Previous Session (2026-03-29 early morning)
 
 Major pipeline infrastructure session -- throughput bottlenecks fixed, deploy safety audited.
 
@@ -208,15 +250,14 @@ Major operational session -- fixed infrastructure, triaged full backlog, establi
 
 ## Recommended Next Session
 
-1. **Monitor deploy safety PRs** -- #485 (orphan recovery) and #488 (drain API) are critical infrastructure. Review output when complete.
-2. **Unblock #214 after #239 merges** -- relabel to `status:queued` once capability profiles land.
-3. **Dashboard data trust** -- #462 (NaN, counts, IS/PR prefixes) is queued. Verify fix when merged.
-4. **#490 dashboard redesign** -- parked until planning pipeline (#214, #215) is live. Will be first customer of research + planning workflow.
-5. **#366 remote MCP access** -- research CF MCP portal, test on isolated subdomain.
+1. **Deploy to CT 202** -- 3 PRs merged since last deploy (#558, #546, #563)
+2. **Work #560** -- Worker repo model rework for multi-repo support
+3. **Monitor #549-552** -- Critical process fixes dispatched to agents
+4. **Work opskit #559** -- Fleet audit (reboot recovery, health monitoring)
 
 ## Start Here
 
 1. Read this file
-2. Check `docs/planning-system-design.md` for planning system context
-3. Check open issues if relevant
+2. Check `list_workers` -- verify all PC workers registered
+3. Deploy to CT 202 if not yet done
 4. Proceed -- do not ask the user to explain project state

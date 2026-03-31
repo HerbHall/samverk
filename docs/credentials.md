@@ -37,16 +37,13 @@ Development Machine (Windows)                Production Server (CT 202, Linux)
 | `SAMVERK_AUTH_TOKEN` | MCP Bearer token (simple single-token auth) | serve, scale CLI | Server |
 | `GITEA_TOKEN` | Gitea API access (fallback if not in server.yaml) | serve (multi-project) | Server (if Gitea) |
 
-### Used by AI Providers
+### AI Provider Authentication
 
-These are only needed when using API-based providers (type `claude` or `openai`). The `claude-cli` provider type uses local OAuth credentials instead and **strips** `ANTHROPIC_API_KEY` from the child process environment to avoid consuming API credits.
+**The fleet uses OAuth (Max plan) for all Claude Code instances. API keys are NOT used.**
 
-| Env Var | Purpose | Provider Type |
-|---------|---------|---------------|
-| `ANTHROPIC_API_KEY` | Claude API calls | `claude` |
-| `OPENAI_API_KEY` | OpenAI API calls | `openai` |
+All Claude CLI instances authenticate via `claude login` (browser-based OAuth flow). The `claude-cli` provider type strips `ANTHROPIC_API_KEY` from subprocess environments as a safety net. Ollama providers use `base_url` from `providers.yaml` and require no API key.
 
-Ollama providers use `base_url` from `providers.yaml` and require no API key.
+API-based providers (`type: claude`, `type: openai`) are commented out in `providers.yaml.example`. If API keys are ever needed in the future, this will be an explicit decision documented in an ADR.
 
 ### Not Used by Samverk Directly
 
@@ -106,13 +103,12 @@ Providers are configured in `.samverk/providers.yaml` (see [providers.yaml.examp
 
 ```yaml
 providers:
-  claude-api:
-    type: claude
-    api_key_env: ANTHROPIC_API_KEY    # os.Getenv("ANTHROPIC_API_KEY")
+  claude-sonnet:
+    type: claude-cli                   # Uses OAuth, not API keys
     default_model: claude-sonnet-4-6
 ```
 
-The `claude-cli` provider type does not use `api_key_env` at all -- it shells out to the `claude` binary which handles its own authentication via OAuth.
+The `claude-cli` provider type shells out to the `claude` binary which handles its own authentication via OAuth. API key-based providers are not used in the fleet.
 
 ## Server-Side Setup (CT 202)
 
@@ -126,8 +122,8 @@ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 SAMVERK_GITHUB_OWNER=herbhall
 SAMVERK_GITHUB_REPO=samverk
 SAMVERK_AUTH_TOKEN=<generated-with-openssl-rand-hex-32>
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
-OPENAI_API_KEY=sk-xxxxxxxxxxxx
+# Claude Code uses OAuth (Max plan), not API keys.
+# Run 'claude login' on each machine to authenticate.
 ```
 
 File permissions must be `0600` owned by the `samverk` user.
@@ -184,8 +180,8 @@ After `sync-secrets`, all shells (PS5, PS7, CMD, Git Bash, WSL) inherit the upda
 ```bash
 # Check all required env vars are set
 echo $GITHUB_TOKEN | head -c 10
-echo $ANTHROPIC_API_KEY | head -c 10
 echo $SAMVERK_AUTH_TOKEN | head -c 10
+# Claude OAuth: claude --print --max-turns 1 "hello" (should return text, not error)
 ```
 
 ## Adding a New Secret
