@@ -107,11 +107,10 @@ Fill in these values in `deploy/samverk.env`:
 - `GITHUB_TOKEN` -- your GitHub PAT with repo scope
 - `SAMVERK_GITHUB_OWNER` -- `herbhall`
 - `SAMVERK_GITHUB_REPO` -- `samverk`
-- `ANTHROPIC_API_KEY` -- your Anthropic key
-- `OPENAI_API_KEY` -- your OpenAI key (optional)
 - `SAMVERK_AUTH_TOKEN` -- generate with `openssl rand -hex 32`
 
-**Important:** `deploy/samverk.env` is gitignored. Never commit API keys.
+**Important:** `deploy/samverk.env` is gitignored. Never commit secrets.
+Claude Code uses OAuth (Max plan), not API keys. Run `claude login` on each machine.
 
 ### Phase 4: Deploy to Container (~2 min)
 

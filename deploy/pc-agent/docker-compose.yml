@@ -16,13 +16,14 @@ services:
       - SAMVERK_AGENT_ID=hdh-unraid-agent
       - GITEA_TOKEN=${GITEA_TOKEN}
       - GITEA_REPO_URL=http://192.168.1.160:3000/samverk/samverk.git
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - COMPUTERNAME=hdh-unraid-agent
       - SAMVERK_WORKSPACE_ROOT=/workspace
     volumes:
       - agent-workspace:/workspace
+      - claude-auth:/root/.claude
     mem_limit: 8g
     cpus: 4
 
 volumes:
   agent-workspace:
+  claude-auth:

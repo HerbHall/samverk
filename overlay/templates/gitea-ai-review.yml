@@ -1,11 +1,14 @@
 # Gitea AI Code Review Workflow
-# Triggers on PR open/sync and runs ai-review with Claude (primary)
-# or Ollama (fallback). Posts inline comments and a summary review.
+# Triggers on PR open/sync and runs ai-review with Ollama.
+# Posts inline comments and a summary review.
 #
 # Requirements:
 #   - Gitea Actions runner with Docker support (act_runner)
-#   - Repository secrets: GITEA_TOKEN, ANTHROPIC_API_KEY
+#   - Repository secrets: GITEA_TOKEN
 #   - Optional: OLLAMA_HOST (defaults to http://192.168.1.207:11434)
+#
+# Note: The fleet uses OAuth (Max plan) for Claude CLI, not API keys.
+# AI review uses Ollama (self-hosted) to avoid API key dependencies.
 #
 # Usage: Copy to .gitea/workflows/ai-review.yml in target repo.
 # See docs/gitea-ai-review.md for setup guide.
@@ -20,8 +23,7 @@ jobs:
   ai-review:
     runs-on: ubuntu-latest
     steps:
-      - name: AI Review (Claude)
-        if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      - name: AI Review (Ollama)
         uses: docker://nikitafilonov/ai-review:latest
         env:
           # VCS configuration — Gitea
@@ -32,33 +34,7 @@ jobs:
           VCS__PIPELINE__REPO: "${{ github.event.repository.name }}"
           VCS__PIPELINE__PULL_NUMBER: "${{ github.event.pull_request.number }}"
 
-          # LLM configuration — Claude
-          LLM__PROVIDER: "CLAUDE"
-          LLM__META__MODEL: "claude-sonnet-4-20250514"
-          LLM__META__MAX_TOKENS: "4096"
-          LLM__HTTP_CLIENT__BASE_URL: "https://api.anthropic.com"
-          LLM__HTTP_CLIENT__AUTH_TOKEN: "${{ secrets.ANTHROPIC_API_KEY }}"
-          LLM__HTTP_CLIENT__EXTRA_HEADERS: '{"anthropic-version": "2023-06-01"}'
-
-          # Review settings
-          REVIEW__MODE: "added"
-          REVIEW__MAX_INLINE_COMMENTS: "20"
-        with:
-          args: ai-review run
-
-      - name: AI Review (Ollama fallback)
-        if: ${{ secrets.ANTHROPIC_API_KEY == '' }}
-        uses: docker://nikitafilonov/ai-review:latest
-        env:
-          # VCS configuration — Gitea
-          VCS__PROVIDER: "GITEA"
-          VCS__HTTP_CLIENT__BASE_URL: "${{ github.server_url }}/api/v1"
-          VCS__HTTP_CLIENT__AUTH_TOKEN: "${{ secrets.GITEA_TOKEN }}"
-          VCS__PIPELINE__OWNER: "${{ github.repository_owner }}"
-          VCS__PIPELINE__REPO: "${{ github.event.repository.name }}"
-          VCS__PIPELINE__PULL_NUMBER: "${{ github.event.pull_request.number }}"
-
-          # LLM configuration — Ollama
+          # LLM configuration — Ollama (self-hosted, no API key needed)
           LLM__PROVIDER: "OLLAMA"
           LLM__META__MODEL: "qwen2.5-coder:7b"
           LLM__META__MAX_TOKENS: "4096"

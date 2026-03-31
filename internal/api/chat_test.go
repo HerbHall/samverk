@@ -15,8 +15,7 @@ import (
 func TestHandleChat_NoAPIKey(t *testing.T) {
 	a := New(nil, nil, nil, zap.NewNop())
 
-	// Ensure env is unset for this test.
-	t.Setenv("ANTHROPIC_API_KEY", "")
+	// No API key configured -- should return 503.
 
 	body, _ := json.Marshal(chatRequest{
 		Messages: []chatMessage{{Role: "user", Content: "hello"}},

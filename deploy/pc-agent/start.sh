@@ -10,9 +10,20 @@ echo "[pc-agent] Starting Samverk PC Agent on $(hostname)"
 echo "[pc-agent] Server: ${SAMVERK_SERVER_URL:-not set}"
 echo "[pc-agent] Forge:  ${SAMVERK_FORGE:-not set} / ${SAMVERK_FORGE_PROJECT:-not set}"
 
-# Accept Claude TOS non-interactively
-mkdir -p /root/.claude
-echo '{"hasCompletedOnboarding":true,"hasAcknowledgedDisclaimer":true}' > /root/.claude/settings.json
+# Claude CLI uses OAuth (Max plan), not API keys.
+# The claude-auth volume persists /root/.claude/ across restarts.
+# First-time setup: docker exec -it samverk-pc-agent claude login
+# This writes OAuth credentials to /root/.claude/ (persisted in volume).
+if [ ! -f /root/.claude/.credentials.json ] && [ ! -d /root/.claude/auth ]; then
+    echo "[pc-agent] WARNING: No Claude OAuth credentials found."
+    echo "[pc-agent] Run: docker exec -it samverk-pc-agent claude login"
+    echo "[pc-agent] Continuing without Claude -- agent will register but cannot execute tasks."
+fi
+
+# Ensure TOS flags exist (non-destructive -- preserves OAuth creds).
+if [ ! -f /root/.claude/settings.json ]; then
+    echo '{"hasCompletedOnboarding":true,"hasAcknowledgedDisclaimer":true}' > /root/.claude/settings.json
+fi
 
 # Set up bare repo for worktree-based workflow
 if [ ! -d "/workspace/samverk.git" ]; then

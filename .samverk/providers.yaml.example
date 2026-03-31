@@ -17,12 +17,12 @@ providers:
     default_model: claude-opus-4-6
     timeout_seconds: 900
 
-  # API-based providers (require env var with API key)
+  # API-based providers (NOT used -- fleet uses OAuth via Max plan).
+  # If API keys are ever needed, uncomment and set env vars.
   # claude-api:
   #   type: claude
   #   api_key_env: ANTHROPIC_API_KEY
   #   default_model: claude-sonnet-4-6
-
   # openai:
   #   type: openai
   #   api_key_env: OPENAI_API_KEY

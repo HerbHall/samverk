@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -127,11 +126,9 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve API key: explicit config > env var.
+	// Resolve API key: explicit config only. No env var fallback --
+	// the fleet uses OAuth (Max plan) for Claude CLI, not API keys.
 	apiKey := a.chatAPIKey
-	if apiKey == "" {
-		apiKey = os.Getenv("ANTHROPIC_API_KEY")
-	}
 	if apiKey == "" {
 		writeError(w, http.StatusServiceUnavailable, "chat not configured: no API key")
 		return
