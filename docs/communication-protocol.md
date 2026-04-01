@@ -398,6 +398,18 @@ QC Agent picks up
     --> Repeated failure (3x): adds status:needs-human, notifies user
 ```
 
+### Retry Context Requirements
+
+When an issue is re-queued after failure, the retry prompt must include additional context beyond the original issue body:
+
+1. **Prior failure messages (automatic):** The 3 most recent failure messages from the store, untruncated. Full error messages are diagnostic data needed for self-correction -- never truncate them.
+
+2. **Human comments (automatic):** All comments added by humans after issue creation. These contain clarifications, design decisions, and scope corrections that the agent must follow. Agent-generated comments (dispatcher, QC, correction engine) are filtered out.
+
+3. **All validation errors (on in-session retry):** When the runner retries after a validation failure within the same session, all validation errors are included -- not just the first.
+
+The correction engine decides whether to retry, escalate, switch providers, or pause. The runner's job is to ensure the retry prompt has maximum context so the agent can self-correct.
+
 ## User Check-in Flow
 
 When user opens chat and asks "how's my project doing?":
