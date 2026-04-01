@@ -53,6 +53,25 @@ type ActivityNotifier interface {
 	SetOnActivity(fn func())
 }
 
+// ToolAccessProvider is an optional interface that providers may implement to
+// indicate they have local filesystem access via tools (Read, Write, Glob, etc.).
+// CLI-based providers (e.g., claude-cli) implement this returning true.
+// API-based providers (e.g., Ollama) do not implement this; HasToolAccess
+// returns false by default.
+type ToolAccessProvider interface {
+	HasToolAccess() bool
+}
+
+// CanAccessTools checks whether a provider supports local filesystem access.
+// Returns true only if the provider implements ToolAccessProvider and reports
+// tool access. Used by the prompt builder to tailor file context instructions.
+func CanAccessTools(p Provider) bool {
+	if ta, ok := p.(ToolAccessProvider); ok {
+		return ta.HasToolAccess()
+	}
+	return false
+}
+
 // Provider is the interface for AI model inference backends.
 // Implementations exist for Ollama (local), Claude, and OpenAI (cloud).
 type Provider interface {

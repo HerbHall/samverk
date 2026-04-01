@@ -99,13 +99,36 @@ Agents must check `schema_version` and handle unknown fields gracefully. An agen
 
 ### Context Discovery and `file_context`
 
-Agents receive context from two sources, applied in priority order:
+Agents receive file context from three sources, applied in priority order:
 
-1. **`file_context` (explicit):** File paths listed in the frontmatter. The agent reads these first, before any other exploration. This is the highest priority context source because the issue author knows exactly which files are relevant.
+1. **Foundational files (automatic):** The explorer auto-includes files that prevent common failures. These are included when they exist in the repo root, regardless of whether the issue author lists them:
+   - `CLAUDE.md` -- project conventions and build commands
+   - `go.mod` -- correct module path and import paths (Go projects)
+   - `Makefile` -- build targets and commands
+   - `web/package.json` -- dependencies and scripts (frontend projects)
+   - `web/tsconfig.json` -- TypeScript configuration (frontend projects)
 
-2. **Explorer regex-based discovery (implicit):** The agent's explorer scans the issue body (Summary, Context, Acceptance Criteria) for file path patterns (e.g., `internal/forge/tracker.go`, `pkg/models/issue.go`). Discovered paths supplement `file_context` but do not override it.
+2. **`file_context` (explicit):** File paths listed in the frontmatter. The agent reads these first after foundational files. This is the highest priority author-specified context because the issue author knows which files are relevant.
 
-When both sources are present, `file_context` paths are read first. Explorer-discovered paths are read after, skipping any already covered by `file_context`. When `file_context` is omitted, the agent relies entirely on explorer discovery.
+3. **Explorer regex-based discovery (implicit):** The agent's explorer scans the issue body (Summary, Context, Acceptance Criteria) for file path patterns (e.g., `internal/forge/tracker.go`, `pkg/models/issue.go`). Discovered paths supplement `file_context` but do not override it.
+
+File **contents** (not just paths) are injected into the agent's prompt. When a file path is discovered but the content cannot be read, the file is listed in a warning section so the agent knows context is incomplete.
+
+When both explicit and discovered sources are present, `file_context` paths are read first. Explorer-discovered paths are read after, skipping any already covered by `file_context` (unless the existing entry has empty content, in which case the discovered content takes precedence).
+
+When `file_context` is omitted, the agent relies on foundational files and explorer discovery.
+
+### File Context Budgets
+
+- **Explore phase:** 64KB total, 8KB per individual file
+- **Prompt injection:** 32KB total for the `## Relevant Files` section
+
+When the budget is exceeded, files are truncated or omitted. A warning is appended to the prompt listing which files were affected.
+
+### Provider-Specific File Access
+
+- **CLI providers** (e.g., claude-cli): Run in an isolated git worktree with full filesystem access via tools (Read, Glob, Grep). Prompt-injected files serve as a starting point; the agent can discover additional files at runtime.
+- **API providers** (e.g., Ollama): Have no filesystem access. Prompt-injected files are the agent's only source context. The prompt instructs the agent to base all implementations strictly on the provided files.
 
 The `constraints` field provides operational guardrails that the agent must respect throughout execution. Unlike acceptance criteria (which define what success looks like), constraints define boundaries on how the agent works (e.g., "do not modify the public API", "skip integration tests on Windows").
 

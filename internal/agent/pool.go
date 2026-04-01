@@ -44,6 +44,7 @@ type Task struct {
 	HeartbeatFunc func()                    // called periodically while running; signals dispatcher that work is in progress; may be nil
 	Frontmatter   *models.IssueFrontmatter  // parsed frontmatter from issue body; may be nil
 	DocContext    string                    // optional doc review findings injected into QC prompts
+	HasToolAccess bool                      // true when the provider has local filesystem access (CLI agents)
 }
 
 // TaskResult reports the outcome of a pool task back to the dispatcher.
@@ -444,6 +445,9 @@ func (p *Pool) processTask(task Task) {
 		}
 		return
 	}
+
+	// Set provider capability flags for prompt tailoring.
+	task.HasToolAccess = provider.CanAccessTools(prov)
 
 	// Resolve per-project repo directory for workspace isolation.
 	taskRepoDir := p.repoDirFor(task.Owner, task.Repo)
