@@ -360,6 +360,12 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	// This is advisory only and does not block dispatch.
 	d.postQualityWarningIfNeeded(ctx, tracker, owner, repo, issue.Number, issue.Labels, fm)
 
+	// Scope validation: reject oversized issues that will exhaust agent token
+	// budgets without producing useful output. These need decomposition.
+	if d.rejectOversizedScope(ctx, tracker, issue, fm) {
+		return nil // issue escalated to needs-human; do not dispatch
+	}
+
 	// Pre-flight health gate: check if the routing chain has any healthy
 	// provider before claiming the issue. This prevents the tight
 	// claim-fail-requeue loop when all providers are down.
@@ -592,6 +598,81 @@ func (d *Dispatcher) parseFrontmatter(issue *forge.Issue) (*models.IssueFrontmat
 // and posts a one-time warning comment if needed. Does not block dispatch.
 // The warning:quality label is the decision surface -- it persists across
 // restarts and costs zero API calls to check (read from issue_cache).
+// Scope validation thresholds. Issues exceeding these are escalated to
+// needs-human for decomposition rather than dispatched to agents.
+var (
+	// maxAcceptanceCriteria is the maximum number of acceptance criteria
+	// checkboxes before an issue is considered oversized.
+	maxAcceptanceCriteria = 5
+
+	// maxFileContextForScope is the maximum file_context entries before
+	// an issue is considered oversized (independent of complexity routing).
+	maxFileContextForScope = 8
+)
+
+// rejectOversizedScope checks whether an issue exceeds agent scope limits.
+// Returns true if the issue was escalated (caller should not dispatch).
+// Returns false if the issue is within scope (caller proceeds normally).
+//
+// An issue already labeled needs-human or warning:scope is skipped to avoid
+// duplicate comments on re-queue cycles.
+func (d *Dispatcher) rejectOversizedScope(ctx context.Context, tracker forge.IssueTracker, issue *forge.Issue, fm *models.IssueFrontmatter) bool {
+	// Skip if already escalated, flagged, or manually overridden.
+	for _, l := range issue.Labels {
+		if l == models.LabelStatusNeedsHuman || l == "warning:scope" || l == "no-decompose" {
+			return false
+		}
+	}
+
+	criteria := agent.ParseAcceptanceCriteria(issue.Body)
+	fileCount := 0
+	if fm != nil {
+		fileCount = len(fm.FileContext)
+	}
+
+	var reasons []string
+	if len(criteria) > maxAcceptanceCriteria {
+		reasons = append(reasons, fmt.Sprintf("%d acceptance criteria (max %d)", len(criteria), maxAcceptanceCriteria))
+	}
+	if fileCount > maxFileContextForScope {
+		reasons = append(reasons, fmt.Sprintf("%d file_context entries (max %d)", fileCount, maxFileContextForScope))
+	}
+
+	if len(reasons) == 0 {
+		return false
+	}
+
+	comment := fmt.Sprintf(
+		"**[dispatcher] Scope validation failed**: this issue exceeds agent scope limits (%s). "+
+			"Agents will exhaust their token budget reading code before they can implement changes.\n\n"+
+			"Please decompose this issue into smaller sub-issues (max %d acceptance criteria, max %d files each) "+
+			"or add the `no-decompose` label if you want to force dispatch.",
+		strings.Join(reasons, "; "), maxAcceptanceCriteria, maxFileContextForScope,
+	)
+
+	if _, err := tracker.AddComment(ctx, issue.Number, comment); err != nil {
+		d.logger.Warn("scope validation: failed to post comment",
+			zap.Int("issue", issue.Number),
+			zap.Error(err),
+		)
+	}
+	if err := tracker.AddLabels(ctx, issue.Number, models.LabelStatusNeedsHuman, "warning:scope"); err != nil {
+		d.logger.Warn("scope validation: failed to add labels",
+			zap.Int("issue", issue.Number),
+			zap.Error(err),
+		)
+	}
+	_ = tracker.RemoveLabel(ctx, issue.Number, models.LabelStatusQueued)
+
+	d.logger.Info("issue rejected: scope too large",
+		zap.Int("issue", issue.Number),
+		zap.Int("acceptance_criteria", len(criteria)),
+		zap.Int("file_context", fileCount),
+		zap.Strings("reasons", reasons),
+	)
+	return true
+}
+
 func (d *Dispatcher) postQualityWarningIfNeeded(ctx context.Context, tracker forge.IssueTracker, owner, repo string, issueNumber int, issueLabels []string, fm *models.IssueFrontmatter) {
 	if fm == nil {
 		return // No frontmatter to check
