@@ -519,3 +519,7 @@ func (c *Client) Healthy(ctx context.Context) bool {
 
 // Name returns the provider identifier.
 func (c *Client) Name() string { return "claude-cli" }
+
+// HasToolAccess returns true because claude-cli runs as a subprocess with
+// local filesystem access via tools (Read, Write, Edit, Glob, Grep).
+func (c *Client) HasToolAccess() bool { return true }

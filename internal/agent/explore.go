@@ -31,11 +31,15 @@ func ExploreContext(repoDir, issueBody string, frontmatterPaths ...string) map[s
 	result := make(map[string]string)
 	var totalBytes int
 
-	// Phase 1: Read CLAUDE.md from repo root (up to maxSingleFileBytes).
-	claudeMD := readFileCapped(filepath.Join(repoDir, "CLAUDE.md"), maxSingleFileBytes)
-	if claudeMD != "" {
-		result["CLAUDE.md"] = claudeMD
-		totalBytes += len(claudeMD)
+	// Phase 1: Read foundational files from repo root.
+	// These are always included when present because agents need them to
+	// use correct import paths, build commands, and dependency versions.
+	for _, f := range foundationalFiles(repoDir) {
+		content := readFileCapped(filepath.Join(repoDir, f), maxSingleFileBytes)
+		if content != "" {
+			result[f] = content
+			totalBytes += len(content)
+		}
 	}
 
 	// Phase 2: Collect file paths from frontmatter file_context (highest priority)
@@ -197,6 +201,32 @@ func discoverGoSiblings(repoDir, relDir string, seen map[string]bool) []string {
 		siblings = append(siblings, relPath)
 	}
 	return siblings
+}
+
+// foundationalFiles returns file paths that should always be included when
+// they exist in the repo root. These files prevent common agent failures:
+// wrong import paths (go.mod), wrong build commands (Makefile), wrong
+// dependency versions (package.json), and wrong TypeScript config (tsconfig).
+func foundationalFiles(repoDir string) []string {
+	// Always try CLAUDE.md first.
+	files := []string{"CLAUDE.md"}
+
+	// Go project: include go.mod so agents use correct module path.
+	if _, err := os.Stat(filepath.Join(repoDir, "go.mod")); err == nil {
+		files = append(files, "go.mod")
+	}
+	// Include Makefile if present (build commands, common targets).
+	if _, err := os.Stat(filepath.Join(repoDir, "Makefile")); err == nil {
+		files = append(files, "Makefile")
+	}
+	// Frontend project: include package.json and tsconfig.json.
+	if _, err := os.Stat(filepath.Join(repoDir, "web", "package.json")); err == nil {
+		files = append(files, "web/package.json")
+		if _, err := os.Stat(filepath.Join(repoDir, "web", "tsconfig.json")); err == nil {
+			files = append(files, "web/tsconfig.json")
+		}
+	}
+	return files
 }
 
 // readFileCapped reads a file up to maxBytes. Returns empty string on error

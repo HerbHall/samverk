@@ -10,35 +10,51 @@ import (
 // maxFileContextBytes caps the total injected file context to ~8k tokens (~32k bytes).
 const maxFileContextBytes = 32_000
 
-// githubSourceInstructions is appended to AI-driven agent prompts that may need
-// to read source files. Agents run on CT 202 where the Go source tree is absent;
-// the GitHub Contents API is the canonical way to fetch source.
-const githubSourceInstructions = `
+// sourceInstructionsCLI is appended to prompts for providers with local
+// filesystem access (e.g., claude-cli running in a worktree). These agents
+// have Read, Write, Edit, Glob, and Grep tools available.
+const sourceInstructionsCLI = `
 
-You do not have access to the local source tree. To read source files, use the GitHub Contents API:
+You have full access to the local source tree via your tools (Read, Glob, Grep, etc.).
+The files provided below are your starting context. Explore additional files as needed
+using your tools -- do not guess at code structure or import paths.`
 
-  curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-    https://api.github.com/repos/herbhall/samverk/contents/<path> \
-    | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['content'].replace('\n','')).decode())"
+// sourceInstructionsAPI is appended to prompts for providers without local
+// filesystem access (e.g., Ollama). The files injected into the prompt are
+// the only source context available.
+const sourceInstructionsAPI = `
 
-Always read the actual source before drawing conclusions.`
+The source files provided below are your ONLY context. You do not have filesystem access.
+Base all implementations strictly on the code shown. Do not invent import paths, API
+signatures, or patterns not visible in the provided files.`
+
+// sourceInstructions returns the appropriate file access instructions based
+// on whether the provider has local filesystem tool access.
+func sourceInstructions(hasToolAccess bool) string {
+	if hasToolAccess {
+		return sourceInstructionsCLI
+	}
+	return sourceInstructionsAPI
+}
 
 // BuildSystemPrompt dispatches to per-agent-type prompt builders and appends
 // file context and known patterns when available. Agent types that are not
 // AI-driven (human, orchestrator, dispatcher) return an empty string.
 func BuildSystemPrompt(task Task, fileContext map[string]string, patterns ...string) string {
+	srcInstructions := sourceInstructions(task.HasToolAccess)
+
 	var base string
 	switch task.AgentType {
 	case models.AgentTypeCodeGen:
-		base = buildCodeGenPrompt(task)
+		base = buildCodeGenPrompt(task, srcInstructions)
 	case models.AgentTypeTest:
-		base = buildTestPrompt(task)
+		base = buildTestPrompt(task, srcInstructions)
 	case models.AgentTypeDocs:
-		base = buildDocsPrompt(task)
+		base = buildDocsPrompt(task, srcInstructions)
 	case models.AgentTypeResearch:
-		base = buildResearchPrompt(task)
+		base = buildResearchPrompt(task, srcInstructions)
 	case models.AgentTypeQC:
-		base = buildQCPrompt(task)
+		base = buildQCPrompt(task, srcInstructions)
 	case models.AgentTypeHuman, models.AgentTypeOrchestrator, models.AgentTypeDispatcher:
 		return ""
 	default:
@@ -85,16 +101,16 @@ func buildPatternContext(patterns []string) string {
 	return b.String()
 }
 
-func buildCodeGenPrompt(task Task) string {
+func buildCodeGenPrompt(task Task, srcInstructions string) string {
 	return fmt.Sprintf(`You are a code generation agent. Your task is to implement the changes described in issue #%d: %s.
 
 Read the relevant files first using the provided context. Implement all acceptance criteria.
 
-%s`+githubSourceInstructions,
+%s`+srcInstructions,
 		task.Issue.Number, task.Issue.Title, FormatInstructions())
 }
 
-func buildTestPrompt(task Task) string {
+func buildTestPrompt(task Task, srcInstructions string) string {
 	return fmt.Sprintf(`You are a test agent. Your task is to write or fix tests for issue #%d: %s.
 
 Focus on:
@@ -102,11 +118,11 @@ Focus on:
 - Edge cases identified in the issue
 - Regression tests for bug fixes
 
-%s`+githubSourceInstructions,
+%s`+srcInstructions,
 		task.Issue.Number, task.Issue.Title, FormatInstructions())
 }
 
-func buildDocsPrompt(task Task) string {
+func buildDocsPrompt(task Task, srcInstructions string) string {
 	return fmt.Sprintf(`You are a documentation agent. Your task is to update documentation for issue #%d: %s.
 
 Ensure:
@@ -114,11 +130,11 @@ Ensure:
 - Proper heading hierarchy
 - All links are relative and valid
 
-%s`+githubSourceInstructions,
+%s`+srcInstructions,
 		task.Issue.Number, task.Issue.Title, FormatInstructions())
 }
 
-func buildResearchPrompt(task Task) string {
+func buildResearchPrompt(task Task, srcInstructions string) string {
 	return fmt.Sprintf(`You are a research agent. Your task is to investigate and summarize findings for issue #%d: %s.
 
 Post your findings as a structured markdown comment with these sections:
@@ -127,11 +143,11 @@ Post your findings as a structured markdown comment with these sections:
 ## Recommendation
 ## Sources
 
-Do not produce file edits. Your output is a comment on the issue.`+githubSourceInstructions,
+Do not produce file edits. Your output is a comment on the issue.`+srcInstructions,
 		task.Issue.Number, task.Issue.Title)
 }
 
-func buildQCPrompt(task Task) string {
+func buildQCPrompt(task Task, srcInstructions string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, `You are a quality control agent reviewing the work on issue #%d: %s.
@@ -218,7 +234,7 @@ Rules:
 - Use [REVIEW] when you cannot determine correctness (ambiguous requirements, needs human judgment).
 `, issueNum)
 
-	b.WriteString(githubSourceInstructions)
+	b.WriteString(srcInstructions)
 
 	return b.String()
 }
@@ -278,7 +294,8 @@ func ParseAcceptanceCriteria(body string) []string {
 }
 
 // buildFileContext renders the file context map into a markdown section,
-// respecting the maxFileContextBytes cap.
+// respecting the maxFileContextBytes cap. When files are truncated or
+// omitted due to the budget, a warning is appended listing what was skipped.
 func buildFileContext(files map[string]string) string {
 	if len(files) == 0 {
 		return ""
@@ -287,8 +304,15 @@ func buildFileContext(files map[string]string) string {
 	var b strings.Builder
 	b.WriteString("## Relevant Files\n")
 	remaining := maxFileContextBytes
+	var omitted []string
+	truncated := false
 
 	for path, content := range files {
+		if content == "" {
+			omitted = append(omitted, path+" (content unavailable)")
+			continue
+		}
+
 		header := fmt.Sprintf("\n### %s\n```\n", path)
 		footer := "\n```\n"
 		needed := len(header) + len(content) + len(footer)
@@ -297,19 +321,35 @@ func buildFileContext(files map[string]string) string {
 			// Truncate content to fit within budget.
 			available := remaining - len(header) - len(footer) - len("\n... (truncated)\n")
 			if available <= 0 {
-				break
+				omitted = append(omitted, path+" (budget exceeded)")
+				continue
 			}
 			b.WriteString(header)
 			b.WriteString(content[:available])
 			b.WriteString("\n... (truncated)\n")
 			b.WriteString("```\n")
-			break
+			truncated = true
+			remaining = 0
+			continue
 		}
 
 		b.WriteString(header)
 		b.WriteString(content)
 		b.WriteString(footer)
 		remaining -= needed
+	}
+
+	if truncated || len(omitted) > 0 {
+		b.WriteString("\n### File Context Warning\n\n")
+		if truncated {
+			b.WriteString("Some file contents were truncated to fit within the context budget.\n")
+		}
+		if len(omitted) > 0 {
+			b.WriteString("The following files could not be included:\n")
+			for _, o := range omitted {
+				fmt.Fprintf(&b, "- %s\n", o)
+			}
+		}
 	}
 
 	return b.String()

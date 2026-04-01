@@ -221,7 +221,7 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 			fileContext = make(map[string]string, len(exploreCtx))
 		}
 		for path, content := range exploreCtx {
-			if _, exists := fileContext[path]; !exists {
+			if existing, exists := fileContext[path]; !exists || existing == "" {
 				fileContext[path] = content
 			}
 		}
@@ -246,10 +246,6 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 			failCtx.WriteString("## Prior Failure Context\n\n")
 			failCtx.WriteString("Previous attempts on this issue failed. Avoid these mistakes:\n\n")
 			for i, msg := range priorErrors {
-				// Truncate long error messages to keep prompt manageable.
-				if len(msg) > 300 {
-					msg = msg[:300] + "..."
-				}
 				fmt.Fprintf(&failCtx, "%d. %s\n", i+1, msg)
 			}
 			messages = append(messages, provider.Message{Role: provider.RoleSystem, Content: failCtx.String()})
