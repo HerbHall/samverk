@@ -337,6 +337,32 @@ The base and overlay sets are disjoint — no label appears in both files. A pro
 | `complexity:cloud` | `#d4c5f9` | Requires cloud model (complex reasoning, ambiguity) |
 | `complexity:ambiguous` | `#fbca04` | Dispatcher needs to evaluate before routing |
 
+#### Auto-Classification
+
+When an issue does not have a complexity label, the dispatcher auto-classifies based on frontmatter signals:
+
+| Classification | Condition | Routing chain |
+| -------------- | --------- | ------------- |
+| `complexity:local` | estimated_tokens < 10k AND file_context <= 3 files | local (Ollama fleet -> Sonnet) |
+| `complexity:cloud` | estimated_tokens > 30k OR file_context >= 4 files | complex (Opus -> Sonnet) |
+| `complexity:ambiguous` | Everything else (default) | Determined by agent type |
+
+Thresholds are defined as package-level variables in `router.go` for tuning without recompile.
+
+#### Routing Chain Priority
+
+The dispatcher selects a routing chain using these rules in priority order:
+
+1. **Agent-type overrides** -- docs agents use default chain (Ollama has 100% failure rate for prose); research agents use tier-based routing (quick/standard/deep)
+2. **Complex signals** -- critical priority, complexity:cloud, or architectural title keywords route to `complex` chain
+3. **Local signals** -- boilerplate/scaffold labels, complexity:local, or chore: prefix route to `local` chain
+4. **QC agent** -- dedicated `qc` chain for cross-model validation
+5. **Code-gen/test/infra agents** -- `code-gen` chain (CLI-only providers, no Ollama)
+6. **Triage signals** -- low priority or short prose body route to `triage` chain
+7. **Default** -- everything else
+
+Routing decisions are logged with the chain key, reason, and complexity label for observability.
+
 ### Phase (lifecycle position)
 
 | Label | Color | Description |

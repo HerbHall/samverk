@@ -40,12 +40,12 @@ func TestClassifyComplexity(t *testing.T) {
 			wantComplexity: models.LabelComplexityLocal,
 		},
 		{
-			name: "small tokens (1000) and 4 files → ambiguous",
+			name: "small tokens (1000) and 4 files → cloud (file count triggers cloud)",
 			fm: &models.IssueFrontmatter{
 				EstimatedTokens: 1000,
 				FileContext:     []string{"f1", "f2", "f3", "f4"},
 			},
-			wantComplexity: models.LabelComplexityAmbiguous,
+			wantComplexity: models.LabelComplexityCloud,
 		},
 		{
 			name: "large tokens (35000) → cloud",
@@ -66,10 +66,18 @@ func TestClassifyComplexity(t *testing.T) {
 			wantComplexity: models.LabelComplexityCloud,
 		},
 		{
-			name: "medium tokens (20000) and 4 files → ambiguous",
+			name: "medium tokens (20000) and 4 files → cloud",
 			fm: &models.IssueFrontmatter{
 				EstimatedTokens: 20000,
 				FileContext:     []string{"f1", "f2", "f3", "f4"},
+			},
+			wantComplexity: models.LabelComplexityCloud,
+		},
+		{
+			name: "medium tokens (20000) and 3 files → ambiguous",
+			fm: &models.IssueFrontmatter{
+				EstimatedTokens: 20000,
+				FileContext:     []string{"f1", "f2", "f3"},
 			},
 			wantComplexity: models.LabelComplexityAmbiguous,
 		},
