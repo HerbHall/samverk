@@ -252,6 +252,24 @@ func (r *Runner) Run(ctx context.Context, task Task) error {
 		}
 	}
 
+	// Step 4d: Include human comments added after issue creation.
+	// Humans add clarifications, design decisions, and scope corrections via
+	// comments. Without this, retried agents never see human feedback.
+	if r.tracker != nil {
+		if comments, fetchErr := r.tracker.ListComments(ctx, task.Issue.Number); fetchErr == nil && len(comments) > 0 {
+			humanComments := filterHumanComments(comments)
+			if len(humanComments) > 0 {
+				var commentCtx strings.Builder
+				commentCtx.WriteString("## Human Feedback\n\n")
+				commentCtx.WriteString("These comments were added by humans after the issue was created. Follow any instructions or clarifications:\n\n")
+				for _, c := range humanComments {
+					fmt.Fprintf(&commentCtx, "### %s (%s)\n\n%s\n\n", c.Author, c.CreatedAt.Format("2006-01-02 15:04"), c.Body)
+				}
+				messages = append(messages, provider.Message{Role: provider.RoleSystem, Content: commentCtx.String()})
+			}
+		}
+	}
+
 	messages = append(messages, provider.Message{Role: provider.RoleUser, Content: task.Issue.Body})
 	req := provider.ChatRequest{
 		Model:      r.model,
@@ -492,7 +510,14 @@ func (r *Runner) retryWithValidationErrors(
 	}
 	retryVal := ValidateBeforePost(ctx, task.AgentType, workDir, retryResp.Message.Content, retryFileContext, task.Issue.Labels, r.logger)
 	if retryVal != nil && !retryVal.Pass {
-		return nil, fmt.Errorf("validation failed after retry: %s", retryVal.Errors[0].Message)
+		var allErrors strings.Builder
+		for i, ve := range retryVal.Errors {
+			if i > 0 {
+				allErrors.WriteString("; ")
+			}
+			fmt.Fprintf(&allErrors, "[%s] %s", ve.Phase, ve.Message)
+		}
+		return nil, fmt.Errorf("validation failed after retry (%d errors): %s", len(retryVal.Errors), allErrors.String())
 	}
 
 	return retryResp, nil
@@ -786,6 +811,44 @@ func (r *Runner) extractFileContext(body, workDir string) map[string]string {
 		result[p] = ""
 	}
 	return result
+}
+
+// agentCommentPrefixes identifies comments posted by samverk agents (dispatcher,
+// QC, correction engine, etc.) rather than humans. These are filtered out when
+// building the human feedback prompt section.
+var agentCommentPrefixes = []string{
+	"EDIT ",           // agent code output
+	"PR_TITLE:",       // agent PR title
+	"## QC Review:",   // QC agent verdict
+	"ESCALATE",        // dispatcher escalation
+	"RELEASE",         // dispatcher release
+	"PROGRESS",        // runner progress update
+	"TIMEOUT",         // heartbeat timeout
+	"CORRECTION",      // correction engine
+	"[dispatcher]",    // dispatcher system comments
+	"[auto-apply]",    // auto-apply comments
+}
+
+// filterHumanComments returns only comments that were written by humans,
+// excluding agent-generated comments (dispatcher, QC, correction engine, etc.).
+func filterHumanComments(comments []*forge.Comment) []*forge.Comment {
+	var human []*forge.Comment
+	for _, c := range comments {
+		if c.Body == "" {
+			continue
+		}
+		isAgent := false
+		for _, prefix := range agentCommentPrefixes {
+			if strings.HasPrefix(strings.TrimSpace(c.Body), prefix) {
+				isAgent = true
+				break
+			}
+		}
+		if !isAgent {
+			human = append(human, c)
+		}
+	}
+	return human
 }
 
 // detectCheckpoint queries SQLite for the most recent checkpoint on this issue.
