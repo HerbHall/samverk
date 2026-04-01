@@ -204,49 +204,37 @@ func (c *Client) AddComment(ctx context.Context, number int, body string) (comme
 }
 
 // ListComments returns all comments on the given issue.
+//
+// Gitea's per-issue comments endpoint does not support page-based pagination
+// (gitea/gitea#6132). It returns all comments in a single response regardless
+// of page/limit parameters. The endpoint uses time-based filtering (since/before)
+// instead, matching GitHub's design for the same endpoint.
 func (c *Client) ListComments(ctx context.Context, number int) ([]*forge.Comment, error) {
-	var result []*forge.Comment
-	page := 1
-	for {
-		gc, _, err := c.gt.ListIssueComments(c.owner, c.repo, int64(number), gogitea.ListIssueCommentOptions{
-			ListOptions: gogitea.ListOptions{Page: page, PageSize: 50},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("gitea: list comments on #%d: %w", number, err)
-		}
-		for i := range gc {
-			result = append(result, convertComment(gc[i]))
-		}
-		if len(gc) < 50 {
-			break
-		}
-		page++
+	gc, _, err := c.gt.ListIssueComments(c.owner, c.repo, int64(number), gogitea.ListIssueCommentOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("gitea: list comments on #%d: %w", number, err)
+	}
+	result := make([]*forge.Comment, 0, len(gc))
+	for i := range gc {
+		result = append(result, convertComment(gc[i]))
 	}
 	return result, nil
 }
 
 // ListCommentsSince returns comments on the given issue created after since.
-// This avoids fetching the entire comment history when only recent comments
-// are needed (e.g. checkpoint detection), reducing JSON decoder memory
-// pressure (issue #516).
+// Uses Gitea's time-based filtering (the only filtering the per-issue comments
+// endpoint supports -- see ListComments comment). Currently has zero callers
+// but kept for future use.
 func (c *Client) ListCommentsSince(ctx context.Context, number int, since time.Time) ([]*forge.Comment, error) {
-	var result []*forge.Comment
-	page := 1
-	for {
-		gc, _, err := c.gt.ListIssueComments(c.owner, c.repo, int64(number), gogitea.ListIssueCommentOptions{
-			ListOptions: gogitea.ListOptions{Page: page, PageSize: 50},
-			Since:       since,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("gitea: list comments since on #%d: %w", number, err)
-		}
-		for i := range gc {
-			result = append(result, convertComment(gc[i]))
-		}
-		if len(gc) < 50 {
-			break
-		}
-		page++
+	gc, _, err := c.gt.ListIssueComments(c.owner, c.repo, int64(number), gogitea.ListIssueCommentOptions{
+		Since: since,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gitea: list comments since on #%d: %w", number, err)
+	}
+	result := make([]*forge.Comment, 0, len(gc))
+	for i := range gc {
+		result = append(result, convertComment(gc[i]))
 	}
 	return result, nil
 }

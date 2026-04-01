@@ -304,6 +304,46 @@ func TestListComments(t *testing.T) {
 	}
 }
 
+// TestListComments_NoInfiniteLoop verifies that ListComments makes exactly one
+// HTTP request and returns the correct number of comments. This is a regression
+// test for issue #516: the Gitea per-issue comments endpoint does not support
+// page-based pagination (gitea/gitea#6132), and a previous implementation
+// wrapped it in a page++ loop that never terminated when the API returned
+// more comments than the page size.
+func TestListComments_NoInfiniteLoop(t *testing.T) {
+	var requestCount int
+	handler := http.NewServeMux()
+	handler.HandleFunc("GET /api/v1/repos/owner/repo/issues/5/comments", func(w http.ResponseWriter, _ *http.Request) {
+		requestCount++
+		// Return 77 comments (exceeds any page size) on every request,
+		// simulating Gitea's actual behavior.
+		comments := make([]*gogitea.Comment, 77)
+		for i := range comments {
+			comments[i] = &gogitea.Comment{
+				ID:      int64(i + 1),
+				Body:    "comment body",
+				Poster:  &gogitea.User{UserName: "bot"},
+				Created: time.Now(),
+			}
+		}
+		writeJSON(t, w, http.StatusOK, comments)
+	})
+
+	c, _ := newTestClient(t, handler)
+
+	comments, err := c.ListComments(context.Background(), 5)
+	if err != nil {
+		t.Fatalf("ListComments: %v", err)
+	}
+
+	if requestCount != 1 {
+		t.Errorf("HTTP requests = %d, want 1 (no pagination loop)", requestCount)
+	}
+	if len(comments) != 77 {
+		t.Errorf("len(comments) = %d, want 77", len(comments))
+	}
+}
+
 func TestSetLabels(t *testing.T) {
 	handler := http.NewServeMux()
 
