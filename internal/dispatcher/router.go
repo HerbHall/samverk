@@ -101,21 +101,40 @@ func classifyByHeuristic(issue *forge.Issue) models.AgentType {
 	return ""
 }
 
+// Complexity classification thresholds. These control when issues are routed
+// to local (cheaper) vs cloud (more capable) model chains.
+var (
+	// complexityLocalMaxTokens is the upper bound for complexity:local classification.
+	// Issues with estimated_tokens below this AND few files are routed to local models.
+	complexityLocalMaxTokens = 10000
+
+	// complexityLocalMaxFiles is the maximum file_context count for local classification.
+	complexityLocalMaxFiles = 3
+
+	// complexityCloudMinTokens is the lower bound for complexity:cloud classification.
+	// Issues with estimated_tokens above this are always routed to cloud models.
+	complexityCloudMinTokens = 30000
+
+	// complexityCloudMinFiles is the minimum file_context count for cloud classification.
+	// Issues with this many or more files are routed to cloud models regardless of tokens.
+	complexityCloudMinFiles = 4
+)
+
 // classifyComplexity determines the complexity level based on estimated tokens and file context.
 // Returns one of complexity:local, complexity:cloud, or complexity:ambiguous.
 // Rules:
-//   - complexity:local if estimated_tokens < 10000 and file_context has <= 3 files
-//   - complexity:cloud if estimated_tokens > 30000 or file_context has > 5 files
+//   - complexity:local if estimated_tokens < localMaxTokens and file_context has <= localMaxFiles
+//   - complexity:cloud if estimated_tokens > cloudMinTokens or file_context has >= cloudMinFiles
 //   - complexity:ambiguous otherwise
 func classifyComplexity(fm *models.IssueFrontmatter) string {
 	if fm == nil {
 		return models.LabelComplexityAmbiguous
 	}
 
-	hasSmallTokens := fm.EstimatedTokens > 0 && fm.EstimatedTokens < 10000
-	hasSmallFileContext := len(fm.FileContext) <= 3
-	hasLargeTokens := fm.EstimatedTokens > 30000
-	hasLargeFileContext := len(fm.FileContext) > 5
+	hasSmallTokens := fm.EstimatedTokens > 0 && fm.EstimatedTokens < complexityLocalMaxTokens
+	hasSmallFileContext := len(fm.FileContext) <= complexityLocalMaxFiles
+	hasLargeTokens := fm.EstimatedTokens > complexityCloudMinTokens
+	hasLargeFileContext := len(fm.FileContext) >= complexityCloudMinFiles
 
 	if hasSmallTokens && hasSmallFileContext {
 		return models.LabelComplexityLocal
@@ -124,6 +143,18 @@ func classifyComplexity(fm *models.IssueFrontmatter) string {
 		return models.LabelComplexityCloud
 	}
 	return models.LabelComplexityAmbiguous
+}
+
+// complexityLabel returns the complexity label on the issue, or "none" if absent.
+func complexityLabel(issue *forge.Issue) string {
+	for _, label := range issue.Labels {
+		if label == models.LabelComplexityLocal ||
+			label == models.LabelComplexityCloud ||
+			label == models.LabelComplexityAmbiguous {
+			return label
+		}
+	}
+	return "none"
 }
 
 // hasComplexityLabel checks if the issue already has a complexity label.
@@ -430,6 +461,13 @@ func (d *Dispatcher) route(ctx context.Context, owner, repo string, issue *forge
 	}
 
 	providerKey, reason := selectProviderKey(issue, agentType)
+	d.logger.Info("routing decision",
+		zap.Int("issue", issue.Number),
+		zap.String("agent_type", string(agentType)),
+		zap.String("chain", providerKey),
+		zap.String("reason", reason),
+		zap.String("complexity", complexityLabel(issue)),
+	)
 
 	// Chain promotion: if the issue is old and routed to a free (Ollama) chain,
 	// promote to a plan-based CLI chain when idle workers are available.
