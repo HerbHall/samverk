@@ -44,6 +44,7 @@ For the failing issue, read the **complete comment history** and answer:
 Use the "5 Whys" method. The first answer is almost never the root cause.
 
 Example:
+
 - Why did it fail? Agent used wrong import path.
 - Why wrong import? Agent didn't see go.mod.
 - Why didn't it see go.mod? go.mod not in file_context.
@@ -166,6 +167,7 @@ the dependent decisions must be re-evaluated.
 ### Level 3: Specific
 
 Free-text field capturing the exact error or pattern. Examples:
+
 - `import "github.com/herbhall/samverk" should be "gitea.herbhall.net/samverk/samverk"`
 - `used axios instead of fetch (project uses fetch)`
 - `qwen3-coder:30b not pulled on HDH-NZXT`
