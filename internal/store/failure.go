@@ -47,12 +47,13 @@ func (s *SQLiteStore) SaveFailureEvent(ctx context.Context, e *models.FailureEve
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO failure_events (id, issue_number, session_id, failure_class, error_message, agent_type, provider, attempt_number, duration_ms, timestamp, created_at, root_cause_category, component)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO failure_events (id, issue_number, session_id, failure_class, error_message, agent_type, provider, attempt_number, duration_ms, timestamp, created_at, root_cause_category, component, category, subcategory)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.IssueNumber, e.SessionID, string(e.FailureClass), e.ErrorMessage,
 		e.AgentType, e.Provider, e.AttemptNumber,
 		e.Duration.Milliseconds(), e.Timestamp.UTC().Format(time.RFC3339), now,
 		e.RootCauseCategory, e.Component,
+		e.Category, e.Subcategory,
 	)
 	return err
 }

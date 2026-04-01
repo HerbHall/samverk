@@ -342,7 +342,7 @@ func (d *Dispatcher) handleTaskComplete(result agent.TaskResult) {
 			string(result.AgentType), result.ProviderKey, result.Error, 0)
 
 		// Use correction engine to decide response instead of blind re-queue.
-		fc := classifyFailure(result.Error)
+		fc := ClassifyFailureDetailed(result.Error).Category
 		attempt := d.getPersistedFailureCount(ctx, result.IssueNumber)
 		decision := decideCorrection(fc, result.IssueNumber, attempt, 0)
 		d.applyCorrection(ctx, result, decision)

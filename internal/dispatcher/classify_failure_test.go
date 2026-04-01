@@ -158,26 +158,26 @@ func TestClassifyFailure(t *testing.T) {
 			input: "insufficient_quota on model claude-3-5-sonnet",
 			want:  models.FailureClassBudget,
 		},
-		// rate_limit is transient throttling, classified as provider_down (retryable).
+		// rate_limit is transient throttling, now its own class (retryable).
 		{
-			name:  "rate_limit is provider_down",
+			name:  "rate_limit is rate_limit",
 			input: "rate_limit hit, slow down",
-			want:  models.FailureClassProviderDown,
+			want:  models.FailureClassRateLimit,
 		},
 		{
-			name:  "429 is provider_down",
+			name:  "429 is rate_limit",
 			input: "HTTP 429 Too Many Requests",
-			want:  models.FailureClassProviderDown,
+			want:  models.FailureClassRateLimit,
 		},
 		{
-			name:  "too many requests is provider_down",
+			name:  "too many requests is rate_limit",
 			input: "too many requests, please retry later",
-			want:  models.FailureClassProviderDown,
+			want:  models.FailureClassRateLimit,
 		},
 		{
-			name:  "overloaded is provider_down",
+			name:  "overloaded is rate_limit",
 			input: "provider overloaded, please try again",
-			want:  models.FailureClassProviderDown,
+			want:  models.FailureClassRateLimit,
 		},
 		{
 			name:  "budget: case-insensitive BUDGET EXCEEDED",

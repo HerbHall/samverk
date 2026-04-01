@@ -12,6 +12,7 @@ const (
 	FailureClassPermanent    FailureClass = "permanent"     // model not found, permanent config error
 	FailureClassTimeout      FailureClass = "timeout"       // heartbeat timeout / context deadline
 	FailureClassProviderDown FailureClass = "provider_down" // connection refused, provider unreachable
+	FailureClassRateLimit    FailureClass = "rate_limit"    // 429, too many requests, overloaded (transient)
 	FailureClassOOMKill      FailureClass = "oom_kill"      // signal: killed (OOM or external)
 	FailureClassShutdown     FailureClass = "shutdown"      // exit 143 (SIGTERM during graceful shutdown)
 	FailureClassPanic        FailureClass = "panic"         // send on closed channel, runtime panic
@@ -25,7 +26,7 @@ const (
 // IsRetryable returns true if this failure class warrants a retry attempt.
 func (fc FailureClass) IsRetryable() bool {
 	switch fc {
-	case FailureClassTimeout, FailureClassOOMKill, FailureClassPostProcess:
+	case FailureClassTimeout, FailureClassOOMKill, FailureClassPostProcess, FailureClassRateLimit:
 		return true
 	case FailureClassShutdown:
 		// Shutdown kills are expected during restarts — don't count as real failures.
@@ -57,6 +58,15 @@ func (fc FailureClass) IsPermanent() bool {
 	}
 }
 
+// FailureClassification holds the 3-level classification taxonomy for a failure.
+// Level 1 (Category) maps to FailureClass for backwards compatibility.
+// Level 2 (Subcategory) provides actionable grouping for process improvement.
+// Level 3 (Specific) is the raw error text captured in ErrorMessage.
+type FailureClassification struct {
+	Category    FailureClass `json:"category"`    // Level 1: agent, infrastructure, routing, etc.
+	Subcategory string       `json:"subcategory"` // Level 2: prompt_blind, wrong_model, lint_fail, etc.
+}
+
 // FailureEvent represents a single failure occurrence in the dispatcher or
 // agent runtime. Every failure path emits one of these to the store for
 // aggregation and analysis.
@@ -65,6 +75,8 @@ type FailureEvent struct {
 	IssueNumber   int           `json:"issue_number"`
 	SessionID     string        `json:"session_id,omitempty"` // empty for dispatcher-level failures
 	FailureClass  FailureClass  `json:"failure_class"`
+	Category      string        `json:"category,omitempty"`    // Level 1 of 3-level taxonomy
+	Subcategory   string        `json:"subcategory,omitempty"` // Level 2 of 3-level taxonomy
 	ErrorMessage  string        `json:"error_message"`
 	AgentType     string        `json:"agent_type,omitempty"`
 	Provider      string        `json:"provider,omitempty"`

@@ -78,6 +78,12 @@ func decideCorrection(
 		base.Reason = "provider unreachable, switching to next in chain"
 		base.BackoffUntil = backoffWithJitter(attempt)
 
+	case models.FailureClassRateLimit:
+		base.Action = CorrectionActionSwitchProvider
+		base.Scope = CorrectionScopeTemporary
+		base.Reason = "rate limited, switching to next provider in chain"
+		base.BackoffUntil = backoffWithJitter(attempt)
+
 	case models.FailureClassTimeout:
 		if attempt >= maxRetryAttempts {
 			base.Action = CorrectionActionEscalate
