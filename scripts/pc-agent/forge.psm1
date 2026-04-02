@@ -21,23 +21,64 @@ $ErrorActionPreference = 'Stop'
 # Configuration
 # ---------------------------------------------------------------------------
 
+# Structural defaults only — forge-specific values are read from project.yaml.
 $script:DefaultForgeConfig = @{
-    Forge           = 'github'           # 'github' or 'gitea'
-    GiteaUrl        = 'http://gitea.herbhall.net'
+    Forge           = 'gitea'
+    ForgeUrl        = ''                 # Base URL (e.g. https://gitea.herbhall.net)
     GiteaTokenEnv   = 'GITEA_TOKEN'
-    Project         = 'HerbHall/samverk'
+    Project         = ''                 # owner/repo (e.g. samverk/samverk)
     AgentId         = 'pc-worker'
     PollInterval    = 60
     AgentLabels     = @('agent:code-gen', 'agent:triage', 'agent:research', 'agent:docs', 'agent:pc')
 }
 
+function Read-ProjectConfig {
+    <#
+    .SYNOPSIS
+        Parses .samverk/project.yaml and returns a hashtable of key-value pairs.
+    .DESCRIPTION
+        Handles the flat key: value format used by project.yaml. Does not require
+        the powershell-yaml module. Skips nested structures and comments.
+    .PARAMETER Path
+        Explicit path to project.yaml. If omitted, searches relative to the repo
+        root (detected via git) or relative to this module's location.
+    #>
+    [CmdletBinding()]
+    param([string]$Path = '')
+
+    if ($Path -eq '') {
+        # Try repo root first (works from worktrees and working copies).
+        $repoRoot = $null
+        try { $repoRoot = (& git rev-parse --show-toplevel 2>$null) } catch {}
+        if ($repoRoot) {
+            $Path = Join-Path $repoRoot '.samverk' 'project.yaml'
+        } else {
+            # Fallback: relative to this module's location (scripts/pc-agent/ → repo root).
+            $Path = Join-Path $PSScriptRoot '..\..\.samverk\project.yaml'
+        }
+    }
+
+    if (-not (Test-Path $Path)) { return @{} }
+
+    $config = @{}
+    foreach ($line in (Get-Content $Path)) {
+        if ($line -match '^\s*#') { continue }
+        if ($line -match '^\s*([\w_]+)\s*:\s*(.+)$') {
+            $config[$Matches[1]] = $Matches[2].Trim()
+        }
+    }
+    return $config
+}
+
 function Get-ForgeConfig {
     <#
     .SYNOPSIS
-        Returns forge configuration, merging defaults with environment overrides.
+        Returns forge configuration from project.yaml, with environment overrides.
     .DESCRIPTION
-        Environment variables override hardcoded defaults so PC workers can be
-        configured per-deployment (Docker, different forges, multi-project).
+        Configuration priority (highest wins):
+            1. Environment variables (SAMVERK_FORGE, SAMVERK_FORGE_URL, etc.)
+            2. .samverk/project.yaml (forge, forge_url fields)
+            3. Structural defaults (token env name, agent labels)
         Env vars: SAMVERK_FORGE, SAMVERK_FORGE_URL, SAMVERK_FORGE_PROJECT,
         SAMVERK_AGENT_ID.
     #>
@@ -46,8 +87,20 @@ function Get-ForgeConfig {
 
     $config = $script:DefaultForgeConfig.Clone()
 
+    # Read project.yaml and derive forge config from forge_url.
+    $projectConfig = Read-ProjectConfig -Path $YamlPath
+    if ($projectConfig.forge) {
+        $config.Forge = $projectConfig.forge
+    }
+    if ($projectConfig.forge_url) {
+        $uri = [System.Uri]$projectConfig.forge_url
+        $config.ForgeUrl = $uri.GetLeftPart([System.UriPartial]::Authority)
+        $config.Project  = $uri.AbsolutePath.TrimStart('/').TrimEnd('/')
+    }
+
+    # Environment variables override project.yaml.
     if ($env:SAMVERK_FORGE)         { $config.Forge    = $env:SAMVERK_FORGE }
-    if ($env:SAMVERK_FORGE_URL)     { $config.GiteaUrl = $env:SAMVERK_FORGE_URL }
+    if ($env:SAMVERK_FORGE_URL)     { $config.ForgeUrl = $env:SAMVERK_FORGE_URL }
     if ($env:SAMVERK_FORGE_PROJECT) { $config.Project  = $env:SAMVERK_FORGE_PROJECT }
     if ($env:SAMVERK_AGENT_ID)      { $config.AgentId  = $env:SAMVERK_AGENT_ID }
 
@@ -77,7 +130,7 @@ function Invoke-GiteaAPI {
     }
 
     $headers = @{ Authorization = "token $token"; 'Content-Type' = 'application/json' }
-    $uri     = "$($Config.GiteaUrl)/api/v1$Path"
+    $uri     = "$($Config.ForgeUrl)/api/v1$Path"
 
     $params = @{ Uri = $uri; Method = $Method; Headers = $headers; TimeoutSec = 30 }
     if ($Method -in @('POST', 'PATCH', 'PUT') -and $Body.Count -gt 0) {
@@ -393,6 +446,7 @@ function Open-PullRequest {
 }
 
 Export-ModuleMember -Function @(
+    'Read-ProjectConfig',
     'Get-ForgeConfig',
     'Get-ClaimableIssues',
     'Get-IssueDetails',

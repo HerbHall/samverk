@@ -22,30 +22,45 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
 # Default configuration — callers can override by passing -Config.
+# Clone URL is derived from .samverk/project.yaml at runtime.
 $script:DefaultConfig = @{
     Root         = 'D:\bots'
     BareRepo     = 'samverk.git'
     MaxWorktrees = 3
-    Remotes      = @{
-        github = 'https://github.com/HerbHall/samverk.git'
-        gitea  = 'http://gitea.herbhall.net/samverk/samverk.git'
-    }
+    CloneUrl     = ''
 }
 
 function Get-WorkspaceConfig {
     <#
     .SYNOPSIS
-        Returns configuration, merging defaults with an optional .samverk/pc-agent.yaml override.
+        Returns workspace configuration, deriving clone URL from .samverk/project.yaml.
+    .DESCRIPTION
+        Reads forge_url from project.yaml and appends .git to form the clone URL.
+        Falls back to SAMVERK_FORGE_URL environment variable if project.yaml is
+        not found.
     .PARAMETER YamlPath
-        Path to pc-agent.yaml. If omitted, uses D:\devspace\Samverk\.samverk\pc-agent.yaml.
+        Path to project.yaml. If omitted, auto-detected from repo root.
     #>
     [CmdletBinding()]
     param(
         [string]$YamlPath = ''
     )
-    # Return defaults — YAML parsing would require powershell-yaml module.
-    # When that module is available, add: Import-Module powershell-yaml and parse.
-    return $script:DefaultConfig
+
+    $config = $script:DefaultConfig.Clone()
+
+    # Import Read-ProjectConfig from forge.psm1 if available.
+    if (-not (Get-Command Read-ProjectConfig -ErrorAction SilentlyContinue)) {
+        Import-Module (Join-Path $PSScriptRoot 'forge.psm1') -Global -WarningAction SilentlyContinue
+    }
+
+    $projectConfig = Read-ProjectConfig -Path $YamlPath
+    if ($projectConfig.forge_url) {
+        $config.CloneUrl = "$($projectConfig.forge_url).git"
+    } elseif ($env:SAMVERK_FORGE_URL -and $env:SAMVERK_FORGE_PROJECT) {
+        $config.CloneUrl = "$env:SAMVERK_FORGE_URL/$env:SAMVERK_FORGE_PROJECT.git"
+    }
+
+    return $config
 }
 
 function Get-BareRepoPath {
@@ -84,18 +99,16 @@ function Initialize-AgentWorkspace {
         }
     }
 
-    $null = New-Item -ItemType Directory -Force -Path $Config.Root
-
-    Write-Host "Cloning bare repo from $($Config.Remotes.github) to $bareRepo ..."
-    $null = & git clone --bare $Config.Remotes.github $bareRepo 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "git clone --bare failed (exit $LASTEXITCODE)"
+    if (-not $Config.CloneUrl) {
+        throw "CloneUrl not configured. Ensure .samverk/project.yaml exists with forge_url, or set SAMVERK_FORGE_URL + SAMVERK_FORGE_PROJECT."
     }
 
-    # Add gitea as a secondary remote for push mirroring.
-    $null = & git -C $bareRepo remote add gitea $Config.Remotes.gitea 2>&1
+    $null = New-Item -ItemType Directory -Force -Path $Config.Root
+
+    Write-Host "Cloning bare repo from $($Config.CloneUrl) to $bareRepo ..."
+    $null = & git clone --bare $Config.CloneUrl $bareRepo 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Could not add gitea remote (non-fatal): gitea remote may already exist."
+        throw "git clone --bare failed (exit $LASTEXITCODE)"
     }
 
     Write-Host "Workspace initialized at $($Config.Root)"
