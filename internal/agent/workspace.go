@@ -193,17 +193,43 @@ func restoreInjectedFiles(workDir string) {
 	}
 }
 
-// ChangedFiles returns the list of files changed in the most recent commit
-// relative to the workspace directory.
+// ChangedFiles returns all files modified in the workspace, including
+// unstaged changes, staged changes, and untracked files. This captures
+// CLI agent modifications (via Write/Edit tools) that have not been
+// committed yet.
+//
+// Three sources are checked:
+//  1. Unstaged changes (modified tracked files vs HEAD)
+//  2. Staged changes (index vs HEAD)
+//  3. Untracked files (new files the agent created)
+//
+// Previously used HEAD~1 which showed the parent commit diff, missing all
+// uncommitted agent work. Fixed in #592 Stage 1 E2E validation.
 func ChangedFiles(workDir string) ([]string, error) {
-	out, err := gitExec(workDir, "diff", "--name-only", "HEAD~1")
+	// Unstaged changes (working tree vs HEAD).
+	unstaged, err := gitExec(workDir, "diff", "--name-only", "HEAD")
 	if err != nil {
-		return nil, fmt.Errorf("git diff: %w", err)
+		return nil, fmt.Errorf("git diff HEAD: %w", err)
 	}
+	// Staged changes (index vs HEAD).
+	staged, err := gitExec(workDir, "diff", "--name-only", "--cached", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("git diff --cached: %w", err)
+	}
+	// Untracked files (new files the agent created via Write tool).
+	untracked, err := gitExec(workDir, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files: %w", err)
+	}
+
+	seen := make(map[string]bool)
 	var files []string
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line != "" {
-			files = append(files, line)
+	for _, out := range []string{unstaged, staged, untracked} {
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line != "" && !seen[line] {
+				seen[line] = true
+				files = append(files, line)
+			}
 		}
 	}
 	return files, nil

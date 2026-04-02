@@ -379,13 +379,12 @@ func TestValidateWorkspaceOutput_CLAUDEMDOnlyIsNonRetryable(t *testing.T) {
 	// qwen3-coder:30b in the "default" routing chain.
 	dir := setupTestRepo(t)
 
-	// Second commit: only modify CLAUDE.md (config-only output).
+	// Modify CLAUDE.md without committing (simulates CLI agent modifying
+	// files via tools before validation runs).
 	claudeMD := filepath.Join(dir, "CLAUDE.md")
 	if err := os.WriteFile(claudeMD, []byte("# overwritten by agent\n"), 0o644); err != nil {
 		t.Fatalf("write CLAUDE.md: %v", err)
 	}
-	mustGit(t, dir, "add", "CLAUDE.md")
-	mustGit(t, dir, "commit", "-m", "bad: overwrite CLAUDE.md only")
 
 	result := ValidateWorkspaceOutput(dir, nil, nil, zap.NewNop())
 
@@ -593,9 +592,7 @@ func TestValidateWorkspaceOutput_SPAOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Stage and commit the SPA file
-	mustGit(t, dir, "add", ".")
-	mustGit(t, dir, "commit", "-m", "rebuild spa")
+	// Leave SPA file uncommitted (simulates CLI agent output before commit).
 
 	// Validate with frontend expectations
 	fileContext := []string{"web/src/App.tsx"}
@@ -635,9 +632,7 @@ func TestValidateWorkspaceOutput_MissingFrontendFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Stage and commit
-	mustGit(t, dir, "add", ".")
-	mustGit(t, dir, "commit", "-m", "backend changes")
+	// Leave backend file uncommitted (simulates CLI agent output before commit).
 
 	// Validate with frontend file requirement
 	fileContext := []string{"web/src/App.tsx"}

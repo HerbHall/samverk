@@ -107,7 +107,7 @@ func buildCodeGenPrompt(task Task, srcInstructions string) string {
 Read the relevant files first using the provided context. Implement all acceptance criteria.
 
 %s`+srcInstructions,
-		task.Issue.Number, task.Issue.Title, FormatInstructions())
+		task.Issue.Number, task.Issue.Title, FormatInstructionsForProvider(task.HasToolAccess))
 }
 
 func buildTestPrompt(task Task, srcInstructions string) string {
@@ -119,7 +119,7 @@ Focus on:
 - Regression tests for bug fixes
 
 %s`+srcInstructions,
-		task.Issue.Number, task.Issue.Title, FormatInstructions())
+		task.Issue.Number, task.Issue.Title, FormatInstructionsForProvider(task.HasToolAccess))
 }
 
 func buildDocsPrompt(task Task, srcInstructions string) string {
@@ -131,7 +131,7 @@ Ensure:
 - All links are relative and valid
 
 %s`+srcInstructions,
-		task.Issue.Number, task.Issue.Title, FormatInstructions())
+		task.Issue.Number, task.Issue.Title, FormatInstructionsForProvider(task.HasToolAccess))
 }
 
 func buildResearchPrompt(task Task, srcInstructions string) string {
