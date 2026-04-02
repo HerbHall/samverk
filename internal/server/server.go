@@ -257,29 +257,30 @@ func (s *Server) registerRoutes() {
 	}
 
 	// Serve embedded SPA for all unmatched routes.
-	// When vanity imports are configured, ?go-get=1 requests are intercepted
-	// before the SPA to serve go-import meta tags for Go module resolution.
 	// When auth is enabled, require a valid session cookie.
 	// CF Access middleware runs first: if a valid JWT is present, it auto-issues
 	// a session and redirects to /, bypassing the token login form.
 	spa := http.Handler(spaHandler())
-	if s.cfg.VanityResolver != nil {
-		vanity := handleVanityImport(s.cfg.VanityResolver)
-		inner := spa
-		spa = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Query().Get("go-get") == "1" {
-				vanity.ServeHTTP(w, r)
-				return
-			}
-			inner.ServeHTTP(w, r)
-		})
-	}
 	if s.authEnabled() {
 		spaWithAuth := requireSession(s.sessions)(spa)
 		if s.cfg.CFAccessTeamDomain != "" && s.sessions != nil {
 			spaWithAuth = CFAccessMiddleware(s.cfg.CFAccessTeamDomain, s.sessions)(spaWithAuth)
 		}
-		s.mux.Handle("/", spaWithAuth)
+		spa = spaWithAuth
+	}
+
+	// Vanity Go import handler: intercepts ?go-get=1 requests BEFORE auth
+	// so Go tooling can resolve module paths without credentials.
+	if s.cfg.VanityResolver != nil {
+		vanity := handleVanityImport(s.cfg.VanityResolver)
+		authedSPA := spa
+		s.mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("go-get") == "1" {
+				vanity.ServeHTTP(w, r)
+				return
+			}
+			authedSPA.ServeHTTP(w, r)
+		}))
 	} else {
 		s.mux.Handle("/", spa)
 	}
