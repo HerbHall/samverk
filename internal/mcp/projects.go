@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 	"gopkg.in/yaml.v3"
 )
 

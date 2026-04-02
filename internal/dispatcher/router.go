@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/internal/agent"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/agent"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // knownAgentTypes is the set of valid agent types for routing validation.

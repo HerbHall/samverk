@@ -8,7 +8,7 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // searchIssuesInput is the typed input for the search_issues tool.

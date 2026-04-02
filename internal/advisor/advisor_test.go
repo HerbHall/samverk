@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func ptr[T any](v T) *T { return &v }

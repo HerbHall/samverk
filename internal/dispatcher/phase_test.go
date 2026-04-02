@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // frontmatterBody builds a minimal issue body with the given agent_type in frontmatter.

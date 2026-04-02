@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/internal/synapset"
+	"samverk.dev/samverk/internal/synapset"
 	"go.uber.org/zap"
 )
 

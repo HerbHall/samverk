@@ -10,7 +10,7 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // listFilesInput is the typed input for the list_files tool.

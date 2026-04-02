@@ -5,7 +5,7 @@ import (
 	"go.uber.org/zap"
 	"time"
 
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/store"
 )
 
 // StoreCostSource adapts store.Store to the CostSource interface.

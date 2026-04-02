@@ -11,8 +11,8 @@ import (
 
 	gogithub "github.com/google/go-github/v68/github"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // Compile-time interface check.

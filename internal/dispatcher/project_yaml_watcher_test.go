@@ -13,7 +13,7 @@ import (
 
 	"go.uber.org/zap/zaptest"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // writeProjectYAML writes a project.yaml with the given forge and URL to dir.

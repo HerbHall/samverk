@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // mockStore implements store.Store for testing. Only RecordCost and

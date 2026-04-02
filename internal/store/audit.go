@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/herbhall/samverk/internal/audit"
+	"samverk.dev/samverk/internal/audit"
 )
 
 // SaveAuditResults persists a batch of provider audit results.

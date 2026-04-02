@@ -8,7 +8,7 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // getFailureSummaryInput is the typed input for the get_failure_summary tool.

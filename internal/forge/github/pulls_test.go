@@ -9,7 +9,7 @@ import (
 
 	gogithub "github.com/google/go-github/v68/github"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 func TestCreatePullRequest(t *testing.T) {

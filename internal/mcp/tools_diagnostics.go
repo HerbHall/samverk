@@ -9,7 +9,7 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/version"
+	"samverk.dev/samverk/internal/version"
 )
 
 // diagnosticsInput is the typed input for the get_diagnostics tool.

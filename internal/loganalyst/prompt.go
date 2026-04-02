@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbhall/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/logstore"
 )
 
 // maxPromptEntries is the maximum number of log entries included in the

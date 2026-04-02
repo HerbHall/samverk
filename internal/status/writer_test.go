@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // mockTracker implements forge.IssueTracker for testing.

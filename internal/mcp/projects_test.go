@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	internalmcp "samverk.dev/samverk/internal/mcp"
 )
 
 // newHTTPTestServer wraps an http.Handler in an httptest.Server with cleanup.

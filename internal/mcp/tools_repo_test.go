@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/forge"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"samverk.dev/samverk/internal/forge"
+	internalmcp "samverk.dev/samverk/internal/mcp"
 )
 
 // mockRepoReader implements forge.RepoReader for testing.

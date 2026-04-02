@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/server"
+	"samverk.dev/samverk/internal/server"
 )
 
 func newAuthTestServer(t *testing.T, token string) *httptest.Server {

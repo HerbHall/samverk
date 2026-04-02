@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 	"go.uber.org/zap"
 )
 

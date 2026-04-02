@@ -9,8 +9,8 @@ import (
 
 	gogitea "code.gitea.io/sdk/gitea"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func TestCreatePullRequest(t *testing.T) {

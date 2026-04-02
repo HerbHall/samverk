@@ -6,7 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func TestCircuitBreaker_TimeoutTripsAfterThreshold(t *testing.T) {

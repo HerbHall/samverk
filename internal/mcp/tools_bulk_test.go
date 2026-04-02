@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/forge"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	internalmcp "samverk.dev/samverk/internal/mcp"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func newTestBulkServer(t *testing.T, tracker forge.IssueTracker) *httptest.Server {

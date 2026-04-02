@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/herbhall/samverk/internal/version"
+	"samverk.dev/samverk/internal/version"
 )
 
 // diagnosticsResponse is the top-level response for GET /api/v1/diagnostics.

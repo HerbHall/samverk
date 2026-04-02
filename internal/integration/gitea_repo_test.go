@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	giteaadapter "github.com/herbhall/samverk/internal/forge/gitea"
-	"github.com/herbhall/samverk/internal/forge"
+	giteaadapter "samverk.dev/samverk/internal/forge/gitea"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // envOrDefault returns the value of the environment variable key,

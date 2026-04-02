@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // projectDTO is the JSON representation of a registered project.

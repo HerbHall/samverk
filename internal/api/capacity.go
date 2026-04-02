@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/hostmetrics"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/hostmetrics"
+	"samverk.dev/samverk/pkg/models"
 )
 
 type capacityApplyRequest struct {

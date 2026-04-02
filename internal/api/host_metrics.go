@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/herbhall/samverk/internal/hostmetrics"
+	"samverk.dev/samverk/internal/hostmetrics"
 )
 
 // SetHostMetrics attaches the host metrics collector to the API handler.

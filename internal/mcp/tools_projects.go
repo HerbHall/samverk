@@ -8,7 +8,7 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/autonomy"
 )
 
 // listProjectsInput is the typed input for the list_projects tool.

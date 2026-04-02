@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/server"
+	"samverk.dev/samverk/internal/server"
 )
 
 func TestBearerAuth(t *testing.T) {

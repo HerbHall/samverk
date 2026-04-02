@@ -12,15 +12,15 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/agent"
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/eventbus"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/metrics"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/internal/synapset"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/agent"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/eventbus"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/internal/synapset"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // claimedIssue tracks in-memory heartbeat state for a single routed issue.

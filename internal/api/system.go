@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/internal/version"
+	"samverk.dev/samverk/internal/version"
 )
 
 // versionResponse is the JSON body for /api/v1/system/version.

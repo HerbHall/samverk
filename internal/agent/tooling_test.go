@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/synapset"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/synapset"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func TestGenerateAgentCLAUDEMD_Go(t *testing.T) {

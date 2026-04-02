@@ -6,10 +6,10 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
-var samverkPkgRe = regexp.MustCompile(`github\.com/herbhall/samverk/(\S+)`)
+var samverkPkgRe = regexp.MustCompile(`samverk\.dev/samverk/(\S+)`)
 
 func rcaCategoryForClass(fc models.FailureClass) string {
 	switch fc {

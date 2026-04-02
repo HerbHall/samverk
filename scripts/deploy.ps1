@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $BIN = "samverk"
-$VERSION_PKG = "github.com/herbhall/samverk/internal/version"
+$VERSION_PKG = "samverk.dev/samverk/internal/version"
 $VERSION = (git describe --tags --always --dirty 2>$null) ?? "dev"
 $COMMIT = (git rev-parse --short HEAD 2>$null) ?? "unknown"
 $DATE = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")

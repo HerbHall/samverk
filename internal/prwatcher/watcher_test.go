@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func TestIsEligible(t *testing.T) {

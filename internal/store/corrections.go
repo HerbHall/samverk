@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // SaveCorrectionEvent inserts a correction event into the corrections table.

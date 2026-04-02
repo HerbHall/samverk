@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func TestLatestSuccessByProvider_NoSessions(t *testing.T) {

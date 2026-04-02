@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/internal/loganalyst"
+	"samverk.dev/samverk/internal/loganalyst"
 )
 
 // handleLogSummary returns an AI-powered or fallback summary of logs

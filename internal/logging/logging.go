@@ -6,7 +6,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/herbhall/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/logstore"
 )
 
 // New creates a logger based on SAMVERK_ENV.

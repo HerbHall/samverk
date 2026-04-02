@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/logstore"
 )
 
 // mockLogQuerier records calls and returns preset entries.

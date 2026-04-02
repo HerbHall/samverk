@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/herbhall/samverk/internal/provider"
+	"samverk.dev/samverk/internal/provider"
 )
 
 // SaveProviderHealthSnapshot persists the latest provider health data so the

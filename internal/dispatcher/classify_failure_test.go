@@ -3,7 +3,7 @@ package dispatcher
 import (
 	"testing"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func TestClassifyFailure(t *testing.T) {

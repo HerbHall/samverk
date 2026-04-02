@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/metrics"
 )
 
 // stubPool implements poolMetricsSource for tests.

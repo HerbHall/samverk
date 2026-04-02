@@ -12,13 +12,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/herbhall/samverk/internal/cost"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/metrics"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/internal/synapset"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/cost"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/internal/synapset"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // ErrPoolShutdown is returned when Submit is called on a shut-down pool.

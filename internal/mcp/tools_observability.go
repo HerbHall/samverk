@@ -8,7 +8,7 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/logstore"
 )
 
 // listWorkersInput is the typed input for the list_workers tool.

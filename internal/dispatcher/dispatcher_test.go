@@ -10,10 +10,10 @@ import (
 	"go.uber.org/zap"
 	"time"
 
-	"github.com/herbhall/samverk/internal/agent"
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/agent"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // mockTracker implements forge.IssueTracker for testing.

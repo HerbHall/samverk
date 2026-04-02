@@ -11,13 +11,13 @@ import (
 	"go.uber.org/zap"
 	"time"
 
-	"github.com/herbhall/samverk/internal/api"
-	"github.com/herbhall/samverk/internal/audit"
-	"github.com/herbhall/samverk/internal/digest"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/api"
+	"samverk.dev/samverk/internal/audit"
+	"samverk.dev/samverk/internal/digest"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // mockTracker implements forge.IssueTracker for testing.

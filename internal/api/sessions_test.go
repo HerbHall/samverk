@@ -11,8 +11,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/api"
-	"github.com/herbhall/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/api"
+	"samverk.dev/samverk/internal/logstore"
 )
 
 // newLogStoreServer creates an API with a real logstore wired via SetLogStore

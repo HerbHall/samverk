@@ -12,12 +12,12 @@ import (
 	"go.uber.org/zap"
 	"time"
 
-	"github.com/herbhall/samverk/internal/agent"
-	"github.com/herbhall/samverk/internal/cost"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/agent"
+	"samverk.dev/samverk/internal/cost"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // --- Mock Provider ---

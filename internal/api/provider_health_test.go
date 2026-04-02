@@ -9,8 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/api"
-	"github.com/herbhall/samverk/internal/provider"
+	"samverk.dev/samverk/internal/api"
+	"samverk.dev/samverk/internal/provider"
 )
 
 // mockHealthProvider implements provider.Provider for health monitor tests.

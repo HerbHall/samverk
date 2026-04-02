@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/store"
 )
 
 // ProfileStore defines the read API for user profiles.

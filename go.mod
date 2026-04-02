@@ -1,4 +1,4 @@
-module github.com/herbhall/samverk
+module samverk.dev/samverk
 
 go 1.25.8
 

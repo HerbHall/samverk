@@ -6,17 +6,17 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/advisor"
-	"github.com/herbhall/samverk/internal/digest"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/hostmetrics"
-	"github.com/herbhall/samverk/internal/loganalyst"
-	"github.com/herbhall/samverk/internal/logstore"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
-	"github.com/herbhall/samverk/internal/metrics"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/status"
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/advisor"
+	"samverk.dev/samverk/internal/digest"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/hostmetrics"
+	"samverk.dev/samverk/internal/loganalyst"
+	"samverk.dev/samverk/internal/logstore"
+	internalmcp "samverk.dev/samverk/internal/mcp"
+	"samverk.dev/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/status"
+	"samverk.dev/samverk/internal/store"
 )
 
 // poolMetricsSource provides a snapshot of the agent pool.

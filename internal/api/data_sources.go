@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // dataSourceDTO describes one data store tracked by the data sources endpoint.

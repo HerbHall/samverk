@@ -168,7 +168,7 @@ jobs:
 
       - name: Cross-compile release binary
         env:
-          VERSION_PKG: github.com/herbhall/samverk/internal/version
+          VERSION_PKG: samverk.dev/samverk/internal/version
         run: |
           VERSION=$(git describe --tags --always 2>/dev/null || echo "dev")
           COMMIT=$(git rev-parse --short HEAD)

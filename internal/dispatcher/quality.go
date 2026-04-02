@@ -7,8 +7,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/agent"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/agent"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // extractAcceptanceCriteria parses unchecked task items from the

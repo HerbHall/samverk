@@ -7,11 +7,11 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/cost"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/cost"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // staticPolicy is a test helper that returns a fixed tier for all actions.

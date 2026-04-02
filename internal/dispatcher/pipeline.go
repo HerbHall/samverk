@@ -6,7 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/store"
 )
 
 // recordPipelineEvent persists a stage transition to the pipeline_events table.

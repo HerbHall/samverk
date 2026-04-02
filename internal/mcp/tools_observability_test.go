@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/logstore"
-	"github.com/herbhall/samverk/internal/metrics"
-	"github.com/herbhall/samverk/internal/provider"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"samverk.dev/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/provider"
+	internalmcp "samverk.dev/samverk/internal/mcp"
 )
 
 // mockPoolMetrics implements poolMetricsSource for testing.

@@ -3,7 +3,7 @@ package dispatcher
 import (
 	"strings"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // ClassifyFailureDetailed returns a 3-level failure classification.

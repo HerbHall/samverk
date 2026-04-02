@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 	"go.uber.org/zap"
 )
 

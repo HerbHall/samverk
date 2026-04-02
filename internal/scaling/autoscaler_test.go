@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 	"time"
 
-	"github.com/herbhall/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/metrics"
 )
 
 // --- mock implementations ---

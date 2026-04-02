@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/herbhall/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/metrics"
 )
 
 // Action represents a scaling decision type.

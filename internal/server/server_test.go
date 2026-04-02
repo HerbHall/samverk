@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 	"time"
 
-	"github.com/herbhall/samverk/internal/server"
+	"samverk.dev/samverk/internal/server"
 )
 
 // get performs a context-aware GET request.

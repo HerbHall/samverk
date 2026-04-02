@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // CreateSession inserts a new session record. If s.ID is empty, a random ID is generated.

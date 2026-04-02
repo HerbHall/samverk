@@ -5,7 +5,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/store"
 )
 
 // runEventRecorder subscribes to all events on the bus and writes them to

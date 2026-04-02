@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func TestSaveAndListScalingEvents(t *testing.T) {

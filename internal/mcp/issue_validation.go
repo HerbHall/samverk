@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // conventionalCommitPrefixRe matches a valid conventional commit prefix in an issue title.

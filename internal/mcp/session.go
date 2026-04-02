@@ -5,8 +5,8 @@ import (
 	"go.uber.org/zap"
 	"time"
 
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // sessionRecorder wraps tool calls with session/cost recording.

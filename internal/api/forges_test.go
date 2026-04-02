@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	internalmcp "samverk.dev/samverk/internal/mcp"
 )
 
 func TestListForges_NoRegistry(t *testing.T) {

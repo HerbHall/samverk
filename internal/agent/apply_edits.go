@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 	"go.uber.org/zap"
 )
 

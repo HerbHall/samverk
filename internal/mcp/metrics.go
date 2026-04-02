@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbhall/samverk/internal/logstore"
-	"github.com/herbhall/samverk/internal/metrics"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // poolMetricsSource provides pool stats for the digest.

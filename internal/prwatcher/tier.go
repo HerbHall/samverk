@@ -3,8 +3,8 @@ package prwatcher
 import (
 	"strings"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // PRTier represents the merge policy tier for a pull request.

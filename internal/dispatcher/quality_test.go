@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func TestExtractAcceptanceCriteria(t *testing.T) {

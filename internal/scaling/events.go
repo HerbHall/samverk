@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // ScalingEvent is an alias for the shared models type.

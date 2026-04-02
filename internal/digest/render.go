@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // FormatDigest renders DigestData as the conversational text format

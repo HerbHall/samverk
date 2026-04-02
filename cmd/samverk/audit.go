@@ -6,9 +6,9 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/herbhall/samverk/internal/audit"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/audit"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )

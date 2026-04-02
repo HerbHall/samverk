@@ -13,7 +13,7 @@ import (
 
 	gogitea "code.gitea.io/sdk/gitea"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 func TestCreateBranch(t *testing.T) {

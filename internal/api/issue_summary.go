@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/store"
 )
 
 // issueSummaryResponse is the JSON response for GET /api/v1/issues/summary.

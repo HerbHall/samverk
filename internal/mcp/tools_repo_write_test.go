@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/forge"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"samverk.dev/samverk/internal/forge"
+	internalmcp "samverk.dev/samverk/internal/mcp"
 )
 
 // mockRepoWriter implements forge.RepoWriter for testing.

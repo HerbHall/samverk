@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/audit"
+	"samverk.dev/samverk/internal/audit"
 )
 
 func TestSaveAndGetAuditResults(t *testing.T) {

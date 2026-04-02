@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/herbhall/samverk/internal/version"
+	"samverk.dev/samverk/internal/version"
 )
 
 //go:embed all:static

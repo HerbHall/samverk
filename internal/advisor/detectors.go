@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // detectRecurrence finds root_cause_category values appearing >3 times in the provided events.

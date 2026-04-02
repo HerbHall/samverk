@@ -7,8 +7,8 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // bulkUpdateIssuesInput is the typed input for the bulk_update_issues tool.

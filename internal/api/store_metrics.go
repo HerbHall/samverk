@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/herbhall/samverk/internal/metrics"
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/store"
 )
 
 // storeMetricsReader reads the latest metric snapshot from SQLite.

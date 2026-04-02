@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // createTestSession is a helper that inserts a minimal session and returns its ID.

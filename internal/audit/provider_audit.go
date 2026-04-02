@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/herbhall/samverk/internal/provider"
+	"samverk.dev/samverk/internal/provider"
 )
 
 // AuditResult holds the outcome of a single provider health check.

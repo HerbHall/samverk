@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // makeFailureEvent is a test helper that constructs a FailureEvent with
@@ -661,7 +661,7 @@ func TestAutoPopulateRCA_Component(t *testing.T) {
 
 	e := &models.FailureEvent{
 		FailureClass: models.FailureClassPanic,
-		ErrorMessage: "panic in github.com/herbhall/samverk/internal/dispatcher send on closed channel",
+		ErrorMessage: "panic in samverk.dev/samverk/internal/dispatcher send on closed channel",
 	}
 	autoPopulateRCA(e)
 
@@ -679,7 +679,7 @@ func TestAutoPopulateRCA_NoOverwrite(t *testing.T) {
 
 	e := &models.FailureEvent{
 		FailureClass:      models.FailureClassTimeout,
-		ErrorMessage:      "github.com/herbhall/samverk/internal/agent timeout",
+		ErrorMessage:      "samverk.dev/samverk/internal/agent timeout",
 		RootCauseCategory: "custom_category",
 		Component:         "custom_component",
 	}

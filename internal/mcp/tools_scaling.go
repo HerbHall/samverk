@@ -7,8 +7,8 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // scaleSetInput is the typed input for the scale_set tool.

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/digest"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/digest"
+	internalmcp "samverk.dev/samverk/internal/mcp"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // newTestMCPServerWithStore sets up an httptest.Server with a real SQLite store.

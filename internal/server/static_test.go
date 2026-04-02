@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/server"
+	"samverk.dev/samverk/internal/server"
 )
 
 func TestSPAServesIndexAtRoot(t *testing.T) {

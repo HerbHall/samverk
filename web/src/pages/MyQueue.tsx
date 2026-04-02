@@ -59,8 +59,8 @@ function issueURL(issue: Issue): string {
   if (issue.forge_url && issue.owner && issue.repo) {
     return `${issue.forge_url}/${issue.owner}/${issue.repo}/issues/${issue.number}`
   }
-  // Legacy fallback for single-project mode (no forge metadata).
-  return `https://github.com/HerbHall/samverk/issues/${issue.number}`
+  // No forge metadata available -- cannot construct URL.
+  return '#'
 }
 
 function buildAgentPrompt(issue: Issue): string {

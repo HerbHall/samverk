@@ -13,7 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/logstore"
 )
 
 // ScopeType identifies what dimension of logs to summarize.

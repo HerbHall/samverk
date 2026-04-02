@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // ClaimResult is returned when an issue is successfully claimed.

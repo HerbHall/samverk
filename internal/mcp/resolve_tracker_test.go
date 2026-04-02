@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/forge"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"samverk.dev/samverk/internal/forge"
+	internalmcp "samverk.dev/samverk/internal/mcp"
 )
 
 // newTestServerWithRegistry builds an httptest.Server whose handler has two

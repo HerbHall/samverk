@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 func TestFormatCheckpoint(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/autonomy"
 )
 
 // claimIssueInput is the typed input for the claim_issue tool.

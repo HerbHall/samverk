@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
 )
 
 // SetHealthMonitor attaches the provider health monitor for the

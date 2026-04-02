@@ -69,7 +69,7 @@ jobs:
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
           COMMIT=$(git rev-parse --short HEAD)
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          PKG="github.com/herbhall/samverk/internal/version"
+          PKG="samverk.dev/samverk/internal/version"
           go build -ldflags "-s -w \
             -X ${PKG}.Version=${VERSION} \
             -X ${PKG}.GitCommit=${COMMIT} \

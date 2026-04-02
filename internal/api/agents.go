@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // agentDTO is the JSON body for a single agent (provider) in the agents endpoint.

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // newTestStoreWithSession creates an in-memory SQLite store and inserts a

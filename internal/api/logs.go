@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/herbhall/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/logstore"
 )
 
 // handleListLogs serves GET /api/v1/logs with optional query filters.

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // GetScalingControl returns the current scaling control record.

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/herbhall/samverk/internal/logstore"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/logstore"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // sessionResponse is the JSON representation of a session.

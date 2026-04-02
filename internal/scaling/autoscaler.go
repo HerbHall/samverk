@@ -5,8 +5,8 @@ import (
 	"go.uber.org/zap"
 	"time"
 
-	"github.com/herbhall/samverk/internal/metrics"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/metrics"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // Autoscaling validation: burst-3 task 4/8 — scale-up validation.

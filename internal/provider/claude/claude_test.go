@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/provider"
+	"samverk.dev/samverk/internal/provider"
 )
 
 // newTestClient creates a Client pointed at a test HTTP server.

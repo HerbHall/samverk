@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/herbhall/samverk/internal/forge"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
+	"samverk.dev/samverk/internal/forge"
+	internalmcp "samverk.dev/samverk/internal/mcp"
 )
 
 // issueResponse is the JSON representation of a forge issue.

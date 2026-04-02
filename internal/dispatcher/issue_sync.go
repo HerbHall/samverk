@@ -7,8 +7,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/store"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/store"
 )
 
 const (

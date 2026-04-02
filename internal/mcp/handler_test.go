@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/digest"
-	"github.com/herbhall/samverk/internal/forge"
-	internalmcp "github.com/herbhall/samverk/internal/mcp"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/digest"
+	"samverk.dev/samverk/internal/forge"
+	internalmcp "samverk.dev/samverk/internal/mcp"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // mockTracker implements forge.IssueTracker for testing.

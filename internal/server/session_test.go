@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/server"
+	"samverk.dev/samverk/internal/server"
 )
 
 func TestSessionManager_CreateAndValidate(t *testing.T) {

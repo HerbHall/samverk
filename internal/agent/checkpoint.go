@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // checkpointPrefix is the marker that identifies a checkpoint comment.

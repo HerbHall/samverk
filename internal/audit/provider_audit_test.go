@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/provider"
+	"samverk.dev/samverk/internal/provider"
 )
 
 // mockProvider implements provider.Provider for testing.

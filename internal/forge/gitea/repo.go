@@ -11,7 +11,7 @@ import (
 
 	gogitea "code.gitea.io/sdk/gitea"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // Compile-time interface check for RepoReader.

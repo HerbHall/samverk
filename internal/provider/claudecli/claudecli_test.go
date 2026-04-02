@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/provider"
+	"samverk.dev/samverk/internal/provider"
 )
 
 func TestNew(t *testing.T) {

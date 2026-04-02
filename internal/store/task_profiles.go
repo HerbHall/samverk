@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // UpdateTaskProfile recomputes the profile for (agentType, provider) from

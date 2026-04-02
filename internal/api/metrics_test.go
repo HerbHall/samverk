@@ -8,8 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/api"
-	"github.com/herbhall/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/api"
+	"samverk.dev/samverk/internal/metrics"
 )
 
 // makeMetricsServer creates an httptest.Server for an already-configured API.

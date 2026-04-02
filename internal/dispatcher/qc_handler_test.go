@@ -7,10 +7,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/agent"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/metrics"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/agent"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/metrics"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // newTestMetrics creates a DispatcherMetrics instance for tests.

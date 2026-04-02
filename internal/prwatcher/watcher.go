@@ -17,10 +17,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // IssueCacheReader provides read-only access to cached issue data and failure counts.

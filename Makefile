@@ -14,7 +14,7 @@ SWAG_VERSION          ?= $(shell grep '"swag"' tools.json 2>/dev/null | sed 's/.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE    ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown")
-VERSION_PKG = github.com/herbhall/samverk/internal/version
+VERSION_PKG = samverk.dev/samverk/internal/version
 
 LDFLAGS=-ldflags "-s -w \
 	-X $(VERSION_PKG).Version=$(VERSION) \

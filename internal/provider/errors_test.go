@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/provider"
+	"samverk.dev/samverk/internal/provider"
 )
 
 func TestIsRetryable_ErrProviderUnavailable(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // maxFileContextBytes caps the total injected file context to ~8k tokens (~32k bytes).

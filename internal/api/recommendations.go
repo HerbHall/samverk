@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/herbhall/samverk/internal/advisor"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/advisor"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // SetAdvisor attaches the advisory engine to the API handler.

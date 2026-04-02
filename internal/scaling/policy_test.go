@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/internal/metrics"
+	"samverk.dev/samverk/internal/metrics"
 )
 
 // makePool builds a PoolSnapshot for testing.

@@ -1,6 +1,6 @@
 package dispatcher
 
-import "github.com/herbhall/samverk/pkg/models"
+import "samverk.dev/samverk/pkg/models"
 
 // phaseAllowedAgents maps a project lifecycle phase to the set of agent types
 // permitted to work in that phase. The "inactive" phase has an empty set,

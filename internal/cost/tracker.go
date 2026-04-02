@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // ErrBudgetExceeded is returned when the rolling window spend meets or exceeds the budget.

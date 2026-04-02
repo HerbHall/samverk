@@ -14,9 +14,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/herbhall/samverk/internal/version.Version={{.Version}}
-      - -X github.com/herbhall/samverk/internal/version.GitCommit={{.Commit}}
-      - -X github.com/herbhall/samverk/internal/version.BuildDate={{.Date}}
+      - -X samverk.dev/samverk/internal/version.Version={{.Version}}
+      - -X samverk.dev/samverk/internal/version.GitCommit={{.Commit}}
+      - -X samverk.dev/samverk/internal/version.BuildDate={{.Date}}
 
 archives:
   - id: samverk

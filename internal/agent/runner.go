@@ -12,13 +12,13 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/cost"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/internal/synapset"
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/cost"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/internal/synapset"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // heartbeatPulseInterval is how often the runner calls task.HeartbeatFunc

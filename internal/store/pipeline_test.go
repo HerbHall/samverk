@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 func makePipelineEvent(issueNumber int, from, to string, at time.Time) PipelineEvent {

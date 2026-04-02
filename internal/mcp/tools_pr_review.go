@@ -8,10 +8,10 @@ import (
 
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/digest"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/prwatcher"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/digest"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/prwatcher"
 )
 
 // reviewPRInput is the typed input for the review_pr tool.

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/herbhall/samverk/pkg/models"
+	"samverk.dev/samverk/pkg/models"
 )
 
 // scalingControlDTO is the JSON-serializable form of models.ScalingControl.

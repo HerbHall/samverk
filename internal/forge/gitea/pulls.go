@@ -6,7 +6,7 @@ import (
 
 	gogitea "code.gitea.io/sdk/gitea"
 
-	"github.com/herbhall/samverk/internal/forge"
+	"samverk.dev/samverk/internal/forge"
 )
 
 // convertPR transforms a Gitea SDK pull request into a forge.PullRequest.

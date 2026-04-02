@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/herbhall/samverk/internal/api"
+	"samverk.dev/samverk/internal/api"
 )
 
 func TestDrainMux_PostEntersDrainMode(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbhall/samverk/internal/logstore"
+	"samverk.dev/samverk/internal/logstore"
 )
 
 // buildFallbackSummary produces a structured text summary without AI.

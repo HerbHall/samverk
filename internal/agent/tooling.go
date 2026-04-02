@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/herbhall/samverk/internal/synapset"
+	"samverk.dev/samverk/internal/synapset"
 )
 
 // Project type constants for CI checklist selection.

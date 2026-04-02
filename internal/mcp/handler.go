@@ -12,12 +12,12 @@ import (
 	gosdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 
-	"github.com/herbhall/samverk/internal/autonomy"
-	"github.com/herbhall/samverk/internal/digest"
-	"github.com/herbhall/samverk/internal/forge"
-	"github.com/herbhall/samverk/internal/provider"
-	"github.com/herbhall/samverk/internal/store"
-	"github.com/herbhall/samverk/internal/version"
+	"samverk.dev/samverk/internal/autonomy"
+	"samverk.dev/samverk/internal/digest"
+	"samverk.dev/samverk/internal/forge"
+	"samverk.dev/samverk/internal/provider"
+	"samverk.dev/samverk/internal/store"
+	"samverk.dev/samverk/internal/version"
 )
 
 // Handler holds dependencies for MCP tool handlers.
