@@ -17,7 +17,8 @@ func (d *Dispatcher) recordFailure(ctx context.Context, issueNumber int, session
 		return
 	}
 
-	fc := classifyFailure(errMsg)
+	detailed := ClassifyFailureDetailed(errMsg)
+	fc := detailed.Category
 
 	// Shutdown kills (exit 143) are expected — log but don't count as failures.
 	if fc == models.FailureClassShutdown {
@@ -53,15 +54,17 @@ func (d *Dispatcher) recordFailure(ctx context.Context, issueNumber int, session
 	}
 
 	event := &models.FailureEvent{
-		IssueNumber:  issueNumber,
-		SessionID:    sessionID,
-		FailureClass: fc,
-		ErrorMessage: errMsg,
-		AgentType:    agentType,
-		Provider:     provider,
+		IssueNumber:   issueNumber,
+		SessionID:     sessionID,
+		FailureClass:  fc,
+		Category:      string(detailed.Category),
+		Subcategory:   detailed.Subcategory,
+		ErrorMessage:  errMsg,
+		AgentType:     agentType,
+		Provider:      provider,
 		AttemptNumber: attempt,
-		Duration:     duration,
-		Timestamp:    time.Now().UTC(),
+		Duration:      duration,
+		Timestamp:     time.Now().UTC(),
 	}
 
 	if err := d.store.SaveFailureEvent(ctx, event); err != nil {

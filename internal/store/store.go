@@ -396,6 +396,9 @@ CREATE INDEX IF NOT EXISTS idx_issue_cache_state ON issue_cache(project, state);
 		`ALTER TABLE pipeline_events ADD COLUMN key TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE pipeline_events ADD COLUMN value TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE pipeline_events ADD COLUMN old_value TEXT NOT NULL DEFAULT ''`,
+		// 3-level failure classification taxonomy (#591).
+		`ALTER TABLE failure_events ADD COLUMN category TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE failure_events ADD COLUMN subcategory TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		if _, err := s.db.ExecContext(context.Background(), m); err != nil {

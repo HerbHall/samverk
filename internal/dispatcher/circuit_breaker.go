@@ -79,8 +79,8 @@ func (cb *CircuitBreaker) RecordFailure(fc models.FailureClass, providerKey stri
 			cb.tripProvider(providerKey, now)
 		}
 
-	case models.FailureClassProviderDown, models.FailureClassPermanent,
-		models.FailureClassTimeout:
+	case models.FailureClassProviderDown, models.FailureClassRateLimit,
+		models.FailureClassPermanent, models.FailureClassTimeout:
 		// Increment failure count; trip after threshold.
 		// Timeouts indicate infrastructure issues (e.g., Ollama overloaded)
 		// and consecutive occurrences should mark the provider unhealthy.
