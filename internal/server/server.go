@@ -112,6 +112,45 @@ func (s *Server) Handler() http.Handler {
 	return s.mux
 }
 
+// LANHandler returns an http.Handler that serves all routes without auth.
+// Intended for a separate listener on a LAN-only port where authentication
+// is unnecessary (trusted network). Shares the same Hub for WebSocket
+// broadcasts and the same MCP/API handlers as the main server.
+func (s *Server) LANHandler() http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /healthz", s.handleHealth)
+
+	if s.cfg.MCPHandler != nil {
+		mux.Handle("/connect", s.cfg.MCPHandler)
+		mux.Handle("/mcp", s.cfg.MCPHandler)
+	}
+
+	mux.HandleFunc("GET /ws", s.handleWS)
+
+	if s.cfg.APIHandler != nil {
+		apiMux := http.NewServeMux()
+		s.cfg.APIHandler.RegisterRoutes(apiMux)
+		mux.Handle("/api/", apiMux)
+	}
+
+	spa := http.Handler(spaHandler())
+	if s.cfg.VanityResolver != nil {
+		vanity := handleVanityImport(s.cfg.VanityResolver)
+		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("go-get") == "1" {
+				vanity.ServeHTTP(w, r)
+				return
+			}
+			spa.ServeHTTP(w, r)
+		}))
+	} else {
+		mux.Handle("/", spa)
+	}
+
+	return mux
+}
+
 // Start begins listening. It blocks until ctx is cancelled or an error occurs.
 // When ctx is cancelled, Start calls Shutdown and returns nil.
 func (s *Server) Start(ctx context.Context) error {

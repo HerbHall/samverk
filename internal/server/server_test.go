@@ -198,6 +198,39 @@ func TestAPIRoutesNoAuthWhenTokenEmpty(t *testing.T) {
 	}
 }
 
+func TestLANHandlerServesWithoutAuth(t *testing.T) {
+	const token = "test-api-token"
+
+	s := server.New(server.Config{
+		Addr:       "localhost:0",
+		AuthToken:  token,
+		APIHandler: stubAPI{},
+	}, nil)
+
+	// Main server should require auth.
+	mainTS := httptest.NewServer(s.Handler())
+	t.Cleanup(mainTS.Close)
+
+	resp := get(t, mainTS.URL+"/api/v1/ping")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("main handler: status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+
+	// LAN handler should NOT require auth.
+	lanTS := httptest.NewServer(s.LANHandler())
+	t.Cleanup(lanTS.Close)
+
+	paths := []string{"/healthz", "/api/v1/ping"}
+	for _, path := range paths {
+		resp = get(t, lanTS.URL+path)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("LAN handler %s: status = %d, want %d", path, resp.StatusCode, http.StatusOK)
+		}
+	}
+}
+
 func TestGracefulShutdown(t *testing.T) {
 	s := server.New(server.Config{Addr: "localhost:0"}, zap.NewNop())
 

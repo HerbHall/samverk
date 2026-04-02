@@ -94,7 +94,7 @@ func run() int {
 }
 
 func serveCmd() *cobra.Command {
-	var addr, owner, repo, dbPath, projectsConfig, authKeysPath, providersConfigServe string
+	var addr, lanAddr, owner, repo, dbPath, projectsConfig, authKeysPath, providersConfigServe string
 	var budget float64
 
 	cmd := &cobra.Command{
@@ -538,6 +538,27 @@ func serveCmd() *cobra.Command {
 				}()
 			}
 
+			// LAN-only unauthenticated listener: full dashboard + MCP + API
+			// without auth middleware. Intended for trusted LAN access where
+			// Caddy on CT 201 proxies samverk.dev/samverk.net to this port.
+			if lanAddr != "" {
+				lanSrv := &http.Server{
+					Addr:              lanAddr,
+					Handler:           s.LANHandler(),
+					ReadHeaderTimeout: 10 * time.Second,
+				}
+				go func() {
+					logger.Info("LAN listener starting (no auth)", zap.String("addr", lanAddr))
+					if err := lanSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+						logger.Error("LAN listener failed", zap.Error(err))
+					}
+				}()
+				go func() {
+					<-ctx.Done()
+					_ = lanSrv.Shutdown(context.Background())
+				}()
+			}
+
 			// Wire Synapset client for infra probe (optional, best-effort).
 			var infraSynapsetClient *synapset.Client
 			synCfg := synapset.ConfigFromEnv(synapset.Config{})
@@ -579,6 +600,7 @@ func serveCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address")
+	cmd.Flags().StringVar(&lanAddr, "lan-addr", ":8082", "LAN-only listen address (no auth); empty to disable")
 	cmd.Flags().StringVar(&owner, "owner", "", "GitHub repository owner")
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository name")
 	cmd.Flags().StringVar(&dbPath, "db", ".samverk/samverk.db", "Path to SQLite database for session/cost tracking")
