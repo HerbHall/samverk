@@ -481,6 +481,7 @@ func serveCmd() *cobra.Command {
 			}
 
 			cfg.MCPHandler = internalmcp.NewHTTPHandler(mcpHandler)
+			cfg.VanityResolver = registry
 			apiHandler.SetToolCount(internalmcp.CountTools())
 			logger.Info("MCP handler enabled",
 				zap.String("owner", owner), zap.String("repo", repo))

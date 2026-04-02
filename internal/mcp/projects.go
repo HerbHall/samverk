@@ -134,6 +134,20 @@ func (r *ProjectRegistry) Get(name string) (*Project, bool) {
 	return p, exists
 }
 
+// CloneURL returns the Git clone URL for a registered project by name.
+// Returns empty string if the project is not found.
+// This method satisfies the server.VanityImportResolver interface.
+func (r *ProjectRegistry) CloneURL(name string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	p, exists := r.projects[name]
+	if !exists || p.ForgeURL == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/%s.git", p.ForgeURL, p.Owner, p.Repo)
+}
+
 // TrackerFor returns the IssueTracker for the project matching the given
 // owner/repo pair. Returns nil, false if no matching project is registered.
 // This method satisfies the dispatcher.ProjectResolver interface.

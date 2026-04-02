@@ -32,9 +32,10 @@ type Config struct {
 	MCPHandler         http.Handler     // optional MCP protocol handler; nil keeps the 501 placeholder
 	APIHandler         APIRegistrar     // optional REST API handler; nil keeps the 501 placeholder
 	PressureProvider   PressureProvider // optional; /healthz omits pressure field when nil
-	CFAccessTeamDomain  string           // Cloudflare Access team domain; empty = CF auto-login disabled
-	CFAccessMCPClientID string           // CF Access client_id for /mcp JWT enforcement; empty = disabled
-	SecureCookies       bool             // set Secure flag on session cookies (false when behind Cloudflare Tunnel)
+	VanityResolver      VanityImportResolver // optional; serves go-import meta tags for vanity import paths
+	CFAccessTeamDomain  string               // Cloudflare Access team domain; empty = CF auto-login disabled
+	CFAccessMCPClientID string               // CF Access client_id for /mcp JWT enforcement; empty = disabled
+	SecureCookies       bool                 // set Secure flag on session cookies (false when behind Cloudflare Tunnel)
 }
 
 // Server is the main HTTP server.
@@ -256,10 +257,23 @@ func (s *Server) registerRoutes() {
 	}
 
 	// Serve embedded SPA for all unmatched routes.
+	// When vanity imports are configured, ?go-get=1 requests are intercepted
+	// before the SPA to serve go-import meta tags for Go module resolution.
 	// When auth is enabled, require a valid session cookie.
 	// CF Access middleware runs first: if a valid JWT is present, it auto-issues
 	// a session and redirects to /, bypassing the token login form.
-	spa := spaHandler()
+	spa := http.Handler(spaHandler())
+	if s.cfg.VanityResolver != nil {
+		vanity := handleVanityImport(s.cfg.VanityResolver)
+		inner := spa
+		spa = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("go-get") == "1" {
+				vanity.ServeHTTP(w, r)
+				return
+			}
+			inner.ServeHTTP(w, r)
+		})
+	}
 	if s.authEnabled() {
 		spaWithAuth := requireSession(s.sessions)(spa)
 		if s.cfg.CFAccessTeamDomain != "" && s.sessions != nil {
