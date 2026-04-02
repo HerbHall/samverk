@@ -36,7 +36,7 @@ function Format-IssuePrompt {
     )
 
     return @"
-You are a Samverk autonomous agent implementing GitHub issue #$($Issue.Number).
+You are a Samverk autonomous agent implementing issue #$($Issue.Number).
 
 ## Task
 

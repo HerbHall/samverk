@@ -29,6 +29,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------------------
+# Forge config (from .samverk/project.yaml)
+# ---------------------------------------------------------------------------
+$scriptDir = Split-Path $PSCommandPath -Parent
+Import-Module (Join-Path $scriptDir 'forge.psm1') -Force -WarningAction SilentlyContinue
+$forgeConfig = Get-ForgeConfig
+
+# ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
 $authToken = $env:SAMVERK_AUTH_TOKEN
@@ -156,7 +163,7 @@ available in this VS Code session.
 ## Task
 Title: $issueTitle
 Branch: $branch
-Issue: http://gitea.herbhall.net/samverk/samverk/issues/$issueNumber
+Issue: $($forgeConfig.ForgeUrl)/$($forgeConfig.Project)/issues/$issueNumber
 
 ## Issue Body
 $issueBody
