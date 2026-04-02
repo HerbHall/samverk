@@ -28,12 +28,14 @@ type setProjectPhaseInput struct {
 
 // projectInfo is the JSON output for a single project in list_projects.
 type projectInfo struct {
-	Name   string   `json:"name"`
-	Owner  string   `json:"owner"`
-	Repo   string   `json:"repo"`
-	Phase  string   `json:"phase"`
-	Tags   []string `json:"tags,omitempty"`
-	Active bool     `json:"active"`
+	Name      string   `json:"name"`
+	Owner     string   `json:"owner"`
+	Repo      string   `json:"repo"`
+	Phase     string   `json:"phase"`
+	Tags      []string `json:"tags,omitempty"`
+	Active    bool     `json:"active"`
+	ForgeType string   `json:"forge_type,omitempty"`
+	ForgeURL  string   `json:"forge_url,omitempty"`
 }
 
 // registerProjectTools adds project management tools to the MCP server.
@@ -74,12 +76,14 @@ func (h *Handler) handleListProjects(
 	infos := make([]projectInfo, 0, len(projects))
 	for _, p := range projects {
 		infos = append(infos, projectInfo{
-			Name:   p.Name,
-			Owner:  p.Owner,
-			Repo:   p.Repo,
-			Phase:  p.Phase,
-			Tags:   p.Tags,
-			Active: p.Name == activeName,
+			Name:      p.Name,
+			Owner:     p.Owner,
+			Repo:      p.Repo,
+			Phase:     p.Phase,
+			Tags:      p.Tags,
+			Active:    p.Name == activeName,
+			ForgeType: p.ForgeType,
+			ForgeURL:  p.ForgeURL,
 		})
 	}
 
